@@ -783,7 +783,12 @@ public sealed class MainForm : Form
                 // hides its gadget (DC.EXE 0x403270–0x403292). We do not yet
                 // reconstruct a career profile, so do not present first-frame
                 // artwork as fictional awards.
-                DrawStoppedAnimation(graphics, "knobe.fin", "RANKS", 576, 49);
+                // DC.EXE sets RANKS to rankIndex + 4 (0x4032dd–0x403326).
+                // A fresh port has rank index zero until career persistence is
+                // reconstructed, so select its matching logical FIN frame.
+                var ranks = Animation("knobe.fin", "RANKS");
+                if (ranks is not null)
+                    DrawAnimationFrame(graphics, "knobe.fin", (ushort)(ranks.FirstFrame + 4), 576, 49);
                 // shumane gadgets 35-36 share this 80x120 commander viewport
                 // and are both declared anim_stopped.
                 DrawStoppedAnimation(graphics, "acom.fin", _grayRace ? "ACOM" : "HCOM", 306, 23);

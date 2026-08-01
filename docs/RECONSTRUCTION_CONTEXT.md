@@ -205,8 +205,10 @@ and networking ahead of the local playable slice.
   corresponding frontend profile slot at `+0x1448 + gadgetId * 4`. A value of
   `-1` disables a medal; another value selects its stopped frame. Because the
   compiled port has no recovered career-profile persistence, its neutral War
-  screen renders no medals. The rank badge remains the first `RANKS` frame
-  pending recovery of the separate rank slot/mapping.
+  screen renders no medals. The rank call at `0x4032dd`–`0x403326` selects
+  `RANKS` with `rankIndex + 4`; the port's fresh rank index is zero and thus
+  renders the corresponding fifth logical `RANKS` frame. Career progression
+  and rank persistence remain unrecovered.
 
 ## Encyclopedia checkpoint
 
