@@ -1170,7 +1170,7 @@ public sealed class MainForm : Form
                 using var highlight = new SolidBrush(Color.FromArgb(100, 44, 135, 72));
                 graphics.FillRectangle(highlight, bounds);
             }
-            DrawMenuText(graphics, maps[index].Name.ToUpperInvariant(), bounds);
+            DrawMenuText(graphics, (maps[index].DisplayName ?? maps[index].Name).ToUpperInvariant(), bounds);
         }
         graphics.Restore(state);
 

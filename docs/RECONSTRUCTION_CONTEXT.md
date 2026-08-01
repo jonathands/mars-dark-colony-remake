@@ -190,6 +190,9 @@ and networking ahead of the local playable slice.
   The port keeps this name in frontend state and renders it left-aligned in
   `shumane` input control 5, matching the executable’s persistent-state data
   flow. Native text-edit focus/caret timing is still unrecovered.
+- Mplayer SCN line 3 is the user-facing map title (for example, `d2play01` is
+  `Dead Man's Wharf`), while line 2 is an internal scenario stem. The War list
+  renders the former and uses the latter only for external-file resolution.
 
 ## Encyclopedia checkpoint
 
