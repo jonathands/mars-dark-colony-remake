@@ -29,10 +29,26 @@ public sealed class ActiveMoveOrder
 {
     public ActiveMoveOrder(CellCoordinate target) => Target = target;
 
-    public CellCoordinate Target { get; }
+    private readonly Queue<CellCoordinate> waypoints = [];
+
+    /// <summary>The destination currently being segmented into packed local paths.</summary>
+    public CellCoordinate Target { get; private set; }
+    public int PendingWaypointCount => waypoints.Count;
     public int SegmentCount { get; internal set; }
     public int BlockedTicksRemaining { get; internal set; }
     public CellCoordinate? LastBlockedCell { get; internal set; }
+
+    public void AppendWaypoint(CellCoordinate target) => waypoints.Enqueue(target);
+
+    public bool AdvanceWaypoint()
+    {
+        if (!waypoints.TryDequeue(out var next)) return false;
+        Target = next;
+        SegmentCount = 0;
+        BlockedTicksRemaining = 0;
+        LastBlockedCell = null;
+        return true;
+    }
 }
 
 public sealed record MoveCommandOutcome(
@@ -111,6 +127,13 @@ public sealed class ScenarioSimulation
                 outcomes.Add(new MoveCommandOutcome(actor.Seed.InstanceId, move.TargetCell, DiagnosticPathTermination.InvalidEndpoint, 0));
                 continue;
             }
+            if (move.AppendWaypoint && actor.MoveOrder is { } activeOrder)
+            {
+                activeOrder.AppendWaypoint(move.TargetCell);
+                outcomes.Add(new MoveCommandOutcome(actor.Seed.InstanceId, move.TargetCell, DiagnosticPathTermination.ReachedTarget, 0));
+                continue;
+            }
+
             actor.MoveOrder = new ActiveMoveOrder(move.TargetCell);
             outcomes.Add(StartSegment(actor));
         }
@@ -133,7 +156,8 @@ public sealed class ScenarioSimulation
                 else if (status == PackedPathPlaybackStatus.Complete)
                 {
                     actor.Playback = null;
-                    if (actor.MoveOrder?.Target == actor.Movement.OccupiedCell) actor.MoveOrder = null;
+                    if (actor.MoveOrder?.Target == actor.Movement.OccupiedCell && !actor.MoveOrder.AdvanceWaypoint())
+                        actor.MoveOrder = null;
                 }
             }
 

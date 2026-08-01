@@ -56,7 +56,7 @@ public sealed class MainForm : Form
     private ScenarioChoice? _selectedScenario;
     private bool _showAssetNames;
     private bool _showPathRegions;
-    private int? _selectedEntityInstanceId;
+    private readonly HashSet<int> _selectedEntityInstanceIds = [];
     private int _cameraX = 30 * 32;
     private int _cameraY = 22 * 32;
     private CellCoordinate? _diagnosticMoveTarget;
@@ -183,7 +183,7 @@ public sealed class MainForm : Form
             _gameplayMap = null;
             _gameplayTileset = null;
             _gameplayPath = null;
-            _selectedEntityInstanceId = null;
+            _selectedEntityInstanceIds.Clear();
             _diagnosticMoveTarget = null;
             _diagnosticPathCells = [];
             _autonomousEntities = [];
@@ -540,7 +540,7 @@ public sealed class MainForm : Form
                 var worldY = position.ZRaw / 8;
                 var screenX = worldX - _cameraX + origin.X;
                 var screenY = worldY - _cameraY + origin.Y;
-                if (_selectedEntityInstanceId == entity.InstanceId)
+                if (_selectedEntityInstanceIds.Contains(entity.InstanceId))
                 {
                     using var selection = new Pen(Color.FromArgb(72, 255, 255), 2);
                     graphics.DrawEllipse(selection, worldX - _cameraX - 25, worldY - _cameraY - 6, 50, 20);
@@ -612,10 +612,11 @@ public sealed class MainForm : Form
         using var text = new SolidBrush(Color.FromArgb(225, 225, 245, 210));
         graphics.FillRectangle(fill, 2, 2, panelWidth, panelHeight);
         graphics.DrawRectangle(border, 2, 2, panelWidth - 1, panelHeight - 1);
-        if (_selectedEntityInstanceId is not { } instanceId || _scenarioSimulation?.Actor(instanceId) is not { } actor)
+        var instanceId = _selectedEntityInstanceIds.Order().FirstOrDefault();
+        if (instanceId == 0 || _scenarioSimulation?.Actor(instanceId) is not { } actor)
         {
-            graphics.DrawString("LMB select a team-0 unit · RMB move · drag pan", font, text, 6, 6);
-            graphics.DrawString("F3 assets · F4 path regions", font, text, 6, 17);
+            graphics.DrawString("LMB select · Shift+LMB add/remove · RMB move", font, text, 6, 6);
+            graphics.DrawString("Shift+RMB queue waypoint · drag/arrow pan", font, text, 6, 17);
             return;
         }
 
@@ -626,7 +627,10 @@ public sealed class MainForm : Form
             : order.BlockedTicksRemaining > 0
                 ? $"WAIT {order.BlockedTicksRemaining}"
                 : $"MOVE {order.Target.X},{order.Target.Z} · S{order.SegmentCount}";
-        graphics.DrawString($"{actor.Definition.DisplayName} · T{actor.Seed.Team} · C{cell.X},{cell.Z}", font, text, 6, 6);
+        var selectionLabel = _selectedEntityInstanceIds.Count == 1
+            ? actor.Definition.DisplayName
+            : $"{_selectedEntityInstanceIds.Count} UNITS · LEAD {actor.Definition.DisplayName}";
+        graphics.DrawString($"{selectionLabel} · T{actor.Seed.Team} · C{cell.X},{cell.Z}", font, text, 6, 6);
         graphics.DrawString($"{state} · face {actor.Facing.Current} / sector {actor.Facing.RenderSector16}", font, text, 6, 17);
     }
 
@@ -1082,7 +1086,7 @@ public sealed class MainForm : Form
     {
         if (_scenarioSimulation is null || _entityCatalog is null || _entityAnimations is null || point.X >= 516 || point.Y >= 458)
         {
-            _selectedEntityInstanceId = null;
+            _selectedEntityInstanceIds.Clear();
             return;
         }
 
@@ -1112,34 +1116,63 @@ public sealed class MainForm : Form
             if (bitmap.GetPixel(localX, localY).A != 0) selected = entity;
         }
 
-        _selectedEntityInstanceId = selected?.InstanceId;
+        var additive = ModifierKeys.HasFlag(Keys.Shift);
+        if (!additive) _selectedEntityInstanceIds.Clear();
+        if (selected is not null)
+        {
+            if (additive && !_selectedEntityInstanceIds.Add(selected.InstanceId))
+                _selectedEntityInstanceIds.Remove(selected.InstanceId);
+            else
+                _selectedEntityInstanceIds.Add(selected.InstanceId);
+        }
         _status = selected is null
             ? "Selection cleared."
-            : $"Selected #{selected.EntityId} {_entityCatalog[selected.EntityId].DisplayName} · team {selected.Team}.";
+            : $"{_selectedEntityInstanceIds.Count} selected · #{selected.EntityId} {_entityCatalog[selected.EntityId].DisplayName} · team {selected.Team}.";
     }
 
     private void QueueDiagnosticMove(Point point)
     {
-        if (_selectedEntityInstanceId is not { } instanceId || _gameplayMap is null || _gameplayPath is null || _scenarioSimulation is null ||
+        if (_selectedEntityInstanceIds.Count == 0 || _gameplayMap is null || _gameplayPath is null || _scenarioSimulation is null ||
             _entityCatalog is null || _groundOccupancy is null || _alternateOccupancy is null || point.X >= 516 || point.Y >= 458) return;
         var target = new CellCoordinate((point.X + _cameraX) / 32, (point.Y + _cameraY) / 32);
         if (target.X < 0 || target.Z < 0 || target.X >= _gameplayMap.Width || target.Z >= _gameplayMap.Height) return;
-        var selected = GameplayEntities().Single(entity => entity.InstanceId == instanceId);
-        if (selected.Team != LocalPlayerTeam)
-        {
-            _status = "Only local team 0 units can receive player commands in this campaign slice.";
-            return;
-        }
-        _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new MoveIntent(instanceId, target));
+        var selected = GameplayEntities()
+            .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && entity.Team == LocalPlayerTeam)
+            .Where(entity => _scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed > 0)
+            .OrderBy(entity => entity.InstanceId)
+            .ToArray();
+        if (selected.Length == 0) { _status = "Select at least one mobile local team-0 unit."; return; }
+        var appendWaypoint = ModifierKeys.HasFlag(Keys.Shift);
+        var destinations = FormationDestinations(target, selected.Length).ToArray();
+        for (var index = 0; index < selected.Length; index++)
+            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1,
+                new MoveIntent(selected[index].InstanceId, destinations[index], appendWaypoint));
         _diagnosticMoveTarget = target;
-        var source = _scenarioSimulation.Actor(instanceId)?.Movement.OccupiedCell ?? selected.SpawnCell;
+        var instanceId = selected[0].InstanceId;
+        var leader = selected[0];
+        var source = _scenarioSimulation.Actor(instanceId)?.Movement.OccupiedCell ?? leader.SpawnCell;
         var sourceRegion = _gameplayPath.RegionAt(source);
         var targetRegion = _gameplayPath.RegionAt(target);
         var coarse = _gameplayPath.BuildCoarseRoute(sourceRegion, targetRegion);
         var local = new DiagnosticLocalPathfinder(_gameplayPath, _groundOccupancy, _alternateOccupancy).Find(
-            source, target, _entityCatalog[selected.EntityId].MovementClass, instanceId);
+            source, target, _entityCatalog[leader.EntityId].MovementClass, instanceId);
         _diagnosticPathCells = local.Cells;
-        _status = $"Move intent {instanceId}: ({source.X},{source.Z}) r{sourceRegion} → ({target.X},{target.Z}) r{targetRegion}; coarse {coarse.Termination}; local {local.Termination}, {local.Steps.Count} steps.";
+        _status = $"{(appendWaypoint ? "Queued" : "Move")} {selected.Length} unit(s): lead ({source.X},{source.Z}) → ({target.X},{target.Z}); local {local.Termination}, {local.Steps.Count} steps.";
+    }
+
+    private IEnumerable<CellCoordinate> FormationDestinations(CellCoordinate center, int count)
+    {
+        yield return center;
+        for (var radius = 1; count > 1; radius++)
+        for (var z = -radius; z <= radius; z++)
+        for (var x = -radius; x <= radius; x++)
+        {
+            if (Math.Max(Math.Abs(x), Math.Abs(z)) != radius) continue;
+            var candidate = new CellCoordinate(center.X + x, center.Z + z);
+            if (candidate.X < 0 || candidate.Z < 0 || candidate.X >= _gameplayMap!.Width || candidate.Z >= _gameplayMap.Height) continue;
+            yield return candidate;
+            if (--count == 1) yield break;
+        }
     }
 
     private IEnumerable<WorldEntity> GameplayEntities()

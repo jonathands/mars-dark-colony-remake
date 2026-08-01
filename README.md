@@ -137,7 +137,9 @@ animation.
 In a campaign mission, team-0 units are locally controllable:
 
 - **Left-click** a unit to select it.
-- **Right-click** terrain to issue a deterministic move order.
+- **Shift+left-click** adds/removes a unit from the selection.
+- **Right-click** terrain to issue deterministic move orders; selected units receive distinct nearby formation cells.
+- **Shift+right-click** appends a waypoint instead of replacing the active order.
 - **Left-drag** or use the arrow keys to pan.
 - **F3** shows resolved entity/animation identity; **F4** shows PTH regions.
 

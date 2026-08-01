@@ -152,6 +152,22 @@ Check("scenario simulation chains movement beyond one packed segment", () =>
     Equal(true, actor.MoveOrder is null);
 });
 
+Check("scenario simulation preserves queued move waypoints", () =>
+{
+    var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 6 * 3];
+    bytes[1 * 256 + 1] = 1;
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 3));
+    simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(1, new CellCoordinate(2, 1)))]);
+    simulation.Step([new ScheduledWorldCommand(2, 0, new MoveIntent(1, new CellCoordinate(4, 1), AppendWaypoint: true))]);
+    Equal(1, simulation.Actor(1)!.MoveOrder!.PendingWaypointCount);
+    for (var tick = 0; tick < 200 && simulation.Actor(1)!.MoveOrder is not null; tick++) simulation.Step([]);
+    Equal(new CellCoordinate(4, 1), simulation.Actor(1)!.Movement.OccupiedCell);
+    Equal(true, simulation.Actor(1)!.MoveOrder is null);
+});
+
 Check("scenario simulation waits then replans after a dynamic block", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
