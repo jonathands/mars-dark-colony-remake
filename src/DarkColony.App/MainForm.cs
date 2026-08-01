@@ -331,6 +331,7 @@ public sealed class MainForm : Form
     private void SelectRace(bool gray)
     {
         _grayRace = gray;
+        _singlePlayerMapIndex = 0;
         ShowScreen(MenuScreenId.NewGame);
     }
 
@@ -345,13 +346,15 @@ public sealed class MainForm : Form
     private void StartSinglePlayerWar()
     {
         EnsureSinglePlayerMaps();
-        if (_singlePlayerMaps.Count == 0)
+        var maps = SinglePlayerMapsForSelectedFaction();
+        if (maps.Count == 0)
         {
-            _status = "No complete single-player War maps were found in scenario\\mplayer.";
+            _status = $"No complete {(_grayRace ? "Gray" : "Human")} War maps were found in scenario\\mplayer.";
             return;
         }
 
-        var selected = _singlePlayerMaps[_singlePlayerMapIndex];
+        _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, maps.Count - 1);
+        var selected = maps[_singlePlayerMapIndex];
         var faction = _grayRace ? 1 : 0;
         var localTeam = selected.Teams?.FirstOrDefault(team => team.Enabled && team.Race == faction);
         if (localTeam is null)
@@ -390,10 +393,19 @@ public sealed class MainForm : Form
     private void SelectSinglePlayerMap(int delta)
     {
         EnsureSinglePlayerMaps();
-        if (_singlePlayerMaps.Count == 0) return;
-        _singlePlayerMapIndex = (_singlePlayerMapIndex + delta + _singlePlayerMaps.Count) % _singlePlayerMaps.Count;
-        _status = $"Single Player War map: {_singlePlayerMaps[_singlePlayerMapIndex].Name.ToUpperInvariant()}.";
+        var maps = SinglePlayerMapsForSelectedFaction();
+        if (maps.Count == 0) return;
+        _singlePlayerMapIndex = (_singlePlayerMapIndex + delta + maps.Count) % maps.Count;
+        _status = $"Single Player War map: {maps[_singlePlayerMapIndex].Name.ToUpperInvariant()}.";
         _surface.Invalidate();
+    }
+
+    private IReadOnlyList<ScenarioChoice> SinglePlayerMapsForSelectedFaction()
+    {
+        var faction = _grayRace ? 1 : 0;
+        return _singlePlayerMaps
+            .Where(map => map.Teams?.Any(team => team.Enabled && team.Race == faction) == true)
+            .ToArray();
     }
 
     private string BackgroundName() => _screen switch
@@ -1105,7 +1117,8 @@ public sealed class MainForm : Form
     private void DrawSinglePlayerMapSelection(Graphics graphics)
     {
         EnsureSinglePlayerMaps();
-        if (_singlePlayerMaps.Count == 0)
+        var maps = SinglePlayerMapsForSelectedFaction();
+        if (maps.Count == 0)
         {
             DrawMenuText(graphics, "NO WAR MAPS", new Rectangle(312, 229, 289, 18));
             return;
@@ -1117,11 +1130,12 @@ public sealed class MainForm : Form
         // vertical track; only its map-name contents are reconstructed.
         const int listTop = 229;
         const int listHeight = 179;
-        var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, _singlePlayerMaps.Count - visibleRows));
+        _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, maps.Count - 1);
+        var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, maps.Count - visibleRows));
         var listBounds = new Rectangle(312, listTop, 289, listHeight);
         var state = graphics.Save();
         graphics.SetClip(listBounds);
-        for (var row = 0; row < visibleRows && first + row < _singlePlayerMaps.Count; row++)
+        for (var row = 0; row < visibleRows && first + row < maps.Count; row++)
         {
             var index = first + row;
             var bounds = new Rectangle(314, listTop + row * rowHeight, 285, rowHeight);
@@ -1130,11 +1144,11 @@ public sealed class MainForm : Form
                 using var highlight = new SolidBrush(Color.FromArgb(100, 44, 135, 72));
                 graphics.FillRectangle(highlight, bounds);
             }
-            DrawMenuText(graphics, _singlePlayerMaps[index].Name.ToUpperInvariant(), bounds);
+            DrawMenuText(graphics, maps[index].Name.ToUpperInvariant(), bounds);
         }
         graphics.Restore(state);
 
-        var selected = _singlePlayerMaps[_singlePlayerMapIndex];
+        var selected = maps[_singlePlayerMapIndex];
         DrawMenuText(graphics, "Rank", new Rectangle(500, 52, 100, 18));
         // shumane in_text 5/6/7. The executable binds its profile/faction
         // state into these controls; retain their exact rectangles.
@@ -1149,12 +1163,14 @@ public sealed class MainForm : Form
         const int visibleRows = 10;
         const int listTop = 229;
         const int listHeight = 179;
-        if (point.X is < 312 or >= 601 || point.Y is < listTop or >= listTop + listHeight || _singlePlayerMaps.Count == 0) return;
-        var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, _singlePlayerMaps.Count - visibleRows));
+        var maps = SinglePlayerMapsForSelectedFaction();
+        if (point.X is < 312 or >= 601 || point.Y is < listTop or >= listTop + listHeight || maps.Count == 0) return;
+        _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, maps.Count - 1);
+        var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, maps.Count - visibleRows));
         var index = first + (point.Y - listTop) / rowHeight;
-        if (index >= _singlePlayerMaps.Count) return;
+        if (index >= maps.Count) return;
         _singlePlayerMapIndex = index;
-        _status = $"Single Player War map: {_singlePlayerMaps[index].DisplayName}.";
+        _status = $"Single Player War map: {maps[index].DisplayName}.";
     }
 
     private void SurfaceMouseMove(object? sender, MouseEventArgs eventArgs)

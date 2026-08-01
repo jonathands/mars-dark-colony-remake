@@ -168,10 +168,10 @@ and networking ahead of the local playable slice.
   orders through that team. It does not rewrite original placements or invent a
   replacement roster. A faction missing from a map is reported before launch.
 - Verification currently proves 54 installed maps expose a controllable Human
-  roster and 30 expose a controllable Gray roster. Exact original rules for
-  map-list filtering and profile persistence remain unresolved; therefore the
-  port leaves every complete map visible and labels unavailable factions rather
-  than claiming the original filtered them.
+  roster and 30 expose a controllable Gray roster. The original filtering rule
+  is not yet named in the executable trace, but the compiled port filters its
+  reconstructed list to those data-proven playable rosters; a visible map can
+  therefore always launch for the selected faction.
 - Executable frontend routine `0x402FB4` loads `intrface/shuman.dat` and
   `intrface/shuman`, then uses persistent frontend state at `+0x1494` to toggle
   `shumane` gadgets 36 (`HCOM`) and 35 (`ACOM`). This corroborates that the

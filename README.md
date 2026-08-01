@@ -74,9 +74,8 @@ keyboard navigation, and edge scrolling.
 
 War maps retain their original per-team roster data. The faction currently
 chosen on the New Campaign / Training race screen is also the faction used when
-launching Single Player War: the port resolves the first enabled SCN team for
-that faction and makes that team locally controllable. A map that does not
-offer the chosen faction remains visible but says so before launch. The SCN
+launching Single Player War: the list contains maps with an enabled SCN team
+for that faction, and the port makes that team locally controllable. The SCN
 team format labels fields *after* their values; the port decodes that layout so
 race, starting resource, AI profile, and colour are not shifted by one field.
 
