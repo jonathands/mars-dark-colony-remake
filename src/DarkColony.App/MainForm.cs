@@ -781,14 +781,9 @@ public sealed class MainForm : Form
                 for (var medal = 0; medal < 6; medal++)
                     DrawStoppedAnimation(graphics, "knobe.fin", "SMALLMEDALS", 455 + medal * 16, 129);
                 DrawStoppedAnimation(graphics, "knobe.fin", "RANKS", 576, 49);
-                // shumane gadgets 35-36 share this 80x120 commander viewport.
-                DrawLoopAnimation(
-                    graphics,
-                    "acom.fin",
-                    _grayRace ? "ACOM" : "HCOM",
-                    306,
-                    23,
-                    3);
+                // shumane gadgets 35-36 share this 80x120 commander viewport
+                // and are both declared anim_stopped.
+                DrawStoppedAnimation(graphics, "acom.fin", _grayRace ? "ACOM" : "HCOM", 306, 23);
                 break;
         }
     }

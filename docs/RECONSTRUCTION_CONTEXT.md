@@ -176,8 +176,10 @@ and networking ahead of the local playable slice.
   `intrface/shuman`, then uses persistent frontend state at `+0x1494` to toggle
   `shumane` gadgets 36 (`HCOM`) and 35 (`ACOM`). This corroborates that the
   screen consumes an already-chosen faction; it does not declare its own race
-  buttons. The port therefore keeps faction selection on the recovered New
-  Game screen rather than adding unproven controls to `shumane`.
+  buttons. Both gadgets are declared `anim_stopped`, so the compiled port uses
+  their first stopped frame rather than looping them. The port therefore keeps
+  faction selection on the recovered New Game screen rather than adding
+  unproven controls to `shumane`.
 - The same routine updates source text controls 5, 6, and 7. The port keeps
   those at `(392,27)`, `(312,162)`, and `(28,277)` respectively. Its map-list
   contents remain a port reconstruction, but are clipped to the paired source
