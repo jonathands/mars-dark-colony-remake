@@ -56,6 +56,15 @@ public sealed class MainForm : Form
     private string _leaderName = string.Empty;
     private IReadOnlyList<SinglePlayerWarScenario> _singlePlayerMaps = [];
     private int _singlePlayerMapIndex;
+    private readonly WarLobbyPlayer[] _warLobbyPlayers = WarLobbyPlayer.CreateDefault();
+    private int _warStorageCells;
+    private int _warArtifacts;
+    private bool _warEruptingVents;
+    private bool _warRenewableVents;
+    // dc.exe stores these as 1..20 quarter-percent steps (display = value * 25).
+    private int _warP7QuantityMultiplier = 100;
+    private int _warP7FlowMultiplier = 100;
+    private int _warCommanderRank = 0;
     private ScenarioChoice? _selectedScenario;
     private bool _showAssetNames;
     private bool _showPathRegions;
@@ -291,12 +300,10 @@ public sealed class MainForm : Form
 
     private IReadOnlyList<MenuButton> SinglePlayerButtons() =>
     [
-        Button(0, 140, 446, 90, 26, "BACK", () => ShowScreen(MenuScreenId.Main)),
-        Button(1, 230, 446, 179, 26, "ENCYCLOPEDIA", () => ShowScreen(MenuScreenId.Encyclopedia)),
-        Button(2, 410, 446, 179, 26, "TO BATTLE", StartSinglePlayerWar),
-        // shumane pushb 3/4 and gadgets 13/14: native scroll controls.
-        Button(3, 609, 415, 26, 25, "", () => SelectSinglePlayerMap(1), artName: "DOWN"),
-        Button(4, 609, 195, 26, 25, "", () => SelectSinglePlayerMap(-1), artName: "UP"),
+        Button(0, 430, 452, 90, 26, "MENU", () => ShowScreen(MenuScreenId.Main)),
+        Button(1, 530, 452, 90, 26, "READY", StartSinglePlayerWar),
+        Button(2, 588, 194, 26, 26, "", () => SelectSinglePlayerMap(-1), artName: "UP"),
+        Button(3, 588, 294, 26, 26, "", () => SelectSinglePlayerMap(1), artName: "DOWN"),
     ];
 
     private IReadOnlyList<MenuButton> EncyclopediaButtons() =>
@@ -371,7 +378,7 @@ public sealed class MainForm : Form
     private void StartSinglePlayerWar()
     {
         EnsureSinglePlayerMaps();
-        var maps = SinglePlayerMapsForSelectedFaction();
+        var maps = _singlePlayerMaps;
         if (maps.Count == 0)
         {
             _status = $"No complete {(_grayRace ? "Gray" : "Human")} War maps were found in scenario\\mplayer.";
@@ -380,17 +387,25 @@ public sealed class MainForm : Form
 
         _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, maps.Count - 1);
         var selected = maps[_singlePlayerMapIndex];
-        var faction = _grayRace ? 1 : 0;
+        var localPlayer = _warLobbyPlayers.FirstOrDefault(player => player.Type == WarLobbyPlayerType.Human);
+        if (localPlayer is null)
+        {
+            _status = "Single Player War needs one Human player slot.";
+            return;
+        }
+
+        var faction = localPlayer.Gray ? 1 : 0;
         var localTeam = selected.EnabledTeamForRace(faction);
         if (localTeam is null)
         {
-            _status = $"{selected.DisplayName} has no enabled {(_grayRace ? "Gray" : "Human")} team.";
+            _status = $"{selected.DisplayName} has no enabled {(localPlayer.Gray ? "Gray" : "Human")} team.";
             return;
         }
 
         _selectedScenario = new ScenarioChoice("mplayer", selected.Stem);
         _localPlayerTeam = localTeam.TeamId;
-        _status = $"Single Player War: {selected.Stem.ToUpperInvariant()} as {(_grayRace ? "Gray" : "Human")} team {_localPlayerTeam + 1}.";
+        _grayRace = localPlayer.Gray;
+        _status = $"Single Player War: {selected.Stem.ToUpperInvariant()} as {(localPlayer.Gray ? "Gray" : "Human")} team {_localPlayerTeam + 1}; P7 { _warP7QuantityMultiplier}% / flow {_warP7FlowMultiplier}%.";
         ShowScreen(MenuScreenId.Gameplay);
     }
 
@@ -404,17 +419,11 @@ public sealed class MainForm : Form
     private void SelectSinglePlayerMap(int delta)
     {
         EnsureSinglePlayerMaps();
-        var maps = SinglePlayerMapsForSelectedFaction();
+        var maps = _singlePlayerMaps;
         if (maps.Count == 0) return;
         _singlePlayerMapIndex = (_singlePlayerMapIndex + delta + maps.Count) % maps.Count;
             _status = $"Single Player War map: {maps[_singlePlayerMapIndex].Stem.ToUpperInvariant()}.";
         _surface.Invalidate();
-    }
-
-    private IReadOnlyList<SinglePlayerWarScenario> SinglePlayerMapsForSelectedFaction()
-    {
-        var faction = _grayRace ? 1 : 0;
-        return _singlePlayerMaps.Where(map => map.EnabledTeamForRace(faction) is not null).ToArray();
     }
 
     private string BackgroundName() => _screen switch
@@ -422,7 +431,7 @@ public sealed class MainForm : Form
         MenuScreenId.Main => "intro",
         MenuScreenId.NewGame => "choo",
         MenuScreenId.LoadGame => "loader",
-        MenuScreenId.SinglePlayer => "shuman",
+        MenuScreenId.SinglePlayer => "tcpwait",
         MenuScreenId.Encyclopedia => "ency",
         MenuScreenId.NetworkOptions => "net",
         MenuScreenId.Gameplay => "intrface",
@@ -718,34 +727,10 @@ public sealed class MainForm : Form
                 break;
 
             case MenuScreenId.SinglePlayer:
-                // shumane gadgets 15-39. Coordinates and animation identities
-                // are copied from the original screen definition; only the
-                // selected map data filling its scroll region is port-owned.
-                DrawStoppedAnimation(graphics, "serg.fin", "LEVEL", 26, 308);
-                DrawStoppedAnimation(graphics, "serg.fin", "WEATH", 26, 392);
-                DrawStoppedAnimation(graphics, "serg.fin", "PLASMA", 224, 393);
-                DrawStoppedAnimation(graphics, "serg.fin", "WIND", 157, 330);
-                DrawStoppedAnimation(graphics, "misa.fin", "MISA", 110, 314);
-                DrawStoppedAnimation(graphics, "misa.fin", "MISB", 115, 361);
-                DrawStoppedAnimation(graphics, "misa.fin", "MISC", 209, 362);
-                DrawStoppedAnimation(graphics, "misa.fin", "MISD", 121, 415);
-                DrawStoppedAnimation(graphics, "misa.fin", "MISF", 103, 448);
-                DrawStoppedAnimation(graphics, "misa.fin", "MISG", 11, 371);
-                DrawStoppedAnimation(graphics, "netd.fin", "NETD", 174, 315);
-                // The original frontend conditionally enables medal gadgets
-                // 25–30 from six persisted profile slots. A slot value of -1
-                // hides its gadget (DC.EXE 0x403270–0x403292). We do not yet
-                // reconstruct a career profile, so do not present first-frame
-                // artwork as fictional awards.
-                // DC.EXE sets RANKS to rankIndex + 4 (0x4032dd–0x403326).
-                // A fresh port has rank index zero until career persistence is
-                // reconstructed, so select its matching logical FIN frame.
-                var ranks = Animation("knobe.fin", "RANKS");
-                if (ranks is not null)
-                    DrawAnimationFrame(graphics, "knobe.fin", (ushort)(ranks.FirstFrame + 4), 576, 49);
-                // shumane gadgets 35-36 share this 80x120 commander viewport
-                // and are both declared anim_stopped.
-                DrawStoppedAnimation(graphics, "acom.fin", _grayRace ? "ACOM" : "HCOM", 306, 23);
+                // The native free-war lobby is intrface/multie, over tcpwait,
+                // not shumane. CHAA supplies its structural foreground layer;
+                // the player, map, and option values below are data-driven.
+                DrawStoppedAnimation(graphics, "chaa.fin", "CHAA", 0, 0);
                 break;
         }
     }
@@ -1100,59 +1085,127 @@ public sealed class MainForm : Form
     private void DrawSinglePlayerMapSelection(Graphics graphics)
     {
         EnsureSinglePlayerMaps();
-        var maps = SinglePlayerMapsForSelectedFaction();
+        var maps = _singlePlayerMaps;
         if (maps.Count == 0)
         {
-            DrawMenuText(graphics, "NO WAR MAPS", new Rectangle(312, 229, 289, 18));
+            DrawMenuText(graphics, "NO WAR MAPS", new Rectangle(29, 200, 535, 18), center: false);
             return;
         }
 
-        const int rowHeight = 18;
-        const int visibleRows = 10;
-        // shumane scroll 40: x617 y229 w10 h179. The list shares that exact
-        // vertical track; only its map-name contents are reconstructed.
-        const int listTop = 229;
-        const int listHeight = 179;
+        const int rowHeight = 14;
+        const int visibleRows = 8;
+        const int listTop = 200;
+        const int listHeight = 114;
         _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, maps.Count - 1);
         var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, maps.Count - visibleRows));
-        var listBounds = new Rectangle(312, listTop, 289, listHeight);
+        var listBounds = new Rectangle(29, listTop, 535, listHeight);
         var state = graphics.Save();
         graphics.SetClip(listBounds);
         for (var row = 0; row < visibleRows && first + row < maps.Count; row++)
         {
             var index = first + row;
-            var bounds = new Rectangle(314, listTop + row * rowHeight, 285, rowHeight);
+            var bounds = new Rectangle(29, listTop + row * rowHeight, 535, rowHeight);
             if (index == _singlePlayerMapIndex)
             {
-                using var highlight = new SolidBrush(Color.FromArgb(100, 44, 135, 72));
+                using var highlight = new SolidBrush(Color.FromArgb(85, 0, 255, 255));
                 graphics.FillRectangle(highlight, bounds);
             }
-            DrawMenuText(graphics, maps[index].DisplayName.ToUpperInvariant(), bounds);
+            DrawMenuText(graphics, maps[index].DisplayName, new Rectangle(29, bounds.Y, 280, rowHeight), center: false);
+            DrawMenuText(graphics, WarMapDescription(maps[index].Stem), new Rectangle(310, bounds.Y, 250, rowHeight), center: false);
         }
         graphics.Restore(state);
 
         DrawSinglePlayerScrollThumb(graphics, maps.Count, first, visibleRows);
-
-        var selected = maps[_singlePlayerMapIndex];
-        DrawMenuText(graphics, "Rank", new Rectangle(500, 52, 100, 18), center: false);
-        // shumane in_text 5/6/7. The executable binds its profile/faction
-        // state into these controls; retain their exact rectangles.
-        DrawMenuText(graphics, _leaderName, new Rectangle(392, 27, 210, 16), center: false);
-        DrawMenuText(graphics, selected.DisplayName.ToUpperInvariant(), new Rectangle(312, 162, 230, 16));
-        DrawMenuText(graphics, "AI PLAYER", new Rectangle(28, 277, 250, 16), center: false);
+        DrawWarLobbyPlayers(graphics);
+        DrawWarLobbyOptions(graphics);
     }
 
     private static void DrawSinglePlayerScrollThumb(Graphics graphics, int mapCount, int first, int visibleRows)
     {
-        var track = new Rectangle(617, 229, 10, 179); // shumane scroll 40
+        var track = new Rectangle(596, 227, 10, 61); // multie scroll 30
         var maximumFirst = Math.Max(0, mapCount - visibleRows);
-        var thumbHeight = Math.Clamp(track.Height * visibleRows / Math.Max(visibleRows, mapCount), 18, track.Height);
+        var thumbHeight = Math.Clamp(track.Height * visibleRows / Math.Max(visibleRows, mapCount), 10, track.Height);
         var travel = track.Height - thumbHeight;
         var top = track.Y + (maximumFirst == 0 ? 0 : travel * first / maximumFirst);
-        using var fill = new SolidBrush(Color.FromArgb(165, 91, 140, 83));
-        using var edge = new Pen(Color.FromArgb(210, 180, 218, 160));
+        using var fill = new SolidBrush(Color.FromArgb(190, 235, 25, 25));
+        using var edge = new Pen(Color.FromArgb(230, 245, 80, 80));
         graphics.FillRectangle(fill, track.X + 1, top, track.Width - 2, thumbHeight);
         graphics.DrawRectangle(edge, track.X, top, track.Width - 1, thumbHeight - 1);
+    }
+
+    private void DrawWarLobbyPlayers(Graphics graphics)
+    {
+        var headings = new[] { ("Type", 36, 102), ("Race", 141, 102), ("Name", 246, 160), ("Color", 409, 84), ("Team", 496, 84), ("Ready", 577, 60) };
+        foreach (var (label, x, width) in headings) DrawMenuText(graphics, label, new Rectangle(x, 3, width, 12), center: false);
+        for (var index = 0; index < _warLobbyPlayers.Length; index++)
+        {
+            var player = _warLobbyPlayers[index];
+            var y = 21 + index * 19;
+            DrawMenuText(graphics, WarLobbyTypeLabel(player.Type), new Rectangle(36, y, 62, 16));
+            DrawMenuText(graphics, player.Gray ? "Gray" : "Human", new Rectangle(141, y, 62, 16));
+            var name = index == 0 && !string.IsNullOrWhiteSpace(_leaderName) ? _leaderName : player.Name;
+            DrawMenuText(graphics, name, new Rectangle(246, y, 160, 16), center: false);
+            var type = Animation("knobe.fin", "PLAYERTYPE");
+            if (type is not null) DrawAnimationFrame(graphics, "knobe.fin", type.FirstFrame + (int)player.Type, 99, y);
+            var race = Animation("knobe.fin", "RACEFACE");
+            if (race is not null) DrawAnimationFrame(graphics, "knobe.fin", race.FirstFrame + (player.Gray ? 1 : 0), 204, y);
+            var colors = Animation("knobe.fin", "CUBE");
+            if (colors is not null) DrawAnimationFrame(graphics, "knobe.fin", colors.FirstFrame + player.Color, 425, y + 2);
+            var teams = Animation("knobe.fin", "TEAMS");
+            if (teams is not null) DrawAnimationFrame(graphics, "knobe.fin", teams.FirstFrame + player.Team, 512, y + 2);
+            DrawMenuText(graphics, player.Ready ? "✓" : "", new Rectangle(610, y - 3, 27, 17));
+        }
+    }
+
+    private void DrawWarLobbyOptions(Graphics graphics)
+    {
+        DrawOptionRow(graphics, "Storage Cells", 326, _warStorageCells, ["OFF", "LOW", "MED", "HIGH"]);
+        DrawOptionRow(graphics, "Artifacts", 344, _warArtifacts, ["OFF", "LOW", "MED", "HIGH"]);
+        DrawOptionRow(graphics, "Erupting Vents", 362, _warEruptingVents ? 1 : 0, ["OFF", "ON"], 538);
+        DrawOptionRow(graphics, "Renewable Vents", 380, _warRenewableVents ? 1 : 0, ["OFF", "ON"], 538);
+        DrawMultiplierRow(graphics, "P7 Quantity Multiplier", 400, _warP7QuantityMultiplier);
+        DrawMultiplierRow(graphics, "P7 Flow Multiplier", 418, _warP7FlowMultiplier);
+        var rank = _warLobbyPlayers.FirstOrDefault(player => player.Type == WarLobbyPlayerType.Human)?.Gray == true
+            ? new[] { "XIMAL.", "IDRAC.", "SITRUC.", "REGLIA." }[_warCommanderRank]
+            : new[] { "LEUT.", "CAPT.", "MAJ.", "COL." }[_warCommanderRank];
+        DrawMenuText(graphics, "Commander Rank", new Rectangle(332, 435, 207, 18), center: false);
+        DrawMenuText(graphics, rank, new Rectangle(539, 436, 64, 16));
+    }
+
+    private void DrawOptionRow(Graphics graphics, string label, int y, int selected, string[] values, int start = 456)
+    {
+        DrawMenuText(graphics, label, new Rectangle(332, y, start - 332, 18), center: false);
+        for (var index = 0; index < values.Length; index++)
+        {
+            var bounds = new Rectangle(start + index * 41, y, 41, 18);
+            if (index == selected)
+            {
+                using var highlight = new SolidBrush(Color.FromArgb(70, 255, 0, 0));
+                graphics.FillRectangle(highlight, bounds);
+            }
+            DrawMenuText(graphics, values[index], bounds);
+        }
+    }
+
+    private void DrawMultiplierRow(Graphics graphics, string label, int y, int value)
+    {
+        DrawMenuText(graphics, label, new Rectangle(332, y, 207, 18), center: false);
+        DrawMenuText(graphics, $"{value}%", new Rectangle(539, y, 64, 18));
+        DrawMenuText(graphics, "◀", new Rectangle(521, y, 18, 18));
+        DrawMenuText(graphics, "▶", new Rectangle(603, y, 18, 18));
+    }
+
+    private static string WarMapDescription(string stem)
+    {
+        var players = stem.Length > 1 && char.IsDigit(stem[1]) ? stem[1] : '?';
+        var terrain = stem.Length == 0 ? "Unknown" : char.ToLowerInvariant(stem[0]) switch
+        {
+            'a' => "Atlantis",
+            'd' => "Desert",
+            'j' => "Jungle",
+            _ => "Unknown",
+        };
+        return $"({players} Player {terrain} Map)";
     }
 
     private void DrawNewGameLeaderName(Graphics graphics)
@@ -1164,12 +1217,12 @@ public sealed class MainForm : Form
 
     private void SelectSinglePlayerMapAt(Point point)
     {
-        const int rowHeight = 18;
-        const int visibleRows = 10;
-        const int listTop = 229;
-        const int listHeight = 179;
-        var maps = SinglePlayerMapsForSelectedFaction();
-        if (point.X is < 312 or >= 601 || point.Y is < listTop or >= listTop + listHeight || maps.Count == 0) return;
+        const int rowHeight = 14;
+        const int visibleRows = 8;
+        const int listTop = 200;
+        const int listHeight = 114;
+        var maps = _singlePlayerMaps;
+        if (point.X is < 29 or >= 564 || point.Y is < listTop or >= listTop + listHeight || maps.Count == 0) return;
         _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, maps.Count - 1);
         var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, maps.Count - visibleRows));
         var index = first + (point.Y - listTop) / rowHeight;
@@ -1180,10 +1233,10 @@ public sealed class MainForm : Form
 
     private void SelectSinglePlayerMapFromScroll(Point point)
     {
-        var maps = SinglePlayerMapsForSelectedFaction();
+        var maps = _singlePlayerMaps;
         if (maps.Count == 0) return;
-        const int top = 229;
-        const int height = 179;
+        const int top = 227;
+        const int height = 61;
         var fraction = Math.Clamp(point.Y - top, 0, height - 1) / (double)(height - 1);
         _singlePlayerMapIndex = (int)Math.Round(fraction * (maps.Count - 1));
         _status = $"Single Player War map: {maps[_singlePlayerMapIndex].DisplayName}.";
@@ -1232,7 +1285,7 @@ public sealed class MainForm : Form
     {
         _surface.Focus();
         if (_screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left &&
-            new Rectangle(617, 229, 10, 179).Contains(eventArgs.Location))
+            new Rectangle(596, 227, 10, 61).Contains(eventArgs.Location))
         {
             _singlePlayerScrollDragging = true;
             SelectSinglePlayerMapFromScroll(eventArgs.Location);
@@ -1312,6 +1365,11 @@ public sealed class MainForm : Form
         }
         if (button is null && _screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left)
         {
+            if (HandleWarLobbyClick(eventArgs.Location))
+            {
+                _surface.Invalidate();
+                return;
+            }
             SelectSinglePlayerMapAt(eventArgs.Location);
         }
         _surface.Invalidate();
@@ -1476,6 +1534,125 @@ public sealed class MainForm : Form
 
     private FixedPointPosition ActorPosition(WorldEntity entity) =>
         _scenarioSimulation?.Actor(entity.InstanceId)?.Movement.VisualPosition ?? entity.Position;
+
+    private static string WarLobbyTypeLabel(WarLobbyPlayerType type) => type switch
+    {
+        WarLobbyPlayerType.Ai => "AI",
+        WarLobbyPlayerType.AiPlus => "AI+",
+        WarLobbyPlayerType.Human => "Human",
+        _ => "None",
+    };
+
+    private bool HandleWarLobbyClick(Point point)
+    {
+        // Control geometry and value ranges are recovered from intrface/multie
+        // and dc.exe's 0x4112dd-0x4116f6 event dispatcher.
+        for (var index = 0; index < _warLobbyPlayers.Length; index++)
+        {
+            var y = 21 + index * 19;
+            var player = _warLobbyPlayers[index];
+            if (new Rectangle(99, y, 36, 16).Contains(point))
+            {
+                player.Type = (WarLobbyPlayerType)(((int)player.Type + 1) % 4);
+                return true;
+            }
+            if (new Rectangle(204, y, 27, 16).Contains(point))
+            {
+                player.Gray = !player.Gray;
+                return true;
+            }
+            if (new Rectangle(409, y, 78, 16).Contains(point))
+            {
+                player.Color = Math.Clamp((point.X < 448 ? player.Color + 15 : player.Color + 1) % 16, 0, 15);
+                return true;
+            }
+            if (new Rectangle(496, y, 78, 16).Contains(point))
+            {
+                player.Team = Math.Clamp((point.X < 535 ? player.Team + 15 : player.Team + 1) % 16, 0, 15);
+                return true;
+            }
+            if (new Rectangle(610, y, 27, 17).Contains(point))
+            {
+                player.Ready = !player.Ready;
+                return true;
+            }
+        }
+
+        if (TrySelectWarOption(point, 326, ref _warStorageCells, 4, 456) ||
+            TrySelectWarOption(point, 344, ref _warArtifacts, 4, 456)) return true;
+        if (TrySelectWarBinaryOption(point, 362, ref _warEruptingVents) ||
+            TrySelectWarBinaryOption(point, 380, ref _warRenewableVents)) return true;
+        if (TryAdjustWarMultiplier(point, 400, ref _warP7QuantityMultiplier) ||
+            TryAdjustWarMultiplier(point, 418, ref _warP7FlowMultiplier)) return true;
+        if (point.Y is >= 435 and < 453)
+        {
+            if (point.X is >= 521 and < 539)
+            {
+                _warCommanderRank = Math.Max(0, _warCommanderRank - 1);
+                return true;
+            }
+            if (point.X is >= 603 and < 621)
+            {
+                _warCommanderRank = Math.Min(3, _warCommanderRank + 1);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool TrySelectWarOption(Point point, int y, ref int selected, int count, int start)
+    {
+        if (point.Y < y || point.Y >= y + 18 || point.X < start || point.X >= start + count * 41) return false;
+        selected = (point.X - start) / 41;
+        return true;
+    }
+
+    private static bool TrySelectWarBinaryOption(Point point, int y, ref bool selected)
+    {
+        if (point.Y < y || point.Y >= y + 18 || point.X < 538 || point.X >= 620) return false;
+        selected = point.X >= 579;
+        return true;
+    }
+
+    private static bool TryAdjustWarMultiplier(Point point, int y, ref int percent)
+    {
+        if (point.Y < y || point.Y >= y + 18) return false;
+        if (point.X is >= 521 and < 539)
+        {
+            percent = Math.Max(25, percent - 25);
+            return true;
+        }
+        if (point.X is >= 603 and < 621)
+        {
+            percent = Math.Min(500, percent + 25);
+            return true;
+        }
+        return false;
+    }
+
+    private enum WarLobbyPlayerType { Ai, AiPlus, Human, None }
+
+    private sealed class WarLobbyPlayer
+    {
+        public WarLobbyPlayerType Type { get; set; }
+        public bool Gray { get; set; }
+        public string Name { get; init; } = string.Empty;
+        public int Color { get; set; }
+        public int Team { get; set; }
+        public bool Ready { get; set; }
+
+        public static WarLobbyPlayer[] CreateDefault() =>
+        [
+            new() { Type = WarLobbyPlayerType.Human, Name = "Player", Color = 0, Team = 0 },
+            new() { Type = WarLobbyPlayerType.Ai, Gray = true, Color = 1, Team = 1 },
+            new() { Type = WarLobbyPlayerType.None, Color = 2, Team = 2 },
+            new() { Type = WarLobbyPlayerType.None, Gray = true, Color = 3, Team = 3 },
+            new() { Type = WarLobbyPlayerType.None, Color = 4, Team = 4 },
+            new() { Type = WarLobbyPlayerType.None, Gray = true, Color = 5, Team = 5 },
+            new() { Type = WarLobbyPlayerType.None, Color = 6, Team = 6 },
+            new() { Type = WarLobbyPlayerType.None, Gray = true, Color = 7, Team = 7 },
+        ];
+    }
 
     private readonly record struct ScenarioChoice(
         string Directory,
