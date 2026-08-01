@@ -141,6 +141,7 @@ In a campaign mission, team-0 units are locally controllable:
 - **Shift+drag** makes an additive selection box; ordinary left-drag remains map panning.
 - **Right-click** terrain to issue deterministic move orders; selected units receive distinct nearby formation cells.
 - **Shift+right-click** appends a waypoint instead of replacing the active order.
+- **S** cancels active and queued movement for the selected units.
 - **Left-drag** or use the arrow keys to pan.
 - **F3** shows resolved entity/animation identity; **F4** shows PTH regions.
 

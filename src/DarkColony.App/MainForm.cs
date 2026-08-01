@@ -132,6 +132,11 @@ public sealed class MainForm : Form
             _status = $"PTH region diagnostic {(_showPathRegions ? "on" : "off")}; zero is an unresolved sentinel.";
             return true;
         }
+        if (key == Keys.S)
+        {
+            StopSelectedUnits();
+            return true;
+        }
         var delta = key switch
         {
             Keys.Left => new Point(-16, 0),
@@ -628,7 +633,7 @@ public sealed class MainForm : Form
         if (instanceId == 0 || _scenarioSimulation?.Actor(instanceId) is not { } actor)
         {
             graphics.DrawString("LMB select · Shift+LMB add/remove · RMB move", font, text, 6, 6);
-            graphics.DrawString("Shift+RMB queue waypoint · drag/arrow pan", font, text, 6, 17);
+            graphics.DrawString("Shift+RMB queue · S stop · drag/arrow pan", font, text, 6, 17);
             return;
         }
 
@@ -1214,6 +1219,21 @@ public sealed class MainForm : Form
             source, target, _entityCatalog[leader.EntityId].MovementClass, instanceId);
         _diagnosticPathCells = local.Cells;
         _status = $"{(appendWaypoint ? "Queued" : "Move")} {selected.Length} unit(s): lead ({source.X},{source.Z}) → ({target.X},{target.Z}); local {local.Termination}, {local.Steps.Count} steps.";
+    }
+
+    private void StopSelectedUnits()
+    {
+        if (_scenarioSimulation is null || _selectedEntityInstanceIds.Count == 0) return;
+        var stopped = GameplayEntities()
+            .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && entity.Team == LocalPlayerTeam)
+            .Where(entity => _scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed > 0)
+            .OrderBy(entity => entity.InstanceId)
+            .ToArray();
+        foreach (var entity in stopped)
+            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new StopIntent(entity.InstanceId));
+        _diagnosticMoveTarget = null;
+        _diagnosticPathCells = [];
+        _status = stopped.Length == 0 ? "No mobile local units selected." : $"Stop ordered for {stopped.Length} unit(s).";
     }
 
     private IEnumerable<CellCoordinate> FormationDestinations(CellCoordinate center, int count)

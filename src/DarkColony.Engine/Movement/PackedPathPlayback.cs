@@ -42,6 +42,20 @@ public sealed class PackedPathPlayback
     public int NextStep => nextStep;
     public CellCoordinate? BlockedCell { get; private set; }
 
+    /// <summary>
+    /// Cancels a reserved in-flight step by restoring its source claim. The port
+    /// currently resolves an interrupted sub-cell transition at the source cell;
+    /// the native stop interpolation remains to be recovered.
+    /// </summary>
+    public void Cancel()
+    {
+        if (transition is null) return;
+        if (!occupancy.TryMove(entityInstanceId, Movement.ReservedDestination, Movement.OccupiedCell))
+            throw new InvalidOperationException("Could not restore occupancy while cancelling movement.");
+        transition = null;
+        Movement.CancelTransition();
+    }
+
     public PackedPathPlaybackStatus Step()
     {
         if (BlockedCell is not null) return PackedPathPlaybackStatus.Blocked;

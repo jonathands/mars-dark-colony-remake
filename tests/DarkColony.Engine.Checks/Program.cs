@@ -168,6 +168,28 @@ Check("scenario simulation preserves queued move waypoints", () =>
     Equal(true, simulation.Actor(1)!.MoveOrder is null);
 });
 
+Check("scenario simulation stops an in-flight move coherently", () =>
+{
+    var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 3];
+    bytes[1 * 256 + 1] = 1;
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 3));
+    simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(1, new CellCoordinate(3, 1)))]);
+    var actor = simulation.Actor(1)!;
+    var reserved = actor.Movement.ReservedDestination;
+    Equal(true, reserved != actor.Movement.OccupiedCell);
+    Equal(true, simulation.GroundOccupancy.IsOccupied(reserved));
+    simulation.Step([new ScheduledWorldCommand(2, 0, new StopIntent(1))]);
+    Equal(new CellCoordinate(1, 1), actor.Movement.OccupiedCell);
+    Equal(new FixedPointPosition(1 * 256 + 128, 1 * 256 + 128), actor.Movement.VisualPosition);
+    Equal(true, simulation.GroundOccupancy.IsOccupied(new CellCoordinate(1, 1)));
+    Equal(false, simulation.GroundOccupancy.IsOccupied(reserved));
+    Equal(true, actor.Playback is null);
+    Equal(true, actor.MoveOrder is null);
+});
+
 Check("scenario simulation waits then replans after a dynamic block", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");

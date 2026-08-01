@@ -121,6 +121,13 @@ public sealed class ScenarioSimulation
         var outcomes = new List<MoveCommandOutcome>();
         foreach (var scheduled in commands.OrderBy(command => command.Sequence))
         {
+            if (scheduled.Command is StopIntent stop && actorsById.TryGetValue(stop.EntityInstanceId, out var stoppedActor))
+            {
+                stoppedActor.Playback?.Cancel();
+                stoppedActor.Playback = null;
+                stoppedActor.MoveOrder = null;
+                continue;
+            }
             if (scheduled.Command is not MoveIntent move || !actorsById.TryGetValue(move.EntityInstanceId, out var actor)) continue;
             if (actor.Definition.MovementSpeed <= 0)
             {

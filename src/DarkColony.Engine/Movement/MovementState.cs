@@ -28,4 +28,11 @@ public sealed class MovementState
     {
         OccupiedCell = ReservedDestination;
     }
+
+    /// <summary>Returns presentation to the authoritative logical cell after a cancelled transition.</summary>
+    public void CancelTransition()
+    {
+        ReservedDestination = OccupiedCell;
+        VisualPosition = FixedPointPosition.AtCellCenter(OccupiedCell);
+    }
 }
