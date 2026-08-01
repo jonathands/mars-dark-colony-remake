@@ -66,6 +66,7 @@ public sealed class MainForm : Form
     private bool _mapDragged;
     private Point? _selectionDragStart;
     private Point _selectionDragCurrent;
+    private Point? _gameplayPointer;
     private string _status;
     private ulong _screenStartedAtTick;
 
@@ -87,7 +88,11 @@ public sealed class MainForm : Form
 
         _surface = new Direct3DSurface(RenderFrame) { Dock = DockStyle.Fill };
         _surface.MouseMove += SurfaceMouseMove;
-        _surface.MouseLeave += (_, _) => SetHover(null);
+        _surface.MouseLeave += (_, _) =>
+        {
+            _gameplayPointer = null;
+            SetHover(null);
+        };
         _surface.MouseDown += SurfaceMouseDown;
         _surface.MouseUp += SurfaceMouseUp;
         Controls.Add(_surface);
@@ -110,6 +115,7 @@ public sealed class MainForm : Form
         {
             _clock.Advance(Environment.TickCount64, () =>
             {
+                UpdateGameplayEdgeScroll();
                 _world.Step();
                 _scenarioSimulation?.Step(_world.LastCommands);
             });
@@ -226,6 +232,7 @@ public sealed class MainForm : Form
             MenuScreenId.NetworkOptions => NetworkButtons(),
             _ => [],
         };
+        _surface.Cursor = screen == MenuScreenId.Gameplay ? Cursors.Cross : Cursors.Hand;
         _surface.Invalidate();
     }
 
@@ -260,8 +267,9 @@ public sealed class MainForm : Form
         Button(0, 140, 446, 90, 26, "BACK", () => ShowScreen(MenuScreenId.Main)),
         Button(1, 230, 446, 179, 26, "ENCYCLOPEDIA", () => ShowScreen(MenuScreenId.Encyclopedia)),
         Button(2, 410, 446, 179, 26, "TO BATTLE", StartSinglePlayerWar),
-        Button(3, 180, 397, 90, 25, "PREVIOUS", () => SelectSinglePlayerMap(-1)),
-        Button(4, 370, 397, 90, 25, "NEXT", () => SelectSinglePlayerMap(1)),
+        // shumane pushb 3/4 and gadgets 13/14: native scroll controls.
+        Button(3, 609, 415, 26, 25, "", () => SelectSinglePlayerMap(1), artName: "DOWN"),
+        Button(4, 609, 195, 26, 25, "", () => SelectSinglePlayerMap(-1), artName: "UP"),
     ];
 
     private IReadOnlyList<MenuButton> EncyclopediaButtons() =>
@@ -353,10 +361,13 @@ public sealed class MainForm : Form
         _singlePlayerMaps = Directory.EnumerateFiles(directory, "*.scn")
             .Select(Path.GetFileNameWithoutExtension)
             .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => new ScenarioChoice("mplayer", name!))
-            .Where(choice =>
-                File.Exists(_installation.DataFile("scenario", choice.Directory, $"{choice.Name}.map")) &&
-                File.Exists(_installation.DataFile("scenario", choice.Directory, $"{choice.Name}.pth")))
+            .Where(name =>
+                File.Exists(_installation.DataFile("scenario", "mplayer", $"{name}.map")) &&
+                File.Exists(_installation.DataFile("scenario", "mplayer", $"{name}.pth")))
+            .Select(name => new ScenarioChoice(
+                "mplayer",
+                name!,
+                ScenarioDefinition.Load(_installation.DataFile("scenario", "mplayer", $"{name}.scn")).DisplayName))
             .OrderBy(choice => choice.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, Math.Max(0, _singlePlayerMaps.Count - 1));
@@ -479,6 +490,15 @@ public sealed class MainForm : Form
             _autonomousEntities = _scenarioSimulation.Actors
                 .Where(actor => actor.Seed.Team == AutonomousSpawnSeeder.InternalNeutralTeam)
                 .Select(actor => actor.Seed).ToArray();
+            var localActor = _scenarioSimulation.Actors
+                .Where(actor => actor.Seed.Team == LocalPlayerTeam && actor.Definition.MovementSpeed > 0)
+                .OrderBy(actor => actor.Seed.InstanceId)
+                .FirstOrDefault();
+            if (localActor is not null)
+            {
+                _cameraX = localActor.Movement.OccupiedCell.X * 32 - 258;
+                _cameraY = localActor.Movement.OccupiedCell.Z * 32 - 229;
+            }
             ClampGameplayCamera();
             _status = $"Loaded {scenario.Directory}\\{scenario.Name}: {_scenarioSimulation.Actors.Count} actors.";
             return true;
@@ -685,9 +705,24 @@ public sealed class MainForm : Form
                 break;
 
             case MenuScreenId.SinglePlayer:
+                // shumane gadgets 15-39. Coordinates and animation identities
+                // are copied from the original screen definition; only the
+                // selected map data filling its scroll region is port-owned.
+                DrawStoppedAnimation(graphics, "serg.fin", "LEVEL", 26, 308);
+                DrawStoppedAnimation(graphics, "serg.fin", "WEATH", 26, 392);
+                DrawStoppedAnimation(graphics, "serg.fin", "PLASMA", 224, 393);
+                DrawStoppedAnimation(graphics, "serg.fin", "WIND", 157, 330);
+                DrawStoppedAnimation(graphics, "misa.fin", "MISA", 110, 314);
+                DrawStoppedAnimation(graphics, "misa.fin", "MISB", 115, 361);
+                DrawStoppedAnimation(graphics, "misa.fin", "MISC", 209, 362);
+                DrawStoppedAnimation(graphics, "misa.fin", "MISD", 121, 415);
+                DrawStoppedAnimation(graphics, "misa.fin", "MISF", 103, 448);
+                DrawStoppedAnimation(graphics, "misa.fin", "MISG", 11, 371);
+                DrawStoppedAnimation(graphics, "netd.fin", "NETD", 174, 315);
+                for (var medal = 0; medal < 6; medal++)
+                    DrawStoppedAnimation(graphics, "knobe.fin", "SMALLMEDALS", 455 + medal * 16, 129);
+                DrawStoppedAnimation(graphics, "knobe.fin", "RANKS", 576, 49);
                 // shumane gadgets 35-36 share this 80x120 commander viewport.
-                // Which portrait is visible follows the race selected on the
-                // campaign screen until roster/team decoding supplies the native state.
                 DrawLoopAnimation(
                     graphics,
                     "acom.fin",
@@ -818,6 +853,12 @@ public sealed class MainForm : Form
         var age = _world.TickCount - _screenStartedAtTick;
         var frame = animation.FirstFrame + (ushort)((age / ticksPerFrame) % (ulong)span);
         return DrawAnimationFrame(graphics, fileName, frame, x, y);
+    }
+
+    private bool DrawStoppedAnimation(Graphics graphics, string fileName, string animationName, int x, int y)
+    {
+        var animation = Animation(fileName, animationName);
+        return animation is not null && DrawAnimationFrame(graphics, fileName, animation.FirstFrame, x, y);
     }
 
     private void DrawButton(Graphics graphics, MenuButton button, int sequenceIndex)
@@ -1019,14 +1060,55 @@ public sealed class MainForm : Form
     private void DrawSinglePlayerMapSelection(Graphics graphics)
     {
         EnsureSinglePlayerMaps();
-        var text = _singlePlayerMaps.Count == 0
-            ? "NO MULTIPLAYER MAPS FOUND"
-            : $"WAR MAP  {_singlePlayerMapIndex + 1}/{_singlePlayerMaps.Count}  {_singlePlayerMaps[_singlePlayerMapIndex].Name.ToUpperInvariant()}";
-        DrawPanelText(graphics, text, new Rectangle(132, 365, 376, 25));
+        if (_singlePlayerMaps.Count == 0)
+        {
+            DrawMenuText(graphics, "NO WAR MAPS", new Rectangle(312, 222, 290, 18));
+            return;
+        }
+
+        const int rowHeight = 18;
+        const int visibleRows = 11;
+        var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, _singlePlayerMaps.Count - visibleRows));
+        var listBounds = new Rectangle(312, 222, 289, visibleRows * rowHeight);
+        var state = graphics.Save();
+        graphics.SetClip(listBounds);
+        for (var row = 0; row < visibleRows && first + row < _singlePlayerMaps.Count; row++)
+        {
+            var index = first + row;
+            var bounds = new Rectangle(314, 222 + row * rowHeight, 285, rowHeight);
+            if (index == _singlePlayerMapIndex)
+            {
+                using var highlight = new SolidBrush(Color.FromArgb(100, 44, 135, 72));
+                graphics.FillRectangle(highlight, bounds);
+            }
+            DrawMenuText(graphics, _singlePlayerMaps[index].Name.ToUpperInvariant(), bounds);
+        }
+        graphics.Restore(state);
+
+        var selected = _singlePlayerMaps[_singlePlayerMapIndex];
+        DrawMenuText(graphics, "Rank", new Rectangle(500, 52, 100, 18));
+        DrawMenuText(graphics, $"WAR MAP {_singlePlayerMapIndex + 1}/{_singlePlayerMaps.Count}", new Rectangle(392, 22, 210, 16));
+        DrawMenuText(graphics, (selected.DisplayName ?? selected.Name).ToUpperInvariant(), new Rectangle(312, 154, 230, 16));
+    }
+
+    private void SelectSinglePlayerMapAt(Point point)
+    {
+        const int rowHeight = 18;
+        const int visibleRows = 11;
+        if (point.X is < 312 or >= 601 || point.Y is < 222 or >= 222 + visibleRows * rowHeight || _singlePlayerMaps.Count == 0) return;
+        var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, _singlePlayerMaps.Count - visibleRows));
+        var index = first + (point.Y - 222) / rowHeight;
+        if (index >= _singlePlayerMaps.Count) return;
+        _singlePlayerMapIndex = index;
+        _status = $"Single Player War map: {_singlePlayerMaps[index].DisplayName}.";
     }
 
     private void SurfaceMouseMove(object? sender, MouseEventArgs eventArgs)
     {
+        if (_screen == MenuScreenId.Gameplay)
+        {
+            _gameplayPointer = eventArgs.Location;
+        }
         if (_screen == MenuScreenId.Gameplay && _selectionDragStart is not null && eventArgs.Button.HasFlag(MouseButtons.Left))
         {
             _selectionDragCurrent = eventArgs.Location;
@@ -1037,7 +1119,7 @@ public sealed class MainForm : Form
         {
             var dx = eventArgs.X - start.X;
             var dy = eventArgs.Y - start.Y;
-            if (_mapDragged || Math.Abs(dx) > 4 || Math.Abs(dy) > 4)
+            if (_mapDragged || Math.Abs(dx) > 8 || Math.Abs(dy) > 8)
             {
                 _mapDragged = true;
                 SetGameplayCamera(_mapDragCamera.X - dx, _mapDragCamera.Y - dy);
@@ -1118,6 +1200,10 @@ public sealed class MainForm : Form
                 }
             }
         }
+        if (button is null && _screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left)
+        {
+            SelectSinglePlayerMapAt(eventArgs.Location);
+        }
         _surface.Invalidate();
     }
 
@@ -1133,6 +1219,15 @@ public sealed class MainForm : Form
         _terrainPreview?.Dispose();
         _terrainPreview = null;
         _surface.Invalidate();
+    }
+
+    private void UpdateGameplayEdgeScroll()
+    {
+        if (_screen != MenuScreenId.Gameplay || _gameplayPointer is not { } pointer || _mapDragStart is not null || _selectionDragStart is not null) return;
+        if (pointer.X is < 0 or >= 516 || pointer.Y is < 0 or >= 458) return;
+        var x = pointer.X <= 8 ? -16 : pointer.X >= 507 ? 16 : 0;
+        var y = pointer.Y <= 8 ? -16 : pointer.Y >= 449 ? 16 : 0;
+        if (x != 0 || y != 0) MoveGameplayCamera(x, y);
     }
 
     private void SelectGameplayActor(Point point)
@@ -1272,5 +1367,5 @@ public sealed class MainForm : Form
     private FixedPointPosition ActorPosition(WorldEntity entity) =>
         _scenarioSimulation?.Actor(entity.InstanceId)?.Movement.VisualPosition ?? entity.Position;
 
-    private readonly record struct ScenarioChoice(string Directory, string Name);
+    private readonly record struct ScenarioChoice(string Directory, string Name, string? DisplayName = null);
 }

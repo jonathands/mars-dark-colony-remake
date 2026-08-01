@@ -55,17 +55,22 @@ supports its three categories and list navigation, and previews confirmed FIN
 animations where their native identity is mapped.
 
 The first in-game harness is available through **Single Player War** (choose a
-map with **Previous**/**Next**, then **To Battle**) or campaign start. Single
-Player War discovers complete original `scenario/mplayer` SCN/MAP/PTH triplets
-at runtime and loads the selected scenario before gameplay is entered. It
-renders a 516x458 native terrain viewport and composites the original gameplay
-HUD above it. The engine now parses the complete SCN corpus, seeds ordinary
-placements as deterministic world entities, and applies executable-confirmed
-building footprints to static occupancy when structures are introduced. The
-shipped scenarios contain no such ordinary building placements. Special vent
-records and unresolved entity kinds stay separate so the port does not invent
-blockers. Selection, camera movement, and simulation commands are the next
-engine slice.
+map from the original screen's right-side list, use its native **Up**/**Down**
+buttons, then choose **To Battle**) or campaign start. Its 640x480 arrangement
+uses the recovered `shumane` screen definition: original button coordinates,
+commander viewport, rank and medal decorations, and campaign-stat gadgets are
+read from the external installation. The map names placed in the recovered
+scroll region are a clearly separated port reconstruction. Single Player War
+discovers complete original `scenario/mplayer` SCN/MAP/PTH triplets at runtime
+and loads the selected scenario before gameplay is entered. It renders a
+516x458 native terrain viewport and composites the original gameplay HUD above
+it. The engine now parses the complete SCN corpus, seeds ordinary placements as
+deterministic world entities, and applies executable-confirmed building
+footprints to static occupancy when structures are introduced. The shipped
+scenarios contain no such ordinary building placements. Special vent records
+and unresolved entity kinds stay separate so the port does not invent blockers.
+Gameplay supports direct unit clicks, box selection, orders, drag panning,
+keyboard navigation, and edge scrolling.
 
 Campaign starts now load `human01` or `alien01` and draw their ordinary SCN
 actors using positional `gamestat.txt` identity plus exact `<CODE>STAND…` FIN
@@ -75,17 +80,18 @@ toggle `entity ID · code · FIN` labels. Training starts retain the first
 training maps, whose SCNs contain only special vent records.
 
 During gameplay, the arrow keys pan the camera in 16-pixel increments within
-the decoded MAP bounds. Left-dragging the terrain by more than four pixels pans
-the map and captures the pointer until release. A short left-click on visible
-nontransparent actor art selects
-the topmost depth-sorted actor and draws a provisional cyan ground marker. This
-alpha hit test and marker are presentation diagnostics pending recovery of the
-original selection masks; they do not mutate simulation state.
+the decoded MAP bounds; holding the pointer in the eight-pixel viewport border
+also scrolls at the fixed simulation cadence. Left-dragging terrain by more
+than eight pixels pans the map and captures the pointer until release. A short
+left-click on visible actor art selects the topmost depth-sorted local actor;
+dragging a box selects local actors within it. The cyan ground marker remains a
+presentation diagnostic while original selection masks are still unresolved.
 
 Right-clicking a map cell with an actor selected submits a deterministic
-next-tick `MoveIntent` and draws a cyan target marker. This is deliberately an
-ingress diagnostic only: it does not move the actor until PTH routing,
-passability, native actor commands, and occupancy playback are connected.
+next-tick `MoveIntent`; the route uses decoded PTH regions plus local
+passability, reservations, interpolation, occupancy updates, and blocked-path
+repair. Hold **Shift** while right-clicking to append a waypoint. Press **S**
+to stop the selected actors and discard their active and queued movement.
 
 Press **F4** during gameplay to overlay PTH diagnostics. Region-zero cells are
 shaded red and region boundaries are cyan. This deliberately says “region
