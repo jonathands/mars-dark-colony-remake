@@ -778,8 +778,11 @@ public sealed class MainForm : Form
                 DrawStoppedAnimation(graphics, "misa.fin", "MISF", 103, 448);
                 DrawStoppedAnimation(graphics, "misa.fin", "MISG", 11, 371);
                 DrawStoppedAnimation(graphics, "netd.fin", "NETD", 174, 315);
-                for (var medal = 0; medal < 6; medal++)
-                    DrawStoppedAnimation(graphics, "knobe.fin", "SMALLMEDALS", 455 + medal * 16, 129);
+                // The original frontend conditionally enables medal gadgets
+                // 25–30 from six persisted profile slots. A slot value of -1
+                // hides its gadget (DC.EXE 0x403270–0x403292). We do not yet
+                // reconstruct a career profile, so do not present first-frame
+                // artwork as fictional awards.
                 DrawStoppedAnimation(graphics, "knobe.fin", "RANKS", 576, 49);
                 // shumane gadgets 35-36 share this 80x120 commander viewport
                 // and are both declared anim_stopped.

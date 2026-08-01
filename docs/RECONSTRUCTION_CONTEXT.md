@@ -201,6 +201,12 @@ and networking ahead of the local playable slice.
 - Mplayer SCN line 3 is the user-facing map title (for example, `d2play01` is
   `Dead Man's Wharf`), while line 2 is an internal scenario stem. The War list
   renders the former and uses the latter only for external-file resolution.
+- `DC.EXE` `0x403270`–`0x403292` iterates `shumane` gadgets 25–30 and reads a
+  corresponding frontend profile slot at `+0x1448 + gadgetId * 4`. A value of
+  `-1` disables a medal; another value selects its stopped frame. Because the
+  compiled port has no recovered career-profile persistence, its neutral War
+  screen renders no medals. The rank badge remains the first `RANKS` frame
+  pending recovery of the separate rank slot/mapping.
 
 ## Encyclopedia checkpoint
 
