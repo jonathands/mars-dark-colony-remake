@@ -54,9 +54,11 @@ as transitional rather than a completed renderer. The encyclopedia reads the ori
 supports its three categories and list navigation, and previews confirmed FIN
 animations where their native identity is mapped.
 
-The first in-game harness is available through **Single Player War → To
-Battle** (or campaign start). It decodes the original training MAP/BTS data,
-renders a 516x458 native terrain viewport, and composites the original gameplay
+The first in-game harness is available through **Single Player War** (choose a
+map with **Previous**/**Next**, then **To Battle**) or campaign start. Single
+Player War discovers complete original `scenario/mplayer` SCN/MAP/PTH triplets
+at runtime and loads the selected scenario before gameplay is entered. It
+renders a 516x458 native terrain viewport and composites the original gameplay
 HUD above it. The engine now parses the complete SCN corpus, seeds ordinary
 placements as deterministic world entities, and applies executable-confirmed
 building footprints to static occupancy when structures are introduced. The

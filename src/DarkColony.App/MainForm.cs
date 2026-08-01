@@ -51,6 +51,9 @@ public sealed class MainForm : Form
     private int? _pressedButton;
     private bool _training;
     private bool _grayRace;
+    private IReadOnlyList<ScenarioChoice> _singlePlayerMaps = [];
+    private int _singlePlayerMapIndex;
+    private ScenarioChoice? _selectedScenario;
     private bool _showAssetNames;
     private bool _showPathRegions;
     private int? _selectedEntityInstanceId;
@@ -188,6 +191,7 @@ public sealed class MainForm : Form
             _alternateOccupancy = null;
             _cameraX = 30 * 32;
             _cameraY = 22 * 32;
+            LoadGameplayScenario();
         }
         _screen = screen;
         _screenStartedAtTick = _world.TickCount;
@@ -236,7 +240,9 @@ public sealed class MainForm : Form
     [
         Button(0, 140, 446, 90, 26, "BACK", () => ShowScreen(MenuScreenId.Main)),
         Button(1, 230, 446, 179, 26, "ENCYCLOPEDIA", () => ShowScreen(MenuScreenId.Encyclopedia)),
-        Button(2, 410, 446, 179, 26, "TO BATTLE", () => ShowScreen(MenuScreenId.Gameplay)),
+        Button(2, 410, 446, 179, 26, "TO BATTLE", StartSinglePlayerWar),
+        Button(3, 180, 397, 90, 25, "PREVIOUS", () => SelectSinglePlayerMap(-1)),
+        Button(4, 370, 397, 90, 25, "NEXT", () => SelectSinglePlayerMap(1)),
     ];
 
     private IReadOnlyList<MenuButton> EncyclopediaButtons() =>
@@ -301,8 +307,49 @@ public sealed class MainForm : Form
 
     private void StartCampaign()
     {
+        _selectedScenario = null;
         _status = $"{(_grayRace ? "Gray" : "Human")} {(_training ? "training" : "campaign")} terrain harness.";
         ShowScreen(MenuScreenId.Gameplay);
+    }
+
+    private void StartSinglePlayerWar()
+    {
+        EnsureSinglePlayerMaps();
+        if (_singlePlayerMaps.Count == 0)
+        {
+            _status = "No complete single-player War maps were found in scenario\\mplayer.";
+            return;
+        }
+
+        _selectedScenario = _singlePlayerMaps[_singlePlayerMapIndex];
+        _status = $"Single Player War: {_selectedScenario.Value.Name.ToUpperInvariant()}.";
+        ShowScreen(MenuScreenId.Gameplay);
+    }
+
+    private void EnsureSinglePlayerMaps()
+    {
+        if (_singlePlayerMaps.Count != 0 || _installation is null) return;
+        var directory = _installation.DataFile("scenario", "mplayer");
+        if (!Directory.Exists(directory)) return;
+        _singlePlayerMaps = Directory.EnumerateFiles(directory, "*.scn")
+            .Select(Path.GetFileNameWithoutExtension)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => new ScenarioChoice("mplayer", name!))
+            .Where(choice =>
+                File.Exists(_installation.DataFile("scenario", choice.Directory, $"{choice.Name}.map")) &&
+                File.Exists(_installation.DataFile("scenario", choice.Directory, $"{choice.Name}.pth")))
+            .OrderBy(choice => choice.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, Math.Max(0, _singlePlayerMaps.Count - 1));
+    }
+
+    private void SelectSinglePlayerMap(int delta)
+    {
+        EnsureSinglePlayerMaps();
+        if (_singlePlayerMaps.Count == 0) return;
+        _singlePlayerMapIndex = (_singlePlayerMapIndex + delta + _singlePlayerMaps.Count) % _singlePlayerMaps.Count;
+        _status = $"Single Player War map: {_singlePlayerMaps[_singlePlayerMapIndex].Name.ToUpperInvariant()}.";
+        _surface.Invalidate();
     }
 
     private string BackgroundName() => _screen switch
@@ -350,6 +397,7 @@ public sealed class MainForm : Form
 
         if (_screen == MenuScreenId.Main) DrawOpeningLogo(graphics);
         DrawInnerMenuAssets(graphics);
+        if (_screen == MenuScreenId.SinglePlayer) DrawSinglePlayerMapSelection(graphics);
 
         for (var index = 0; index < _buttons.Count; index++) DrawButton(graphics, _buttons[index], index);
 
@@ -370,27 +418,7 @@ public sealed class MainForm : Form
         if (_installation is null) return;
         try
         {
-            if (_gameplayMap is null || _gameplayTileset is null || _gameplayPath is null || _scenarioWorld is null)
-            {
-                var (directory, scenario) = GameplayScenario();
-                var definition = ScenarioDefinition.Load(_installation.DataFile("scenario", directory, $"{scenario}.scn"));
-                _gameplayMap = TerrainMap.Load(_installation.DataFile("scenario", directory, $"{scenario}.map"));
-                _gameplayTileset = BtsTileset.Load(_installation.DataFile("scenario", definition.Tileset));
-                _gameplayPath = PathRegionMap.Load(
-                    _installation.DataFile("scenario", directory, $"{scenario}.pth"),
-                    _gameplayMap.Width,
-                    _gameplayMap.Height);
-                ClampGameplayCamera();
-                var footprints = BuildingFootprintCatalog.Load(Path.Combine(_installation.RootPath, "dc.exe"));
-                _scenarioWorld = ScenarioWorld.Create(definition, footprints);
-                _entityCatalog ??= EntityCatalog.Load(_installation.DataFile("gamestat", "gamestat.txt"));
-                _scenarioSimulation = ScenarioSimulation.Create(definition, _entityCatalog, _gameplayPath, footprints);
-                _groundOccupancy = _scenarioSimulation.GroundOccupancy;
-                _alternateOccupancy = _scenarioSimulation.AlternateOccupancy;
-                _autonomousEntities = _scenarioSimulation.Actors
-                    .Where(actor => actor.Seed.Team == AutonomousSpawnSeeder.InternalNeutralTeam)
-                    .Select(actor => actor.Seed).ToArray();
-            }
+            if (_gameplayMap is null || _gameplayTileset is null || _gameplayPath is null || _scenarioWorld is null) return;
 
             if (_terrainPreview is null)
             {
@@ -406,9 +434,42 @@ public sealed class MainForm : Form
         }
     }
 
-    private (string Directory, string Name) GameplayScenario() => _training
-        ? ("test", _grayRace ? "atrain1" : "htrain1")
-        : (_grayRace ? "alien" : "human", _grayRace ? "alien01" : "human01");
+    private ScenarioChoice GameplayScenario() => _selectedScenario ?? (_training
+        ? new ScenarioChoice("test", _grayRace ? "atrain1" : "htrain1")
+        : new ScenarioChoice(_grayRace ? "alien" : "human", _grayRace ? "alien01" : "human01"));
+
+    private bool LoadGameplayScenario()
+    {
+        if (_installation is null) return false;
+        try
+        {
+            var scenario = GameplayScenario();
+            var definition = ScenarioDefinition.Load(_installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.scn"));
+            _gameplayMap = TerrainMap.Load(_installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.map"));
+            _gameplayTileset = BtsTileset.Load(_installation.DataFile("scenario", definition.Tileset));
+            _gameplayPath = PathRegionMap.Load(
+                _installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.pth"),
+                _gameplayMap.Width,
+                _gameplayMap.Height);
+            var footprints = BuildingFootprintCatalog.Load(_installation.ExecutablePath);
+            _scenarioWorld = ScenarioWorld.Create(definition, footprints);
+            _entityCatalog ??= EntityCatalog.Load(_installation.DataFile("gamestat", "gamestat.txt"));
+            _scenarioSimulation = ScenarioSimulation.Create(definition, _entityCatalog, _gameplayPath, footprints);
+            _groundOccupancy = _scenarioSimulation.GroundOccupancy;
+            _alternateOccupancy = _scenarioSimulation.AlternateOccupancy;
+            _autonomousEntities = _scenarioSimulation.Actors
+                .Where(actor => actor.Seed.Team == AutonomousSpawnSeeder.InternalNeutralTeam)
+                .Select(actor => actor.Seed).ToArray();
+            ClampGameplayCamera();
+            _status = $"Loaded {scenario.Directory}\\{scenario.Name}: {_scenarioSimulation.Actors.Count} actors.";
+            return true;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or FormatException)
+        {
+            _status = $"Could not load map: {error.Message}";
+            return false;
+        }
+    }
 
     private void DrawGameplayPathRegions(Graphics graphics)
     {
@@ -922,6 +983,15 @@ public sealed class MainForm : Form
         graphics.DrawString(text, font, brush, bounds, format);
     }
 
+    private void DrawSinglePlayerMapSelection(Graphics graphics)
+    {
+        EnsureSinglePlayerMaps();
+        var text = _singlePlayerMaps.Count == 0
+            ? "NO MULTIPLAYER MAPS FOUND"
+            : $"WAR MAP  {_singlePlayerMapIndex + 1}/{_singlePlayerMaps.Count}  {_singlePlayerMaps[_singlePlayerMapIndex].Name.ToUpperInvariant()}";
+        DrawPanelText(graphics, text, new Rectangle(132, 365, 376, 25));
+    }
+
     private void SurfaceMouseMove(object? sender, MouseEventArgs eventArgs)
     {
         if (_screen == MenuScreenId.Gameplay && _mapDragStart is { } start && eventArgs.Button.HasFlag(MouseButtons.Left))
@@ -1081,4 +1151,5 @@ public sealed class MainForm : Form
     private FixedPointPosition ActorPosition(WorldEntity entity) =>
         _scenarioSimulation?.Actor(entity.InstanceId)?.Movement.VisualPosition ?? entity.Position;
 
+    private readonly record struct ScenarioChoice(string Directory, string Name);
 }
