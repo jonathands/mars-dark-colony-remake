@@ -138,6 +138,7 @@ In a campaign mission, team-0 units are locally controllable:
 
 - **Left-click** a unit to select it.
 - **Shift+left-click** adds/removes a unit from the selection.
+- **Shift+drag** makes an additive selection box; ordinary left-drag remains map panning.
 - **Right-click** terrain to issue deterministic move orders; selected units receive distinct nearby formation cells.
 - **Shift+right-click** appends a waypoint instead of replacing the active order.
 - **Left-drag** or use the arrow keys to pan.

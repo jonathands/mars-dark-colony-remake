@@ -64,6 +64,8 @@ public sealed class MainForm : Form
     private Point? _mapDragStart;
     private Point _mapDragCamera;
     private bool _mapDragged;
+    private Point? _selectionDragStart;
+    private Point _selectionDragCurrent;
     private string _status;
     private ulong _screenStartedAtTick;
 
@@ -579,6 +581,16 @@ public sealed class MainForm : Form
                 graphics.DrawLine(marker, x + 8, y + 16, x + 23, y + 16);
                 graphics.DrawLine(marker, x + 16, y + 8, x + 16, y + 23);
             }
+            if (_selectionDragStart is { } selectionStart)
+            {
+                var bounds = Rectangle.FromLTRB(
+                    Math.Min(selectionStart.X, _selectionDragCurrent.X), Math.Min(selectionStart.Y, _selectionDragCurrent.Y),
+                    Math.Max(selectionStart.X, _selectionDragCurrent.X), Math.Max(selectionStart.Y, _selectionDragCurrent.Y));
+                using var selectionFill = new SolidBrush(Color.FromArgb(35, 80, 235, 220));
+                using var selectionBorder = new Pen(Color.FromArgb(210, 110, 255, 235));
+                graphics.FillRectangle(selectionFill, bounds);
+                graphics.DrawRectangle(selectionBorder, bounds);
+            }
             graphics.Restore(state);
         }
         catch (Exception error) when (error is IOException or InvalidDataException)
@@ -998,6 +1010,12 @@ public sealed class MainForm : Form
 
     private void SurfaceMouseMove(object? sender, MouseEventArgs eventArgs)
     {
+        if (_screen == MenuScreenId.Gameplay && _selectionDragStart is not null && eventArgs.Button.HasFlag(MouseButtons.Left))
+        {
+            _selectionDragCurrent = eventArgs.Location;
+            _surface.Invalidate();
+            return;
+        }
         if (_screen == MenuScreenId.Gameplay && _mapDragStart is { } start && eventArgs.Button.HasFlag(MouseButtons.Left))
         {
             var dx = eventArgs.X - start.X;
@@ -1024,9 +1042,17 @@ public sealed class MainForm : Form
         _surface.Focus();
         if (_screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left && eventArgs.X < 516 && eventArgs.Y < 458)
         {
-            _mapDragStart = eventArgs.Location;
-            _mapDragCamera = new Point(_cameraX, _cameraY);
-            _mapDragged = false;
+            if (ModifierKeys.HasFlag(Keys.Shift))
+            {
+                _selectionDragStart = eventArgs.Location;
+                _selectionDragCurrent = eventArgs.Location;
+            }
+            else
+            {
+                _mapDragStart = eventArgs.Location;
+                _mapDragCamera = new Point(_cameraX, _cameraY);
+                _mapDragged = false;
+            }
             _surface.Capture = true;
         }
         if (eventArgs.Button != MouseButtons.Left) return;
@@ -1037,14 +1063,24 @@ public sealed class MainForm : Form
     private void SurfaceMouseUp(object? sender, MouseEventArgs eventArgs)
     {
         var wasMapDrag = _mapDragged;
+        var selectionStart = _selectionDragStart;
+        var selectionBounds = selectionStart is { } start ? Rectangle.FromLTRB(
+            Math.Min(start.X, eventArgs.X), Math.Min(start.Y, eventArgs.Y),
+            Math.Max(start.X, eventArgs.X), Math.Max(start.Y, eventArgs.Y)) : Rectangle.Empty;
+        var wasSelectionDrag = selectionStart is not null && (selectionBounds.Width > 4 || selectionBounds.Height > 4);
         _mapDragStart = null;
         _mapDragged = false;
+        _selectionDragStart = null;
         _surface.Capture = false;
         var pressed = _pressedButton;
         _pressedButton = null;
         var button = _buttons.LastOrDefault(candidate => candidate.Id == pressed && candidate.Bounds.Contains(eventArgs.Location));
         button?.Action();
-        if (button is null && !wasMapDrag && _screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left)
+        if (button is null && wasSelectionDrag && _screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left)
+        {
+            SelectGameplayActorsInRectangle(selectionBounds);
+        }
+        else if (button is null && !wasMapDrag && _screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left)
         {
             SelectGameplayActor(eventArgs.Location);
         }
@@ -1094,6 +1130,7 @@ public sealed class MainForm : Form
         foreach (var entity in GameplayEntities().OrderBy(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
         {
             if (entity.Team != LocalPlayerTeam) continue;
+            if (_scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed <= 0) continue;
             if ((uint)entity.EntityId >= (uint)_entityCatalog.Entities.Count) continue;
             var actorState = _scenarioSimulation.Actor(entity.InstanceId);
             var moveSelection = actorState?.Playback is not null
@@ -1128,6 +1165,25 @@ public sealed class MainForm : Form
         _status = selected is null
             ? "Selection cleared."
             : $"{_selectedEntityInstanceIds.Count} selected · #{selected.EntityId} {_entityCatalog[selected.EntityId].DisplayName} · team {selected.Team}.";
+    }
+
+    private void SelectGameplayActorsInRectangle(Rectangle bounds)
+    {
+        if (_scenarioSimulation is null) return;
+        var selected = GameplayEntities()
+            .Where(entity => entity.Team == LocalPlayerTeam)
+            .Where(entity => _scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed > 0)
+            .Where(entity =>
+            {
+                var position = ActorPosition(entity);
+                return bounds.Contains(position.XRaw / 8 - _cameraX, position.ZRaw / 8 - _cameraY);
+            })
+            .Select(entity => entity.InstanceId)
+            .ToArray();
+        foreach (var instanceId in selected) _selectedEntityInstanceIds.Add(instanceId);
+        _status = selected.Length == 0
+            ? "No mobile local units in selection box."
+            : $"{_selectedEntityInstanceIds.Count} unit(s) selected.";
     }
 
     private void QueueDiagnosticMove(Point point)
