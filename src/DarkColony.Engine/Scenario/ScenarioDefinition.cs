@@ -50,6 +50,10 @@ public sealed class ScenarioDefinition
     public string InternalName { get; }
     public string DisplayName { get; }
     public IReadOnlyList<ScenarioTeam> Teams { get; }
+    public ScenarioTeam? EnabledTeamForRace(int race) => Teams
+        .Where(team => team.Enabled && team.Race == race)
+        .OrderBy(team => team.TeamId)
+        .FirstOrDefault();
     public IReadOnlyList<ScenarioPlacement> Placements { get; }
     public IReadOnlyList<ScenarioVent> Vents { get; }
     public IReadOnlyList<ScenarioPlacement> OrdinaryPlacements => Placements.Where(placement => placement.Team != -1).ToArray();
@@ -87,20 +91,23 @@ public sealed class ScenarioDefinition
                 throw new InvalidDataException($"Invalid SCN team line: {lines[start]}");
             }
 
+            // SCN team blocks use postfix labels: the value immediately before
+            // %Race belongs to Race, and so on. Treating the following value as
+            // the field makes a 1,500 starting resource look like a race.
             teams.Add(new ScenarioTeam(
                 teamId,
                 enabled != 0,
-                Field("Race"),
-                Field("Money"),
-                Field("AI"),
-                Field("TeamColour")));
+                ValueBefore("Race"),
+                ValueBefore("Money"),
+                ValueBefore("AI"),
+                ValueBefore("TeamColour")));
 
-            int? Field(string name)
+            int? ValueBefore(string name)
             {
-                for (var index = start + 1; index + 1 < end; index++)
+                for (var index = start + 2; index < end; index++)
                 {
                     if (!lines[index].Equals($"%{name}", StringComparison.OrdinalIgnoreCase)) continue;
-                    var values = Integers(lines[index + 1]);
+                    var values = Integers(lines[index - 1]);
                     return values.Length == 0 ? null : values[0];
                 }
 

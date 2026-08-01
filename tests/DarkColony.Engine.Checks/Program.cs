@@ -486,6 +486,19 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Console.WriteLine($"  scenario corpus: {files.Length} files / {placementCount} raw placements / {ventCount} vents / {autonomousGroupCount} nature groups / {autonomousPopulation} desired actors");
     });
 
+    Check("SCN team blocks preserve postfix-labelled faction fields", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var scenario = ScenarioDefinition.Load(install.DataFile("scenario", "mplayer", "d2play01.scn"));
+        Equal(0, scenario.Teams[0].Race ?? -1);
+        Equal(1_500, scenario.Teams[0].StartingResource ?? -1);
+        Equal(0, scenario.Teams[0].AiProfile ?? -1);
+        Equal(0, scenario.Teams[0].TeamColor ?? -1);
+        Equal(1, scenario.Teams[1].Race ?? -1);
+        Equal(0, scenario.EnabledTeamForRace(0)?.TeamId ?? -1);
+        Equal(1, scenario.EnabledTeamForRace(1)?.TeamId ?? -1);
+    });
+
     Check("executable building footprints decode", () =>
     {
         var footprints = BuildingFootprintCatalog.Load(Path.Combine(dataPath, "dc.exe"));
@@ -579,6 +592,33 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
             controllableActors += localActors;
         }
         Console.WriteLine($"  single-player War: {files.Length} maps / {controllableActors} local mobile actors");
+    });
+
+    Check("single-player War rosters expose controllable Human and Gray teams", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var catalog = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        var footprints = BuildingFootprintCatalog.Load(install.ExecutablePath);
+        var available = new int[2];
+        foreach (var file in Directory.GetFiles(install.DataFile("scenario", "mplayer"), "*.scn"))
+        {
+            if (!File.Exists(Path.ChangeExtension(file, ".map")) || !File.Exists(Path.ChangeExtension(file, ".pth"))) continue;
+            var scenario = ScenarioDefinition.Load(file);
+            var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+            var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+            var simulation = ScenarioSimulation.Create(scenario, catalog, path, footprints);
+            for (var faction = 0; faction <= 1; faction++)
+            {
+                var team = scenario.EnabledTeamForRace(faction);
+                if (team is null) continue;
+                if (!simulation.Actors.Any(actor => actor.Seed.Team == team.TeamId && actor.Definition.MovementSpeed > 0))
+                    throw new InvalidDataException($"{Path.GetFileName(file)} {faction} team {team.TeamId} has no mobile unit.");
+                available[faction]++;
+            }
+        }
+        if (available[0] == 0 || available[1] == 0)
+            throw new InvalidOperationException("Installed War maps do not expose both playable factions.");
+        Console.WriteLine($"  selectable War rosters: Human {available[0]} / Gray {available[1]}");
     });
 
     Check("single-player War maps complete a local movement order", () =>

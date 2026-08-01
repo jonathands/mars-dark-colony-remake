@@ -151,6 +151,28 @@ and networking ahead of the local playable slice.
 11. Networking and replay transport after deterministic command execution is
     validated locally.
 
+## Single Player War roster decoding
+
+- The recovered `intrface/shumane` definition remains the authoritative source
+  for the 640x480 War-screen geometry. It declares a shared commander viewport
+  containing both `HCOM` and `ACOM`; which one is shown is runtime state, not a
+  second screen definition.
+- The `scenario/mplayer/*.scn` team block is postfix-labelled. Its first value
+  after `TEAM <id> <enabled>` is the race; each later `%Race`, `%Money`, `%AI`,
+  and `%TeamColour` label names the value immediately *before* it. For example,
+  `d2play01` declares Human team 0 and Gray team 1, both with 1,500 starting
+  resource. The prior reader incorrectly interpreted 1,500 as the race.
+- The compiled port preserves the user’s selected Human/Gray state from the
+  recovered New Game race controls. When a War map is launched it finds that
+  faction’s first enabled SCN team and routes selection, camera focus, and
+  orders through that team. It does not rewrite original placements or invent a
+  replacement roster. A faction missing from a map is reported before launch.
+- Verification currently proves 54 installed maps expose a controllable Human
+  roster and 30 expose a controllable Gray roster. Exact original rules for
+  map-list filtering and profile persistence remain unresolved; therefore the
+  port leaves every complete map visible and labels unavailable factions rather
+  than claiming the original filtered them.
+
 ## Encyclopedia checkpoint
 
 - `intrface/encyclo.txt` is a three-group stream with implicit first IDs:

@@ -72,6 +72,14 @@ and unresolved entity kinds stay separate so the port does not invent blockers.
 Gameplay supports direct unit clicks, box selection, orders, drag panning,
 keyboard navigation, and edge scrolling.
 
+War maps retain their original per-team roster data. The faction currently
+chosen on the New Campaign / Training race screen is also the faction used when
+launching Single Player War: the port resolves the first enabled SCN team for
+that faction and makes that team locally controllable. A map that does not
+offer the chosen faction remains visible but says so before launch. The SCN
+team format labels fields *after* their values; the port decodes that layout so
+race, starting resource, AI profile, and colour are not shifted by one field.
+
 Campaign starts now load `human01` or `alien01` and draw their ordinary SCN
 actors using positional `gamestat.txt` identity plus exact `<CODE>STAND…` FIN
 animation matches. World composites retain their FIN logical origins and sort

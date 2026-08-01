@@ -17,8 +17,9 @@ namespace DarkColony.App;
 
 public sealed class MainForm : Form
 {
-    // Campaign SCNs use team zero as the local player in the current first-map slice.
-    private const int LocalPlayerTeam = 0;
+    // Campaigns use team zero. War maps choose their enabled team from the
+    // player's selected faction in the decoded SCN roster.
+    private int _localPlayerTeam;
     private readonly GameInstallation? _installation;
     private readonly WorldSimulation _world = new();
     private readonly FixedStepClock _clock;
@@ -335,6 +336,7 @@ public sealed class MainForm : Form
     private void StartCampaign()
     {
         _selectedScenario = null;
+        _localPlayerTeam = 0;
         _status = $"{(_grayRace ? "Gray" : "Human")} {(_training ? "training" : "campaign")} terrain harness.";
         ShowScreen(MenuScreenId.Gameplay);
     }
@@ -348,8 +350,18 @@ public sealed class MainForm : Form
             return;
         }
 
-        _selectedScenario = _singlePlayerMaps[_singlePlayerMapIndex];
-        _status = $"Single Player War: {_selectedScenario.Value.Name.ToUpperInvariant()}.";
+        var selected = _singlePlayerMaps[_singlePlayerMapIndex];
+        var faction = _grayRace ? 1 : 0;
+        var localTeam = selected.Teams?.FirstOrDefault(team => team.Enabled && team.Race == faction);
+        if (localTeam is null)
+        {
+            _status = $"{selected.DisplayName ?? selected.Name} has no enabled {(_grayRace ? "Gray" : "Human")} team.";
+            return;
+        }
+
+        _selectedScenario = selected;
+        _localPlayerTeam = localTeam.TeamId;
+        _status = $"Single Player War: {selected.Name.ToUpperInvariant()} as {(_grayRace ? "Gray" : "Human")} team {_localPlayerTeam + 1}.";
         ShowScreen(MenuScreenId.Gameplay);
     }
 
@@ -364,10 +376,11 @@ public sealed class MainForm : Form
             .Where(name =>
                 File.Exists(_installation.DataFile("scenario", "mplayer", $"{name}.map")) &&
                 File.Exists(_installation.DataFile("scenario", "mplayer", $"{name}.pth")))
-            .Select(name => new ScenarioChoice(
-                "mplayer",
-                name!,
-                ScenarioDefinition.Load(_installation.DataFile("scenario", "mplayer", $"{name}.scn")).DisplayName))
+            .Select(name =>
+            {
+                var definition = ScenarioDefinition.Load(_installation.DataFile("scenario", "mplayer", $"{name}.scn"));
+                return new ScenarioChoice("mplayer", name!, definition.DisplayName, definition.Teams);
+            })
             .OrderBy(choice => choice.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, Math.Max(0, _singlePlayerMaps.Count - 1));
@@ -491,7 +504,7 @@ public sealed class MainForm : Form
                 .Where(actor => actor.Seed.Team == AutonomousSpawnSeeder.InternalNeutralTeam)
                 .Select(actor => actor.Seed).ToArray();
             var localActor = _scenarioSimulation.Actors
-                .Where(actor => actor.Seed.Team == LocalPlayerTeam && actor.Definition.MovementSpeed > 0)
+                .Where(actor => actor.Seed.Team == _localPlayerTeam && actor.Definition.MovementSpeed > 0)
                 .OrderBy(actor => actor.Seed.InstanceId)
                 .FirstOrDefault();
             if (localActor is not null)
@@ -1086,9 +1099,15 @@ public sealed class MainForm : Form
         graphics.Restore(state);
 
         var selected = _singlePlayerMaps[_singlePlayerMapIndex];
+        var faction = _grayRace ? 1 : 0;
+        var localTeam = selected.Teams?.FirstOrDefault(team => team.Enabled && team.Race == faction);
         DrawMenuText(graphics, "Rank", new Rectangle(500, 52, 100, 18));
-        DrawMenuText(graphics, $"WAR MAP {_singlePlayerMapIndex + 1}/{_singlePlayerMaps.Count}", new Rectangle(392, 22, 210, 16));
+        DrawMenuText(graphics, _grayRace ? "GRAY" : "HUMAN", new Rectangle(392, 22, 210, 16));
         DrawMenuText(graphics, (selected.DisplayName ?? selected.Name).ToUpperInvariant(), new Rectangle(312, 154, 230, 16));
+        var roster = localTeam is null
+            ? $"NO {(_grayRace ? "GRAY" : "HUMAN")} TEAM"
+            : $"TEAM {localTeam.TeamId + 1} · WAR MAP {_singlePlayerMapIndex + 1}/{_singlePlayerMaps.Count}";
+        DrawMenuText(graphics, roster, new Rectangle(312, 178, 285, 16));
     }
 
     private void SelectSinglePlayerMapAt(Point point)
@@ -1241,7 +1260,7 @@ public sealed class MainForm : Form
         WorldEntity? selected = null;
         foreach (var entity in GameplayEntities().OrderBy(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
         {
-            if (entity.Team != LocalPlayerTeam) continue;
+            if (entity.Team != _localPlayerTeam) continue;
             if (_scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed <= 0) continue;
             if ((uint)entity.EntityId >= (uint)_entityCatalog.Entities.Count) continue;
             var actorState = _scenarioSimulation.Actor(entity.InstanceId);
@@ -1283,7 +1302,7 @@ public sealed class MainForm : Form
     {
         if (_scenarioSimulation is null) return;
         var selected = GameplayEntities()
-            .Where(entity => entity.Team == LocalPlayerTeam)
+            .Where(entity => entity.Team == _localPlayerTeam)
             .Where(entity => _scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed > 0)
             .Where(entity =>
             {
@@ -1305,7 +1324,7 @@ public sealed class MainForm : Form
         var target = new CellCoordinate((point.X + _cameraX) / 32, (point.Y + _cameraY) / 32);
         if (target.X < 0 || target.Z < 0 || target.X >= _gameplayMap.Width || target.Z >= _gameplayMap.Height) return;
         var selected = GameplayEntities()
-            .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && entity.Team == LocalPlayerTeam)
+            .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && entity.Team == _localPlayerTeam)
             .Where(entity => _scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed > 0)
             .OrderBy(entity => entity.InstanceId)
             .ToArray();
@@ -1332,7 +1351,7 @@ public sealed class MainForm : Form
     {
         if (_scenarioSimulation is null || _selectedEntityInstanceIds.Count == 0) return;
         var stopped = GameplayEntities()
-            .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && entity.Team == LocalPlayerTeam)
+            .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && entity.Team == _localPlayerTeam)
             .Where(entity => _scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed > 0)
             .OrderBy(entity => entity.InstanceId)
             .ToArray();
@@ -1367,5 +1386,9 @@ public sealed class MainForm : Form
     private FixedPointPosition ActorPosition(WorldEntity entity) =>
         _scenarioSimulation?.Actor(entity.InstanceId)?.Movement.VisualPosition ?? entity.Position;
 
-    private readonly record struct ScenarioChoice(string Directory, string Name, string? DisplayName = null);
+    private readonly record struct ScenarioChoice(
+        string Directory,
+        string Name,
+        string? DisplayName = null,
+        IReadOnlyList<ScenarioTeam>? Teams = null);
 }
