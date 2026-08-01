@@ -540,6 +540,30 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Console.WriteLine($"  authoritative scenario simulations: {actorCount} seeded actors");
     });
 
+    Check("single-player War maps load controllable local units", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var catalog = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        var footprints = BuildingFootprintCatalog.Load(install.ExecutablePath);
+        var files = Directory.GetFiles(install.DataFile("scenario", "mplayer"), "*.scn")
+            .Where(file => File.Exists(Path.ChangeExtension(file, ".map")) && File.Exists(Path.ChangeExtension(file, ".pth")))
+            .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (files.Length == 0) throw new InvalidOperationException("No complete mplayer scenario triplets found.");
+        var controllableActors = 0;
+        foreach (var file in files)
+        {
+            var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+            var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+            var simulation = ScenarioSimulation.Create(ScenarioDefinition.Load(file), catalog, path, footprints);
+            var localActors = simulation.Actors.Count(actor => actor.Seed.Team == 0 && actor.Definition.MovementSpeed > 0);
+            if (localActors == 0)
+                throw new InvalidDataException($"{Path.GetFileName(file)} has no mobile team-0 unit for local control.");
+            controllableActors += localActors;
+        }
+        Console.WriteLine($"  single-player War: {files.Length} maps / {controllableActors} local mobile actors");
+    });
+
     Check("installed SPR corpus decodes", () =>
     {
         var install = GameInstallation.Open(dataPath);
