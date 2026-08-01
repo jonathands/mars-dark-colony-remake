@@ -581,6 +581,52 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Console.WriteLine($"  single-player War: {files.Length} maps / {controllableActors} local mobile actors");
     });
 
+    Check("single-player War maps complete a local movement order", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var catalog = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        var footprints = BuildingFootprintCatalog.Load(install.ExecutablePath);
+        var files = Directory.GetFiles(install.DataFile("scenario", "mplayer"), "*.scn")
+            .Where(file => File.Exists(Path.ChangeExtension(file, ".map")) && File.Exists(Path.ChangeExtension(file, ".pth")))
+            .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var movedMaps = 0;
+        foreach (var file in files)
+        {
+            var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+            var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+            var simulation = ScenarioSimulation.Create(ScenarioDefinition.Load(file), catalog, path, footprints);
+            var finder = new DiagnosticLocalPathfinder(path, simulation.GroundOccupancy, simulation.AlternateOccupancy);
+            SimulatedActor? actor = null;
+            CellCoordinate? target = null;
+            foreach (var candidateActor in simulation.Actors
+                         .Where(candidate => candidate.Seed.Team == 0 && candidate.Definition.MovementSpeed > 0)
+                         .OrderBy(candidate => candidate.Seed.InstanceId))
+            {
+                for (var radius = 1; radius <= 4 && target is null; radius++)
+                for (var z = -radius; z <= radius && target is null; z++)
+                for (var x = -radius; x <= radius; x++)
+                {
+                    if (Math.Max(Math.Abs(x), Math.Abs(z)) != radius) continue;
+                    var candidate = new CellCoordinate(candidateActor.Movement.OccupiedCell.X + x, candidateActor.Movement.OccupiedCell.Z + z);
+                    if (finder.Find(candidateActor.Movement.OccupiedCell, candidate, candidateActor.Definition.MovementClass, candidateActor.Seed.InstanceId).Steps.Count == 0) continue;
+                    actor = candidateActor;
+                    target = candidate;
+                    break;
+                }
+            }
+            if (actor is null || target is null)
+                throw new InvalidDataException($"{Path.GetFileName(file)} has no mobile team-0 unit with a legal nearby movement target.");
+            simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(actor.Seed.InstanceId, target.Value))]);
+            for (var tick = 0; tick < 1_000 && actor.MoveOrder is not null; tick++) simulation.Step([]);
+            if (actor.Movement.OccupiedCell != target.Value || actor.MoveOrder is not null)
+                throw new InvalidDataException($"{Path.GetFileName(file)} local unit {actor.Seed.InstanceId} did not complete its movement order.");
+            movedMaps++;
+        }
+        Equal(files.Length, movedMaps);
+        Console.WriteLine($"  single-player War movement: {movedMaps} maps completed one local order");
+    });
+
     Check("installed SPR corpus decodes", () =>
     {
         var install = GameInstallation.Open(dataPath);
