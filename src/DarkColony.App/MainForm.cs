@@ -1190,12 +1190,12 @@ public sealed class MainForm : Form
             var bounds = new Rectangle(start + index * 41, y, 41, 18);
             var button = Animation("knobe.fin", "BUTTON");
             if (button is not null)
-                DrawAnimationFrame(graphics, "knobe.fin", button.FirstFrame, bounds.X, bounds.Y);
-            if (index == selected)
-            {
-                using var highlight = new SolidBrush(Color.FromArgb(70, 255, 0, 0));
-                graphics.FillRectangle(highlight, bounds);
-            }
+                DrawAnimationFrame(
+                    graphics,
+                    "knobe.fin",
+                    index == selected ? LastVisibleFrame(button) : button.FirstFrame,
+                    bounds.X,
+                    bounds.Y);
             DrawMenuText(graphics, values[index], bounds);
         }
     }
