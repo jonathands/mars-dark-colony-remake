@@ -1177,6 +1177,8 @@ public sealed class MainForm : Form
             : new[] { "LEUT.", "CAPT.", "MAJ.", "COL." }[_warCommanderRank];
         DrawMenuText(graphics, "Commander Rank", new Rectangle(332, 435, 207, 18), center: false);
         DrawMenuText(graphics, rank, new Rectangle(539, 436, 64, 16));
+        DrawLobbyArrow(graphics, "LEFT", 521, 435);
+        DrawLobbyArrow(graphics, "RIGHT", 603, 435);
     }
 
     private void DrawOptionRow(Graphics graphics, string label, int y, int selected, string[] values, int start = 456)
@@ -1198,8 +1200,15 @@ public sealed class MainForm : Form
     {
         DrawMenuText(graphics, label, new Rectangle(332, y, 207, 18), center: false);
         DrawMenuText(graphics, $"{value}%", new Rectangle(539, y, 64, 18));
-        DrawMenuText(graphics, "◀", new Rectangle(521, y, 18, 18));
-        DrawMenuText(graphics, "▶", new Rectangle(603, y, 18, 18));
+        DrawLobbyArrow(graphics, "LEFT", 521, y);
+        DrawLobbyArrow(graphics, "RIGHT", 603, y);
+    }
+
+    private void DrawLobbyArrow(Graphics graphics, string animationName, int x, int y)
+    {
+        var animation = Animation("knobe.fin", animationName);
+        if (animation is not null && DrawAnimationFrame(graphics, "knobe.fin", animation.LastFrame, x, y)) return;
+        DrawMenuText(graphics, animationName == "LEFT" ? "<" : ">", new Rectangle(x, y, 41, 18));
     }
 
     private static string WarMapDescription(string stem)
@@ -1593,12 +1602,12 @@ public sealed class MainForm : Form
             TryAdjustWarMultiplier(point, 418, ref _warP7FlowMultiplier)) return true;
         if (point.Y is >= 435 and < 453)
         {
-            if (point.X is >= 521 and < 539)
+            if (point.X is >= 521 and < 562)
             {
                 _warCommanderRank = Math.Max(0, _warCommanderRank - 1);
                 return true;
             }
-            if (point.X is >= 603 and < 621)
+            if (point.X is >= 603 and < 644)
             {
                 _warCommanderRank = Math.Min(3, _warCommanderRank + 1);
                 return true;
@@ -1624,12 +1633,12 @@ public sealed class MainForm : Form
     private static bool TryAdjustWarMultiplier(Point point, int y, ref int percent)
     {
         if (point.Y < y || point.Y >= y + 18) return false;
-        if (point.X is >= 521 and < 539)
+        if (point.X is >= 521 and < 562)
         {
             percent = Math.Max(25, percent - 25);
             return true;
         }
-        if (point.X is >= 603 and < 621)
+        if (point.X is >= 603 and < 644)
         {
             percent = Math.Min(500, percent + 25);
             return true;
