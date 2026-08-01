@@ -157,8 +157,15 @@ public sealed class ScenarioSimulation
                 {
                     actor.MoveOrder ??= new ActiveMoveOrder(actor.Movement.OccupiedCell);
                     actor.MoveOrder.LastBlockedCell = actor.Playback.BlockedCell;
-                    actor.MoveOrder.BlockedTicksRemaining = 4;
                     actor.Playback = null;
+                    // Native blockage handling first attempts to reconstruct a
+                    // usable local suffix. The four-execution wait is only the
+                    // failure path (yield/jitter remains unrecovered).
+                    var repair = StartSegment(actor);
+                    if (repair.StepCount == 0)
+                    {
+                        if (actor.MoveOrder is { } waitingOrder) waitingOrder.BlockedTicksRemaining = 4;
+                    }
                 }
                 else if (status == PackedPathPlaybackStatus.Complete)
                 {

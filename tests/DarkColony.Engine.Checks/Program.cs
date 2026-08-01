@@ -207,6 +207,23 @@ Check("scenario simulation waits then replans after a dynamic block", () =>
     Equal(true, actor.MoveOrder is null);
 });
 
+Check("scenario simulation repairs a blocked local route before waiting", () =>
+{
+    var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 2];
+    bytes[1 * 256 + 1] = 1;
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 2));
+    simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(1, new CellCoordinate(4, 0)))]);
+    simulation.GroundOccupancy.ReplaceClaims(99, [new CellCoordinate(3, 0)]);
+    var actor = simulation.Actor(1)!;
+    for (var tick = 0; tick < 40 && actor.MoveOrder!.LastBlockedCell is null; tick++) simulation.Step([]);
+    Equal(new CellCoordinate(3, 0), actor.MoveOrder!.LastBlockedCell ?? throw new InvalidOperationException("No blocked cell observed."));
+    Equal(0, actor.MoveOrder.BlockedTicksRemaining);
+    Equal(true, actor.Playback is not null);
+});
+
 Check("ordinary SCN construction replaces stacked occupancy owner", () =>
 {
     var occupancy = new CellOccupancy();

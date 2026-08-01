@@ -147,8 +147,8 @@ In a campaign mission, team-0 units are locally controllable:
 - **F3** shows resolved entity/animation identity; **F4** shows PTH regions.
 
 Move orders chain through any number of 32-step packed segments. A temporarily
-blocked unit waits four simulation ticks and replans around the current
-occupancy grid. The compact top-left gameplay readout shows the selected unit,
+blocked unit first rebuilds its local route around the current occupancy grid;
+if no route is available it waits four simulation ticks before retrying. The compact top-left gameplay readout shows the selected unit,
 cell, facing sector, target, segment count, and wait state.
 
 Neutral SCN team `-1` rows are now treated as autonomous spawn groups rather

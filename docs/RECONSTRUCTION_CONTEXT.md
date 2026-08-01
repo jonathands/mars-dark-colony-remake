@@ -89,10 +89,11 @@
 - Local unit control is now engine-driven for campaign team 0: selection only
   submits future-tick `MoveIntent` commands, `ScenarioSimulation` owns their
   persistent target/order state, segments paths beyond the 32-step buffer, and
-  retries after four ticks on a dynamic playback block. The app only renders
+  immediately rebuilds a local route after a dynamic playback block. It waits
+  four ticks only when that repair cannot find a route. The app only renders
   this state and exposes selected unit/cell/facing/order feedback. Native
-  blockage repair/yield/jitter details are still represented by the documented
-  four-tick replan approximation rather than a final match.
+  blocker notification/yield and one-cell jitter target policy remain to be
+  matched exactly.
 - Facing is an 8-bit circle; rendering rounds it to 16 sectors.
 - Weapon class selects one of nine `mbullet.txt` rows.
 - Entity field 11 selects one of ten defense/armor columns.
