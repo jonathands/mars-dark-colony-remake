@@ -29,6 +29,7 @@ public sealed class MainForm : Form
     private readonly Dictionary<string, AnimationDefinition> _animationDefinitions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Bitmap> _animationFrames = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Point> _animationOrigins = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Rectangle> _animationOpaqueBounds = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, Bitmap> _fontGlyphs = [];
     private readonly Dictionary<string, Sprite> _sprites = new(StringComparer.OrdinalIgnoreCase);
     private BitmapFont? _menuFont;
@@ -595,7 +596,14 @@ public sealed class MainForm : Form
                 if (_selectedEntityInstanceIds.Contains(entity.InstanceId))
                 {
                     using var selection = new Pen(Color.FromArgb(72, 255, 255), 2);
-                    graphics.DrawEllipse(selection, worldX - _cameraX - 25, worldY - _cameraY - 6, 50, 20);
+                    // A FIN logical origin is not consistently the visible
+                    // feet of its composed sprite. Anchor the provisional
+                    // ground indicator to the frame's opaque visual base so
+                    // it stays with the unit instead of its abstract cell.
+                    var opaque = AnimationOpaqueBounds(key, bitmap);
+                    var centerX = screenX + opaque.Left + opaque.Width / 2;
+                    var groundY = screenY + opaque.Bottom;
+                    graphics.DrawEllipse(selection, centerX - 25, groundY - 12, 50, 20);
                 }
                 graphics.DrawImageUnscaled(bitmap, screenX, screenY);
 
@@ -1012,6 +1020,30 @@ public sealed class MainForm : Form
             _status = $"Animation error: {error.Message}";
             return null;
         }
+    }
+
+    private Rectangle AnimationOpaqueBounds(string key, Bitmap bitmap)
+    {
+        if (_animationOpaqueBounds.TryGetValue(key, out var cached)) return cached;
+        var left = bitmap.Width;
+        var top = bitmap.Height;
+        var right = -1;
+        var bottom = -1;
+        for (var y = 0; y < bitmap.Height; y++)
+        for (var x = 0; x < bitmap.Width; x++)
+        {
+            if (bitmap.GetPixel(x, y).A == 0) continue;
+            left = Math.Min(left, x);
+            top = Math.Min(top, y);
+            right = Math.Max(right, x);
+            bottom = Math.Max(bottom, y);
+        }
+
+        var bounds = right < left
+            ? new Rectangle(0, 0, bitmap.Width, bitmap.Height)
+            : Rectangle.FromLTRB(left, top, right + 1, bottom + 1);
+        _animationOpaqueBounds[key] = bounds;
+        return bounds;
     }
 
     private Sprite LoadSprite(string name)
