@@ -513,6 +513,7 @@ Check("Single Player War catalog exposes complete faction-matched scenarios", ()
         Equal(true, scenario.TryCreateLaunch(0, out var launch));
         Equal(scenario.Stem, launch.Stem);
         Equal(scenario.EnabledTeamForRace(0)?.TeamId ?? -1, launch.LocalTeamId);
+        Equal(SinglePlayerWarSettings.Default, launch.Settings);
     }
     foreach (var scenario in catalog.ForRace(1))
     {
@@ -523,6 +524,10 @@ Check("Single Player War catalog exposes complete faction-matched scenarios", ()
     }
     foreach (var scenario in catalog.Scenarios.Where(scenario => scenario.EnabledTeamForRace(1) is null))
         Equal(false, scenario.TryCreateLaunch(1, out _));
+    var configured = new SinglePlayerWarSettings(3, 2, true, true, 500, 25, 3);
+    Equal(true, catalog.ForRace(0)[0].TryCreateLaunch(0, configured, out var configuredLaunch));
+    Equal(configured, configuredLaunch.Settings);
+    Equal(false, catalog.ForRace(0)[0].TryCreateLaunch(0, configured with { P7FlowPercent = 110 }, out _));
 });
 
     Check("executable building footprints decode", () =>

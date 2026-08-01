@@ -395,13 +395,21 @@ public sealed class MainForm : Form
         }
 
         var faction = localPlayer.Gray ? 1 : 0;
-        if (!selected.TryCreateLaunch(faction, out var launch))
+        var settings = new SinglePlayerWarSettings(
+            _warStorageCells,
+            _warArtifacts,
+            _warEruptingVents,
+            _warRenewableVents,
+            _warP7QuantityMultiplier,
+            _warP7FlowMultiplier,
+            _warCommanderRank);
+        if (!selected.TryCreateLaunch(faction, settings, out var launch))
         {
             _status = $"{selected.DisplayName} has no enabled {(localPlayer.Gray ? "Gray" : "Human")} team.";
             return;
         }
 
-        _selectedScenario = new ScenarioChoice("mplayer", launch.Stem);
+        _selectedScenario = new ScenarioChoice("mplayer", launch.Stem, WarLaunch: launch);
         _localPlayerTeam = launch.LocalTeamId;
         _grayRace = localPlayer.Gray;
         _status = $"Single Player War: {launch.Stem.ToUpperInvariant()} as {(localPlayer.Gray ? "Gray" : "Human")} team {_localPlayerTeam + 1}; P7 { _warP7QuantityMultiplier}% / flow {_warP7FlowMultiplier}%.";
@@ -1657,5 +1665,6 @@ public sealed class MainForm : Form
         string Directory,
         string Name,
         string? DisplayName = null,
-        IReadOnlyList<ScenarioTeam>? Teams = null);
+        IReadOnlyList<ScenarioTeam>? Teams = null,
+        SinglePlayerWarLaunch? WarLaunch = null);
 }

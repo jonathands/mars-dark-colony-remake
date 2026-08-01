@@ -53,8 +53,16 @@ public sealed record SinglePlayerWarScenario(string Stem, ScenarioDefinition Def
     /// lobby and an SCN.  A race is selectable only when that SCN actually
     /// contains an enabled team for it; UI code must not invent a team index.
     /// </summary>
-    public bool TryCreateLaunch(int race, out SinglePlayerWarLaunch launch)
+    public bool TryCreateLaunch(int race, out SinglePlayerWarLaunch launch) =>
+        TryCreateLaunch(race, SinglePlayerWarSettings.Default, out launch);
+
+    public bool TryCreateLaunch(int race, SinglePlayerWarSettings settings, out SinglePlayerWarLaunch launch)
     {
+        if (!settings.IsValid)
+        {
+            launch = default!;
+            return false;
+        }
         var team = EnabledTeamForRace(race);
         if (team is null)
         {
@@ -62,7 +70,7 @@ public sealed record SinglePlayerWarScenario(string Stem, ScenarioDefinition Def
             return false;
         }
 
-        launch = new SinglePlayerWarLaunch(Stem, DisplayName, race, team.TeamId);
+        launch = new SinglePlayerWarLaunch(Stem, DisplayName, race, team.TeamId, settings);
         return true;
     }
 }
@@ -72,4 +80,33 @@ public sealed record SinglePlayerWarScenario(string Stem, ScenarioDefinition Def
 /// selection, not simulation configuration: economy and power-up application
 /// remain separate until their native launch handoff is recovered.
 /// </summary>
-public sealed record SinglePlayerWarLaunch(string Stem, string DisplayName, int Race, int LocalTeamId);
+public sealed record SinglePlayerWarLaunch(
+    string Stem,
+    string DisplayName,
+    int Race,
+    int LocalTeamId,
+    SinglePlayerWarSettings Settings);
+
+/// <summary>
+/// Native Single Player War lobby settings, retained with the launch selection.
+/// Values are UI-confirmed; their gameplay application is intentionally not
+/// inferred until the executable's scenario-start handoff is decoded.
+/// </summary>
+public readonly record struct SinglePlayerWarSettings(
+    int StorageCells,
+    int Artifacts,
+    bool EruptingVents,
+    bool RenewableVents,
+    int P7QuantityPercent,
+    int P7FlowPercent,
+    int CommanderRank)
+{
+    public static SinglePlayerWarSettings Default => new(0, 0, false, false, 100, 100, 0);
+
+    public bool IsValid =>
+        StorageCells is >= 0 and <= 3 &&
+        Artifacts is >= 0 and <= 3 &&
+        P7QuantityPercent is >= 25 and <= 500 && P7QuantityPercent % 25 == 0 &&
+        P7FlowPercent is >= 25 and <= 500 && P7FlowPercent % 25 == 0 &&
+        CommanderRank is >= 0 and <= 3;
+}

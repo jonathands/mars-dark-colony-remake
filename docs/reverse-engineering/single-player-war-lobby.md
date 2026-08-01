@@ -15,6 +15,10 @@ data-derived boundary resolves the selected Human or Gray faction to the
 matching enabled `ScenarioTeam.TeamId`; an unavailable faction is rejected,
 never substituted with another SCN team.
 
+It also retains a validated `SinglePlayerWarSettings` record (the native lobby
+values) with that launch. This makes the values available at scenario start
+without yet asserting unrecovered gameplay behavior.
+
 ## Option controls
 
 The following IDs and ranges were traced in the `dc.exe` lobby event dispatcher
