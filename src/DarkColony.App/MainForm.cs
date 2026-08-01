@@ -395,17 +395,16 @@ public sealed class MainForm : Form
         }
 
         var faction = localPlayer.Gray ? 1 : 0;
-        var localTeam = selected.EnabledTeamForRace(faction);
-        if (localTeam is null)
+        if (!selected.TryCreateLaunch(faction, out var launch))
         {
             _status = $"{selected.DisplayName} has no enabled {(localPlayer.Gray ? "Gray" : "Human")} team.";
             return;
         }
 
-        _selectedScenario = new ScenarioChoice("mplayer", selected.Stem);
-        _localPlayerTeam = localTeam.TeamId;
+        _selectedScenario = new ScenarioChoice("mplayer", launch.Stem);
+        _localPlayerTeam = launch.LocalTeamId;
         _grayRace = localPlayer.Gray;
-        _status = $"Single Player War: {selected.Stem.ToUpperInvariant()} as {(localPlayer.Gray ? "Gray" : "Human")} team {_localPlayerTeam + 1}; P7 { _warP7QuantityMultiplier}% / flow {_warP7FlowMultiplier}%.";
+        _status = $"Single Player War: {launch.Stem.ToUpperInvariant()} as {(localPlayer.Gray ? "Gray" : "Human")} team {_localPlayerTeam + 1}; P7 { _warP7QuantityMultiplier}% / flow {_warP7FlowMultiplier}%.";
         ShowScreen(MenuScreenId.Gameplay);
     }
 

@@ -10,6 +10,11 @@ presents the complete `scenario/mplayer` catalogue by SCN display title. The
 captured first titles are `4 Kingdoms`, `Armageddon`, `Beon Bay`, and `Big
 Crater`.
 
+The compiled port passes a selected map through `SinglePlayerWarLaunch`. That
+data-derived boundary resolves the selected Human or Gray faction to the
+matching enabled `ScenarioTeam.TeamId`; an unavailable faction is rejected,
+never substituted with another SCN team.
+
 ## Option controls
 
 The following IDs and ranges were traced in the `dc.exe` lobby event dispatcher

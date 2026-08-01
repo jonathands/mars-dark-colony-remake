@@ -47,4 +47,29 @@ public sealed record SinglePlayerWarScenario(string Stem, ScenarioDefinition Def
     public string DisplayName => string.IsNullOrWhiteSpace(Definition.DisplayName) ? Stem : Definition.DisplayName!;
 
     public ScenarioTeam? EnabledTeamForRace(int race) => Definition.EnabledTeamForRace(race);
+
+    /// <summary>
+    /// Creates the authoritative selection boundary between the native War
+    /// lobby and an SCN.  A race is selectable only when that SCN actually
+    /// contains an enabled team for it; UI code must not invent a team index.
+    /// </summary>
+    public bool TryCreateLaunch(int race, out SinglePlayerWarLaunch launch)
+    {
+        var team = EnabledTeamForRace(race);
+        if (team is null)
+        {
+            launch = default!;
+            return false;
+        }
+
+        launch = new SinglePlayerWarLaunch(Stem, DisplayName, race, team.TeamId);
+        return true;
+    }
 }
+
+/// <summary>
+/// Validated local-player identity for a free War scenario.  This is data
+/// selection, not simulation configuration: economy and power-up application
+/// remain separate until their native launch handoff is recovered.
+/// </summary>
+public sealed record SinglePlayerWarLaunch(string Stem, string DisplayName, int Race, int LocalTeamId);
