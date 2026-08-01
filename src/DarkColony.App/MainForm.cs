@@ -1579,19 +1579,29 @@ public sealed class MainForm : Form
                 player.Type = (WarLobbyPlayerType)(((int)player.Type + 1) % 4);
                 return true;
             }
-            if (new Rectangle(204, y, 27, 16).Contains(point))
+            if (new Rectangle(204, y, 26, 22).Contains(point))
             {
                 player.Gray = !player.Gray;
                 return true;
             }
-            if (new Rectangle(409, y, 78, 16).Contains(point))
+            if (new Rectangle(409, y + 1, 14, 14).Contains(point))
             {
-                player.Color = Math.Clamp((point.X < 448 ? player.Color + 15 : player.Color + 1) % 16, 0, 15);
+                player.Color = (player.Color + 15) % 16;
                 return true;
             }
-            if (new Rectangle(496, y, 78, 16).Contains(point))
+            if (new Rectangle(473, y + 1, 14, 14).Contains(point))
             {
-                player.Team = Math.Clamp((point.X < 535 ? player.Team + 15 : player.Team + 1) % 16, 0, 15);
+                player.Color = (player.Color + 1) % 16;
+                return true;
+            }
+            if (new Rectangle(496, y + 1, 14, 14).Contains(point))
+            {
+                player.Team = (player.Team + 15) % 16;
+                return true;
+            }
+            if (new Rectangle(560, y + 1, 14, 14).Contains(point))
+            {
+                player.Team = (player.Team + 1) % 16;
                 return true;
             }
             if (new Rectangle(610, y, 27, 17).Contains(point))
