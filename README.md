@@ -142,6 +142,7 @@ In a campaign mission, team-0 units are locally controllable:
 - **Right-click** terrain to issue deterministic move orders; selected units receive distinct nearby formation cells.
 - **Shift+right-click** appends a waypoint instead of replacing the active order.
 - **S** cancels active and queued movement for the selected units.
+- **Esc** clears the current selection; press it again with no selection to return to the menu.
 - **Left-drag** or use the arrow keys to pan.
 - **F3** shows resolved entity/animation identity; **F4** shows PTH regions.
 

@@ -94,7 +94,11 @@ public sealed class MainForm : Form
 
         KeyDown += (_, eventArgs) =>
         {
-            if (HandleGameplayKey(eventArgs.KeyCode)) eventArgs.Handled = true;
+            if (HandleGameplayKey(eventArgs.KeyCode))
+            {
+                eventArgs.Handled = true;
+                return;
+            }
             if (eventArgs.KeyCode == Keys.Escape && _screen != MenuScreenId.Main)
             {
                 ShowScreen(MenuScreenId.Main);
@@ -120,6 +124,14 @@ public sealed class MainForm : Form
     private bool HandleGameplayKey(Keys key)
     {
         if (_screen != MenuScreenId.Gameplay) return false;
+        if (key == Keys.Escape && _selectedEntityInstanceIds.Count != 0)
+        {
+            _selectedEntityInstanceIds.Clear();
+            _diagnosticMoveTarget = null;
+            _diagnosticPathCells = [];
+            _status = "Selection cleared.";
+            return true;
+        }
         if (key == Keys.F3)
         {
             _showAssetNames = !_showAssetNames;
