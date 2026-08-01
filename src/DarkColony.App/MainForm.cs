@@ -54,7 +54,7 @@ public sealed class MainForm : Form
     private bool _training;
     private bool _grayRace;
     private string _leaderName = string.Empty;
-    private IReadOnlyList<ScenarioChoice> _singlePlayerMaps = [];
+    private IReadOnlyList<SinglePlayerWarScenario> _singlePlayerMaps = [];
     private int _singlePlayerMapIndex;
     private ScenarioChoice? _selectedScenario;
     private bool _showAssetNames;
@@ -381,37 +381,23 @@ public sealed class MainForm : Form
         _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, maps.Count - 1);
         var selected = maps[_singlePlayerMapIndex];
         var faction = _grayRace ? 1 : 0;
-        var localTeam = selected.Teams?.FirstOrDefault(team => team.Enabled && team.Race == faction);
+        var localTeam = selected.EnabledTeamForRace(faction);
         if (localTeam is null)
         {
-            _status = $"{selected.DisplayName ?? selected.Name} has no enabled {(_grayRace ? "Gray" : "Human")} team.";
+            _status = $"{selected.DisplayName} has no enabled {(_grayRace ? "Gray" : "Human")} team.";
             return;
         }
 
-        _selectedScenario = selected;
+        _selectedScenario = new ScenarioChoice("mplayer", selected.Stem);
         _localPlayerTeam = localTeam.TeamId;
-        _status = $"Single Player War: {selected.Name.ToUpperInvariant()} as {(_grayRace ? "Gray" : "Human")} team {_localPlayerTeam + 1}.";
+        _status = $"Single Player War: {selected.Stem.ToUpperInvariant()} as {(_grayRace ? "Gray" : "Human")} team {_localPlayerTeam + 1}.";
         ShowScreen(MenuScreenId.Gameplay);
     }
 
     private void EnsureSinglePlayerMaps()
     {
         if (_singlePlayerMaps.Count != 0 || _installation is null) return;
-        var directory = _installation.DataFile("scenario", "mplayer");
-        if (!Directory.Exists(directory)) return;
-        _singlePlayerMaps = Directory.EnumerateFiles(directory, "*.scn")
-            .Select(Path.GetFileNameWithoutExtension)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Where(name =>
-                File.Exists(_installation.DataFile("scenario", "mplayer", $"{name}.map")) &&
-                File.Exists(_installation.DataFile("scenario", "mplayer", $"{name}.pth")))
-            .Select(name =>
-            {
-                var definition = ScenarioDefinition.Load(_installation.DataFile("scenario", "mplayer", $"{name}.scn"));
-                return new ScenarioChoice("mplayer", name!, definition.DisplayName, definition.Teams);
-            })
-            .OrderBy(choice => choice.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        _singlePlayerMaps = SinglePlayerWarCatalog.Load(_installation).Scenarios;
         _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, Math.Max(0, _singlePlayerMaps.Count - 1));
     }
 
@@ -421,16 +407,14 @@ public sealed class MainForm : Form
         var maps = SinglePlayerMapsForSelectedFaction();
         if (maps.Count == 0) return;
         _singlePlayerMapIndex = (_singlePlayerMapIndex + delta + maps.Count) % maps.Count;
-        _status = $"Single Player War map: {maps[_singlePlayerMapIndex].Name.ToUpperInvariant()}.";
+            _status = $"Single Player War map: {maps[_singlePlayerMapIndex].Stem.ToUpperInvariant()}.";
         _surface.Invalidate();
     }
 
-    private IReadOnlyList<ScenarioChoice> SinglePlayerMapsForSelectedFaction()
+    private IReadOnlyList<SinglePlayerWarScenario> SinglePlayerMapsForSelectedFaction()
     {
         var faction = _grayRace ? 1 : 0;
-        return _singlePlayerMaps
-            .Where(map => map.Teams?.Any(team => team.Enabled && team.Race == faction) == true)
-            .ToArray();
+        return _singlePlayerMaps.Where(map => map.EnabledTeamForRace(faction) is not null).ToArray();
     }
 
     private string BackgroundName() => _screen switch
@@ -1173,7 +1157,7 @@ public sealed class MainForm : Form
                 using var highlight = new SolidBrush(Color.FromArgb(100, 44, 135, 72));
                 graphics.FillRectangle(highlight, bounds);
             }
-            DrawMenuText(graphics, (maps[index].DisplayName ?? maps[index].Name).ToUpperInvariant(), bounds);
+            DrawMenuText(graphics, maps[index].DisplayName.ToUpperInvariant(), bounds);
         }
         graphics.Restore(state);
 
@@ -1184,7 +1168,7 @@ public sealed class MainForm : Form
         // shumane in_text 5/6/7. The executable binds its profile/faction
         // state into these controls; retain their exact rectangles.
         DrawMenuText(graphics, _leaderName, new Rectangle(392, 27, 210, 16), center: false);
-        DrawMenuText(graphics, (selected.DisplayName ?? selected.Name).ToUpperInvariant(), new Rectangle(312, 162, 230, 16));
+        DrawMenuText(graphics, selected.DisplayName.ToUpperInvariant(), new Rectangle(312, 162, 230, 16));
         DrawMenuText(graphics, "AI PLAYER", new Rectangle(28, 277, 250, 16), center: false);
     }
 

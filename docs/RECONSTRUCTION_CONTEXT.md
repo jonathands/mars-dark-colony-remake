@@ -172,6 +172,11 @@ and networking ahead of the local playable slice.
   is not yet named in the executable trace, but the compiled port filters its
   reconstructed list to those data-proven playable rosters; a visible map can
   therefore always launch for the selected faction.
+- `SinglePlayerWarCatalog` is the engine-side data boundary for that list. It
+  scans the native `scenario/mplayer` root only for complete SCN/MAP/PTH sets,
+  sorts them by their original scenario stems, preserves the decoded SCN
+  definition, and resolves the enabled local team by faction. The UI only
+  presents this catalog; it does not duplicate roster parsing or infer teams.
 - Executable frontend routine `0x402FB4` loads `intrface/shuman.dat` and
   `intrface/shuman`, then uses persistent frontend state at `+0x1494` to toggle
   `shumane` gadgets 36 (`HCOM`) and 35 (`ACOM`). This corroborates that the

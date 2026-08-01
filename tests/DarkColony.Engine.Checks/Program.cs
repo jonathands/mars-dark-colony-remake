@@ -486,7 +486,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Console.WriteLine($"  scenario corpus: {files.Length} files / {placementCount} raw placements / {ventCount} vents / {autonomousGroupCount} nature groups / {autonomousPopulation} desired actors");
     });
 
-    Check("SCN team blocks preserve postfix-labelled faction fields", () =>
+Check("SCN team blocks preserve postfix-labelled faction fields", () =>
     {
         var install = GameInstallation.Open(dataPath);
         var scenario = ScenarioDefinition.Load(install.DataFile("scenario", "mplayer", "d2play01.scn"));
@@ -497,7 +497,21 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(1, scenario.Teams[1].Race ?? -1);
         Equal(0, scenario.EnabledTeamForRace(0)?.TeamId ?? -1);
         Equal(1, scenario.EnabledTeamForRace(1)?.TeamId ?? -1);
-    });
+});
+
+Check("Single Player War catalog exposes complete faction-matched scenarios", () =>
+{
+    var catalog = SinglePlayerWarCatalog.Load(GameInstallation.Open(dataPath));
+    Equal(56, catalog.Scenarios.Count);
+    Equal("a2play01", catalog.Scenarios[0].Stem);
+    Equal("j8play07", catalog.Scenarios[^1].Stem);
+    Equal(54, catalog.ForRace(0).Count);
+    Equal(30, catalog.ForRace(1).Count);
+    foreach (var scenario in catalog.ForRace(0))
+        Equal(true, scenario.EnabledTeamForRace(0) is not null);
+    foreach (var scenario in catalog.ForRace(1))
+        Equal(true, scenario.EnabledTeamForRace(1) is not null);
+});
 
     Check("executable building footprints decode", () =>
     {
