@@ -1141,8 +1141,8 @@ public sealed class MainForm : Form
         {
             var player = _warLobbyPlayers[index];
             var y = 21 + index * 19;
-            DrawMenuText(graphics, WarLobbyTypeLabel(player.Type), new Rectangle(36, y, 62, 16));
-            DrawMenuText(graphics, player.Gray ? "Gray" : "Human", new Rectangle(141, y, 62, 16));
+            DrawMenuText(graphics, WarLobbyTypeLabel(player.Type), new Rectangle(45, y, 50, 16));
+            DrawMenuText(graphics, player.Gray ? "Gray" : "Human", new Rectangle(150, y, 50, 16));
             var name = index == 0 && !string.IsNullOrWhiteSpace(_leaderName) ? _leaderName : player.Name;
             DrawMenuText(graphics, name, new Rectangle(246, y, 160, 16), center: false);
             var type = Animation("knobe.fin", "PLAYERTYPE");
