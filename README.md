@@ -78,6 +78,8 @@ launching Single Player War: the list contains maps with an enabled SCN team
 for that faction, and the port makes that team locally controllable. The SCN
 team format labels fields *after* their values; the port decodes that layout so
 race, starting resource, AI profile, and colour are not shifted by one field.
+The New Game leader-name field accepts up to 17 letters, numbers, and spaces;
+that persistent value appears in the original War-screen profile field.
 
 Campaign starts now load `human01` or `alien01` and draw their ordinary SCN
 actors using positional `gamestat.txt` identity plus exact `<CODE>STAND…` FIN

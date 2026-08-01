@@ -183,6 +183,10 @@ and networking ahead of the local playable slice.
   contents remain a port reconstruction, but are clipped to the paired source
   scroll control 40 at `(617,229,10,179)` rather than spilling into the arrow
   controls at y=195 and y=415.
+- `newgamee` control 5 is the 17-character leader-name input at `(205,308)`.
+  The port keeps this name in frontend state and renders it left-aligned in
+  `shumane` input control 5, matching the executable’s persistent-state data
+  flow. Native text-edit focus/caret timing is still unrecovered.
 
 ## Encyclopedia checkpoint
 

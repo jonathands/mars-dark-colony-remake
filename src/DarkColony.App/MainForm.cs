@@ -53,6 +53,7 @@ public sealed class MainForm : Form
     private int? _pressedButton;
     private bool _training;
     private bool _grayRace;
+    private string _leaderName = "COMMANDER";
     private IReadOnlyList<ScenarioChoice> _singlePlayerMaps = [];
     private int _singlePlayerMapIndex;
     private ScenarioChoice? _selectedScenario;
@@ -101,6 +102,11 @@ public sealed class MainForm : Form
 
         KeyDown += (_, eventArgs) =>
         {
+            if (HandleNewGameKey(eventArgs.KeyCode))
+            {
+                eventArgs.Handled = true;
+                return;
+            }
             if (HandleGameplayKey(eventArgs.KeyCode))
             {
                 eventArgs.Handled = true;
@@ -110,6 +116,15 @@ public sealed class MainForm : Form
             {
                 ShowScreen(MenuScreenId.Main);
             }
+        };
+        KeyPress += (_, eventArgs) =>
+        {
+            if (_screen != MenuScreenId.NewGame || char.IsControl(eventArgs.KeyChar)) return;
+            if (!char.IsLetterOrDigit(eventArgs.KeyChar) && eventArgs.KeyChar != ' ') return;
+            if (_leaderName.Length >= 17) return;
+            _leaderName += char.ToUpperInvariant(eventArgs.KeyChar);
+            _surface.Invalidate();
+            eventArgs.Handled = true;
         };
 
         ShowScreen(MenuScreenId.Main);
@@ -127,7 +142,15 @@ public sealed class MainForm : Form
     }
 
     protected override bool ProcessCmdKey(ref Message message, Keys keyData) =>
-        HandleGameplayKey(keyData & Keys.KeyCode) || base.ProcessCmdKey(ref message, keyData);
+        HandleNewGameKey(keyData & Keys.KeyCode) || HandleGameplayKey(keyData & Keys.KeyCode) || base.ProcessCmdKey(ref message, keyData);
+
+    private bool HandleNewGameKey(Keys key)
+    {
+        if (_screen != MenuScreenId.NewGame || key != Keys.Back || _leaderName.Length == 0) return false;
+        _leaderName = _leaderName[..^1];
+        _surface.Invalidate();
+        return true;
+    }
 
     private bool HandleGameplayKey(Keys key)
     {
@@ -453,6 +476,7 @@ public sealed class MainForm : Form
 
         if (_screen == MenuScreenId.Main) DrawOpeningLogo(graphics);
         DrawInnerMenuAssets(graphics);
+        if (_screen == MenuScreenId.NewGame) DrawNewGameLeaderName(graphics);
         if (_screen == MenuScreenId.SinglePlayer) DrawSinglePlayerMapSelection(graphics);
 
         for (var index = 0; index < _buttons.Count; index++) DrawButton(graphics, _buttons[index], index);
@@ -938,7 +962,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private bool DrawMenuText(Graphics graphics, string text, Rectangle bounds)
+    private bool DrawMenuText(Graphics graphics, string text, Rectangle bounds, bool center = true)
     {
         if (_installation is null) return false;
         try
@@ -948,7 +972,7 @@ public sealed class MainForm : Form
                 frameOffset: 31,
                 lineHeight: 14);
 
-            var cursor = bounds.X + (bounds.Width - _menuFont.Measure(text)) / 2;
+            var cursor = center ? bounds.X + (bounds.Width - _menuFont.Measure(text)) / 2 : bounds.X;
             var lineTop = bounds.Y + (bounds.Height - _menuFont.LineHeight) / 2;
             foreach (var character in text)
             {
@@ -1149,12 +1173,19 @@ public sealed class MainForm : Form
         graphics.Restore(state);
 
         var selected = maps[_singlePlayerMapIndex];
-        DrawMenuText(graphics, "Rank", new Rectangle(500, 52, 100, 18));
+        DrawMenuText(graphics, "Rank", new Rectangle(500, 52, 100, 18), center: false);
         // shumane in_text 5/6/7. The executable binds its profile/faction
         // state into these controls; retain their exact rectangles.
-        DrawMenuText(graphics, _grayRace ? "GRAY" : "HUMAN", new Rectangle(392, 27, 210, 16));
+        DrawMenuText(graphics, _leaderName, new Rectangle(392, 27, 210, 16), center: false);
         DrawMenuText(graphics, (selected.DisplayName ?? selected.Name).ToUpperInvariant(), new Rectangle(312, 162, 230, 16));
-        DrawMenuText(graphics, "AI PLAYER", new Rectangle(28, 277, 250, 16));
+        DrawMenuText(graphics, "AI PLAYER", new Rectangle(28, 277, 250, 16), center: false);
+    }
+
+    private void DrawNewGameLeaderName(Graphics graphics)
+    {
+        // newgamee in_text 5: 205,308, width 17. The source uses this same
+        // persistent leader value that shumane later shows in in_text 5.
+        DrawMenuText(graphics, _leaderName, new Rectangle(205, 308, 170, 18), center: false);
     }
 
     private void SelectSinglePlayerMapAt(Point point)
