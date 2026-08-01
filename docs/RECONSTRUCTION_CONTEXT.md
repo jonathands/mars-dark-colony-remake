@@ -175,8 +175,11 @@ and networking ahead of the local playable slice.
 - `SinglePlayerWarCatalog` is the engine-side data boundary for that list. It
   scans the native `scenario/mplayer` root only for complete SCN/MAP/PTH sets,
   sorts them by their original scenario stems, preserves the decoded SCN
-  definition, and resolves the enabled local team by faction. The UI only
-  presents this catalog; it does not duplicate roster parsing or infer teams.
+  definition, and resolves the enabled local team by faction. The shipped
+  directory's own SCN enumeration is the same order (starting `a2play01`,
+  then `d2play01`), so this deterministic sort also preserves the installed
+  layout. The UI only presents this catalog; it does not duplicate roster
+  parsing or infer teams.
 - Executable frontend routine `0x402FB4` loads `intrface/shuman.dat` and
   `intrface/shuman`, then uses persistent frontend state at `+0x1494` to toggle
   `shumane` gadgets 36 (`HCOM`) and 35 (`ACOM`). This corroborates that the
