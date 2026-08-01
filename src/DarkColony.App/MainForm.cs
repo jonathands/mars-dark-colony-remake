@@ -452,7 +452,9 @@ public sealed class MainForm : Form
             DrawGameplayPathRegions(graphics);
             DrawGameplayActors(graphics);
             if (background is not null) DrawGameplayHud(graphics, background);
-            DrawGameplayControlFeedback(graphics);
+            // Keep the native gameplay viewport clear. The previous
+            // developer-control panel covered the upper-left map area, which
+            // the original Single Player War HUD leaves unobstructed.
         }
         else if (background is not null)
         {
@@ -692,38 +694,6 @@ public sealed class MainForm : Form
             hud.Height,
             GraphicsUnit.Pixel,
             attributes);
-    }
-
-    private void DrawGameplayControlFeedback(Graphics graphics)
-    {
-        const int panelWidth = 278;
-        const int panelHeight = 31;
-        using var fill = new SolidBrush(Color.FromArgb(200, 0, 0, 0));
-        using var border = new Pen(Color.FromArgb(125, 80, 185, 155));
-        using var font = new Font(FontFamily.GenericMonospace, 8, FontStyle.Regular, GraphicsUnit.Pixel);
-        using var text = new SolidBrush(Color.FromArgb(225, 225, 245, 210));
-        graphics.FillRectangle(fill, 2, 2, panelWidth, panelHeight);
-        graphics.DrawRectangle(border, 2, 2, panelWidth - 1, panelHeight - 1);
-        var instanceId = _selectedEntityInstanceIds.Order().FirstOrDefault();
-        if (instanceId == 0 || _scenarioSimulation?.Actor(instanceId) is not { } actor)
-        {
-            graphics.DrawString("LMB select · Shift+LMB add/remove · RMB move", font, text, 6, 6);
-            graphics.DrawString("Shift+RMB queue · S stop · drag/arrow pan", font, text, 6, 17);
-            return;
-        }
-
-        var cell = actor.Movement.OccupiedCell;
-        var order = actor.MoveOrder;
-        var state = order is null
-            ? "READY"
-            : order.BlockedTicksRemaining > 0
-                ? $"WAIT {order.BlockedTicksRemaining}"
-                : $"MOVE {order.Target.X},{order.Target.Z} · S{order.SegmentCount}";
-        var selectionLabel = _selectedEntityInstanceIds.Count == 1
-            ? actor.Definition.DisplayName
-            : $"{_selectedEntityInstanceIds.Count} UNITS · LEAD {actor.Definition.DisplayName}";
-        graphics.DrawString($"{selectionLabel} · T{actor.Seed.Team} · C{cell.X},{cell.Z}", font, text, 6, 6);
-        graphics.DrawString($"{state} · face {actor.Facing.Current} / sector {actor.Facing.RenderSector16}", font, text, 6, 17);
     }
 
     private void DrawOpeningLogo(Graphics graphics)
