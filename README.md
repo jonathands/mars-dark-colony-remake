@@ -28,6 +28,8 @@ For a repeatable Single Player War lobby check, add `--single-player-war`:
 dotnet run --project src/DarkColony.App -- --data "..\Dark Colony" --single-player-war
 ```
 
+Or double-click [`run-war-lobby-debug.cmd`](run-war-lobby-debug.cmd).
+
 If `--data` is omitted, the app checks `DARKCOLONY_DATA` and then the adjacent
 `../Dark Colony` directory. The original files are never copied into this port.
 
