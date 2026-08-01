@@ -70,6 +70,7 @@ public sealed class MainForm : Form
     private Point? _selectionDragStart;
     private Point _selectionDragCurrent;
     private Point? _gameplayPointer;
+    private bool _singlePlayerScrollDragging;
     private string _status;
     private ulong _screenStartedAtTick;
 
@@ -94,6 +95,7 @@ public sealed class MainForm : Form
         _surface.MouseLeave += (_, _) =>
         {
             _gameplayPointer = null;
+            _singlePlayerScrollDragging = false;
             SetHover(null);
         };
         _surface.MouseDown += SurfaceMouseDown;
@@ -1172,6 +1174,8 @@ public sealed class MainForm : Form
         }
         graphics.Restore(state);
 
+        DrawSinglePlayerScrollThumb(graphics, maps.Count, first, visibleRows);
+
         var selected = maps[_singlePlayerMapIndex];
         DrawMenuText(graphics, "Rank", new Rectangle(500, 52, 100, 18), center: false);
         // shumane in_text 5/6/7. The executable binds its profile/faction
@@ -1179,6 +1183,19 @@ public sealed class MainForm : Form
         DrawMenuText(graphics, _leaderName, new Rectangle(392, 27, 210, 16), center: false);
         DrawMenuText(graphics, (selected.DisplayName ?? selected.Name).ToUpperInvariant(), new Rectangle(312, 162, 230, 16));
         DrawMenuText(graphics, "AI PLAYER", new Rectangle(28, 277, 250, 16), center: false);
+    }
+
+    private static void DrawSinglePlayerScrollThumb(Graphics graphics, int mapCount, int first, int visibleRows)
+    {
+        var track = new Rectangle(617, 229, 10, 179); // shumane scroll 40
+        var maximumFirst = Math.Max(0, mapCount - visibleRows);
+        var thumbHeight = Math.Clamp(track.Height * visibleRows / Math.Max(visibleRows, mapCount), 18, track.Height);
+        var travel = track.Height - thumbHeight;
+        var top = track.Y + (maximumFirst == 0 ? 0 : travel * first / maximumFirst);
+        using var fill = new SolidBrush(Color.FromArgb(165, 91, 140, 83));
+        using var edge = new Pen(Color.FromArgb(210, 180, 218, 160));
+        graphics.FillRectangle(fill, track.X + 1, top, track.Width - 2, thumbHeight);
+        graphics.DrawRectangle(edge, track.X, top, track.Width - 1, thumbHeight - 1);
     }
 
     private void DrawNewGameLeaderName(Graphics graphics)
@@ -1204,6 +1221,17 @@ public sealed class MainForm : Form
         _status = $"Single Player War map: {maps[index].DisplayName}.";
     }
 
+    private void SelectSinglePlayerMapFromScroll(Point point)
+    {
+        var maps = SinglePlayerMapsForSelectedFaction();
+        if (maps.Count == 0) return;
+        const int top = 229;
+        const int height = 179;
+        var fraction = Math.Clamp(point.Y - top, 0, height - 1) / (double)(height - 1);
+        _singlePlayerMapIndex = (int)Math.Round(fraction * (maps.Count - 1));
+        _status = $"Single Player War map: {maps[_singlePlayerMapIndex].DisplayName}.";
+    }
+
     private void SurfaceMouseMove(object? sender, MouseEventArgs eventArgs)
     {
         if (_screen == MenuScreenId.Gameplay)
@@ -1227,6 +1255,12 @@ public sealed class MainForm : Form
             }
             return;
         }
+        if (_screen == MenuScreenId.SinglePlayer && _singlePlayerScrollDragging && eventArgs.Button.HasFlag(MouseButtons.Left))
+        {
+            SelectSinglePlayerMapFromScroll(eventArgs.Location);
+            _surface.Invalidate();
+            return;
+        }
         SetHover(_buttons.LastOrDefault(button => button.Bounds.Contains(eventArgs.Location))?.Id);
     }
 
@@ -1240,6 +1274,16 @@ public sealed class MainForm : Form
     private void SurfaceMouseDown(object? sender, MouseEventArgs eventArgs)
     {
         _surface.Focus();
+        if (_screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left &&
+            new Rectangle(617, 229, 10, 179).Contains(eventArgs.Location))
+        {
+            _singlePlayerScrollDragging = true;
+            SelectSinglePlayerMapFromScroll(eventArgs.Location);
+            _surface.Capture = true;
+            _pressedButton = null;
+            _surface.Invalidate();
+            return;
+        }
         if (_screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left && eventArgs.X < 516 && eventArgs.Y < 458)
         {
             if (ModifierKeys.HasFlag(Keys.Shift))
@@ -1263,6 +1307,7 @@ public sealed class MainForm : Form
     private void SurfaceMouseUp(object? sender, MouseEventArgs eventArgs)
     {
         var wasMapDrag = _mapDragged;
+        var wasSinglePlayerScrollDrag = _singlePlayerScrollDragging;
         var selectionStart = _selectionDragStart;
         var selectionBounds = selectionStart is { } start ? Rectangle.FromLTRB(
             Math.Min(start.X, eventArgs.X), Math.Min(start.Y, eventArgs.Y),
@@ -1271,7 +1316,14 @@ public sealed class MainForm : Form
         _mapDragStart = null;
         _mapDragged = false;
         _selectionDragStart = null;
+        _singlePlayerScrollDragging = false;
         _surface.Capture = false;
+        if (wasSinglePlayerScrollDrag)
+        {
+            _pressedButton = null;
+            _surface.Invalidate();
+            return;
+        }
         var pressed = _pressedButton;
         _pressedButton = null;
         var button = _buttons.LastOrDefault(candidate => candidate.Id == pressed && candidate.Bounds.Contains(eventArgs.Location));
