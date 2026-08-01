@@ -191,7 +191,9 @@ and networking ahead of the local playable slice.
 - `newgamee` control 5 is the 17-character leader-name input at `(205,308)`.
   The port keeps this name in frontend state and renders it left-aligned in
   `shumane` input control 5, matching the executable’s persistent-state data
-  flow. Native text-edit focus/caret timing is still unrecovered.
+  flow. No shipped profile/save file establishes a default name, so a fresh
+  port begins with an empty field. Native text-edit focus/caret timing is still
+  unrecovered.
 - The source declares `newgamee` portrait gadgets `HREZIN`, `HREZOUT`,
   `HLOOP`, `AREZIN`, `AREZOUT`, and `ALOOP` as `anim_stopped`. The compiled
   screen shows the stopped `HLOOP`/`ALOOP` frames; their names alone are not

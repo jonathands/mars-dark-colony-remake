@@ -53,7 +53,7 @@ public sealed class MainForm : Form
     private int? _pressedButton;
     private bool _training;
     private bool _grayRace;
-    private string _leaderName = "COMMANDER";
+    private string _leaderName = string.Empty;
     private IReadOnlyList<ScenarioChoice> _singlePlayerMaps = [];
     private int _singlePlayerMapIndex;
     private ScenarioChoice? _selectedScenario;
