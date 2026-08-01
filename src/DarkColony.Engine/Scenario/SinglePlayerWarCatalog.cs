@@ -31,8 +31,12 @@ public sealed class SinglePlayerWarCatalog
             .Where(stem =>
                 File.Exists(Path.Combine(directory, $"{stem}.map")) &&
                 File.Exists(Path.Combine(directory, $"{stem}.pth")))
-            .OrderBy(stem => stem, StringComparer.OrdinalIgnoreCase)
             .Select(stem => new SinglePlayerWarScenario(stem!, ScenarioDefinition.Load(Path.Combine(directory, $"{stem}.scn"))))
+            // The native Single Player War browser presents the user-facing
+            // SCN title alphabetically (the captured first entries are
+            // 4 Kingdoms, Armageddon, Beon Bay, and Big Crater).
+            .OrderBy(scenario => scenario.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(scenario => scenario.Stem, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return new SinglePlayerWarCatalog(scenarios);
     }

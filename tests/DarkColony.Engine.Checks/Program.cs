@@ -503,8 +503,8 @@ Check("Single Player War catalog exposes complete faction-matched scenarios", ()
 {
     var catalog = SinglePlayerWarCatalog.Load(GameInstallation.Open(dataPath));
     Equal(56, catalog.Scenarios.Count);
-    Equal("a2play01", catalog.Scenarios[0].Stem);
-    Equal("j8play07", catalog.Scenarios[^1].Stem);
+    Equal("j4play01", catalog.Scenarios[0].Stem);
+    Equal("4 Kingdoms", catalog.Scenarios[0].DisplayName);
     Equal(54, catalog.ForRace(0).Count);
     Equal(30, catalog.ForRace(1).Count);
     foreach (var scenario in catalog.ForRace(0))
