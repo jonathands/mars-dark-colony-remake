@@ -172,6 +172,17 @@ and networking ahead of the local playable slice.
   map-list filtering and profile persistence remain unresolved; therefore the
   port leaves every complete map visible and labels unavailable factions rather
   than claiming the original filtered them.
+- Executable frontend routine `0x402FB4` loads `intrface/shuman.dat` and
+  `intrface/shuman`, then uses persistent frontend state at `+0x1494` to toggle
+  `shumane` gadgets 36 (`HCOM`) and 35 (`ACOM`). This corroborates that the
+  screen consumes an already-chosen faction; it does not declare its own race
+  buttons. The port therefore keeps faction selection on the recovered New
+  Game screen rather than adding unproven controls to `shumane`.
+- The same routine updates source text controls 5, 6, and 7. The port keeps
+  those at `(392,27)`, `(312,162)`, and `(28,277)` respectively. Its map-list
+  contents remain a port reconstruction, but are clipped to the paired source
+  scroll control 40 at `(617,229,10,179)` rather than spilling into the arrow
+  controls at y=195 and y=415.
 
 ## Encyclopedia checkpoint
 

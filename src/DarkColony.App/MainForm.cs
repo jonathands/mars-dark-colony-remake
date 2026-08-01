@@ -1107,20 +1107,24 @@ public sealed class MainForm : Form
         EnsureSinglePlayerMaps();
         if (_singlePlayerMaps.Count == 0)
         {
-            DrawMenuText(graphics, "NO WAR MAPS", new Rectangle(312, 222, 290, 18));
+            DrawMenuText(graphics, "NO WAR MAPS", new Rectangle(312, 229, 289, 18));
             return;
         }
 
         const int rowHeight = 18;
-        const int visibleRows = 11;
+        const int visibleRows = 10;
+        // shumane scroll 40: x617 y229 w10 h179. The list shares that exact
+        // vertical track; only its map-name contents are reconstructed.
+        const int listTop = 229;
+        const int listHeight = 179;
         var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, _singlePlayerMaps.Count - visibleRows));
-        var listBounds = new Rectangle(312, 222, 289, visibleRows * rowHeight);
+        var listBounds = new Rectangle(312, listTop, 289, listHeight);
         var state = graphics.Save();
         graphics.SetClip(listBounds);
         for (var row = 0; row < visibleRows && first + row < _singlePlayerMaps.Count; row++)
         {
             var index = first + row;
-            var bounds = new Rectangle(314, 222 + row * rowHeight, 285, rowHeight);
+            var bounds = new Rectangle(314, listTop + row * rowHeight, 285, rowHeight);
             if (index == _singlePlayerMapIndex)
             {
                 using var highlight = new SolidBrush(Color.FromArgb(100, 44, 135, 72));
@@ -1131,24 +1135,23 @@ public sealed class MainForm : Form
         graphics.Restore(state);
 
         var selected = _singlePlayerMaps[_singlePlayerMapIndex];
-        var faction = _grayRace ? 1 : 0;
-        var localTeam = selected.Teams?.FirstOrDefault(team => team.Enabled && team.Race == faction);
         DrawMenuText(graphics, "Rank", new Rectangle(500, 52, 100, 18));
-        DrawMenuText(graphics, _grayRace ? "GRAY" : "HUMAN", new Rectangle(392, 22, 210, 16));
-        DrawMenuText(graphics, (selected.DisplayName ?? selected.Name).ToUpperInvariant(), new Rectangle(312, 154, 230, 16));
-        var roster = localTeam is null
-            ? $"NO {(_grayRace ? "GRAY" : "HUMAN")} TEAM"
-            : $"TEAM {localTeam.TeamId + 1} · WAR MAP {_singlePlayerMapIndex + 1}/{_singlePlayerMaps.Count}";
-        DrawMenuText(graphics, roster, new Rectangle(312, 178, 285, 16));
+        // shumane in_text 5/6/7. The executable binds its profile/faction
+        // state into these controls; retain their exact rectangles.
+        DrawMenuText(graphics, _grayRace ? "GRAY" : "HUMAN", new Rectangle(392, 27, 210, 16));
+        DrawMenuText(graphics, (selected.DisplayName ?? selected.Name).ToUpperInvariant(), new Rectangle(312, 162, 230, 16));
+        DrawMenuText(graphics, "AI PLAYER", new Rectangle(28, 277, 250, 16));
     }
 
     private void SelectSinglePlayerMapAt(Point point)
     {
         const int rowHeight = 18;
-        const int visibleRows = 11;
-        if (point.X is < 312 or >= 601 || point.Y is < 222 or >= 222 + visibleRows * rowHeight || _singlePlayerMaps.Count == 0) return;
+        const int visibleRows = 10;
+        const int listTop = 229;
+        const int listHeight = 179;
+        if (point.X is < 312 or >= 601 || point.Y is < listTop or >= listTop + listHeight || _singlePlayerMaps.Count == 0) return;
         var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, _singlePlayerMaps.Count - visibleRows));
-        var index = first + (point.Y - 222) / rowHeight;
+        var index = first + (point.Y - listTop) / rowHeight;
         if (index >= _singlePlayerMaps.Count) return;
         _singlePlayerMapIndex = index;
         _status = $"Single Player War map: {_singlePlayerMaps[index].DisplayName}.";
