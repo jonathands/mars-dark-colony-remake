@@ -757,10 +757,10 @@ public sealed class MainForm : Form
         {
             case MenuScreenId.NewGame:
                 // newgamee gadgets 21-26: both race portraits occupy their own
-                // 112x232 viewport. The REZ animations are selection transitions;
-                // the LOOP ranges are the stable animated portraits.
-                DrawLoopAnimation(graphics, "hcar.fin", "HLOOP", 27, 23, 3);
-                DrawLoopAnimation(graphics, "acar.fin", "ALOOP", 500, 23, 3);
+                // 112x232 viewport. The source declares every listed portrait
+                // gadget anim_stopped; REZ ranges remain transition evidence.
+                DrawStoppedAnimation(graphics, "hcar.fin", "HLOOP", 27, 23);
+                DrawStoppedAnimation(graphics, "acar.fin", "ALOOP", 500, 23);
                 break;
 
             case MenuScreenId.SinglePlayer:
