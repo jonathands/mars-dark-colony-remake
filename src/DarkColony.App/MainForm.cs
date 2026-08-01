@@ -83,7 +83,7 @@ public sealed class MainForm : Form
     private string _status;
     private ulong _screenStartedAtTick;
 
-    public MainForm(GameInstallation? installation)
+    public MainForm(GameInstallation? installation, MenuScreenId initialScreen = MenuScreenId.Main)
     {
         _installation = installation;
         _clock = new FixedStepClock(Environment.TickCount64);
@@ -138,7 +138,7 @@ public sealed class MainForm : Form
             eventArgs.Handled = true;
         };
 
-        ShowScreen(MenuScreenId.Main);
+        ShowScreen(initialScreen);
         _timer.Tick += (_, _) =>
         {
             _clock.Advance(Environment.TickCount64, () =>

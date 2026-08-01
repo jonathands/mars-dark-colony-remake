@@ -1,4 +1,5 @@
 using DarkColony.Engine.Data;
+using DarkColony.App.Ui;
 
 namespace DarkColony.App;
 
@@ -19,6 +20,10 @@ internal static class Program
             return;
         }
 
-        Application.Run(new MainForm(installation));
+        var initialScreen = arguments.Any(argument =>
+            argument.Equals("--single-player-war", StringComparison.OrdinalIgnoreCase))
+            ? MenuScreenId.SinglePlayer
+            : MenuScreenId.Main;
+        Application.Run(new MainForm(installation, initialScreen));
     }
 }

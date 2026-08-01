@@ -22,6 +22,12 @@ The equivalent explicit command is:
 dotnet run --project src/DarkColony.App -- --data "..\Dark Colony"
 ```
 
+For a repeatable Single Player War lobby check, add `--single-player-war`:
+
+```powershell
+dotnet run --project src/DarkColony.App -- --data "..\Dark Colony" --single-player-war
+```
+
 If `--data` is omitted, the app checks `DARKCOLONY_DATA` and then the adjacent
 `../Dark Colony` directory. The original files are never copied into this port.
 
@@ -54,32 +60,29 @@ as transitional rather than a completed renderer. The encyclopedia reads the ori
 supports its three categories and list navigation, and previews confirmed FIN
 animations where their native identity is mapped.
 
-The first in-game harness is available through **Single Player War** (choose a
-map from the original screen's right-side list, use its native **Up**/**Down**
-buttons, then choose **To Battle**) or campaign start. Its 640x480 arrangement
-uses the recovered `shumane` screen definition: original button coordinates,
-commander viewport, rank and medal decorations, and campaign-stat gadgets are
-read from the external installation. The map names placed in the recovered
-scroll region are a clearly separated port reconstruction. Single Player War
-discovers complete original `scenario/mplayer` SCN/MAP/PTH triplets at runtime
-and loads the selected scenario before gameplay is entered. It renders a
-516x458 native terrain viewport and composites the original gameplay HUD above
-it. The engine now parses the complete SCN corpus, seeds ordinary placements as
-deterministic world entities, and applies executable-confirmed building
-footprints to static occupancy when structures are introduced. The shipped
-scenarios contain no such ordinary building placements. Special vent records
-and unresolved entity kinds stay separate so the port does not invent blockers.
-Gameplay supports direct unit clicks, box selection, orders, drag panning,
-keyboard navigation, and edge scrolling.
+The first in-game harness is available through **Single Player War** or a
+campaign start. The War setup is the recovered 640×480 `multie` screen over
+`tcpwait`, not `shumane`: it presents eight player rows, an alphabetical list
+of complete original `scenario/mplayer` SCN/MAP/PTH triplets, and the native
+Storage/Artifacts/Vents/P7/Rank controls. Press **READY** to enter the selected
+map. It renders a 516×458 native terrain viewport and composites the original
+gameplay HUD above it. The engine parses the complete SCN corpus, seeds
+ordinary placements as deterministic world entities, and applies
+executable-confirmed building footprints to static occupancy when structures
+are introduced. Special vent records and unresolved entity kinds remain
+separate so the port does not invent blockers. Gameplay supports direct unit
+clicks, box selection, orders, drag panning, keyboard navigation, and edge
+scrolling.
 
-War maps retain their original per-team roster data. The faction currently
-chosen on the New Campaign / Training race screen is also the faction used when
-launching Single Player War: the list contains maps with an enabled SCN team
-for that faction, and the port makes that team locally controllable. The SCN
-team format labels fields *after* their values; the port decodes that layout so
-race, starting resource, AI profile, and colour are not shifted by one field.
-The New Game leader-name field accepts up to 17 letters, numbers, and spaces;
-that persistent value appears in the original War-screen profile field.
+War maps retain their original per-team roster data. The faction selected on
+the lobby's Human player row selects the matching enabled SCN team; a missing
+faction is rejected rather than remapped. The launcher carries validated lobby
+settings with that map/team selection, although gameplay effects for resources,
+power-ups, P7, and rank await their still-unrecovered scenario-start handoff.
+The SCN team format labels fields *after* their values; the port decodes that
+layout so race, starting resource, AI profile, and colour are not shifted by
+one field. The New Game leader-name field accepts up to 17 letters, numbers,
+and spaces; that persistent value appears in the lobby's player-name field.
 
 Campaign starts now load `human01` or `alien01` and draw their ordinary SCN
 actors using positional `gamestat.txt` identity plus exact `<CODE>STAND…` FIN
