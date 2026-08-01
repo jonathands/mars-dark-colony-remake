@@ -883,16 +883,17 @@ public sealed class MainForm : Form
             if (_screen == MenuScreenId.Main)
             {
                 var age = (long)(_world.TickCount - _screenStartedAtTick) - sequenceIndex * 2L;
-                frame = (ushort)(art.FirstFrame + Math.Clamp(age, 0L, (long)(art.LastFrame - art.FirstFrame)));
+                // Several one-off ranges end with an empty FIN sentinel.
+                // LARGE/MED/SMALL BUTTON and UP/DOWN all have their final
+                // visible frame immediately before that sentinel.
+                var lastVisible = LastVisibleFrame(art);
+                frame = (ushort)(art.FirstFrame + Math.Clamp(age, 0L, (long)(lastVisible - art.FirstFrame)));
             }
             else if (pressed || bright)
             {
-                // The FIN range is a one-off construction transition, not an
-                // idle loop. The third-to-last frame is the completed outlined
-                // control; the terminal frame is the compact stopped state.
-                frame = (ushort)Math.Max(art.FirstFrame, art.LastFrame - 2);
+                frame = (ushort)Math.Max(art.FirstFrame, LastVisibleFrame(art) - 1);
             }
-            else frame = art.LastFrame;
+            else frame = art.FirstFrame;
             drewOriginal = DrawAnimationFrame(graphics, "knobe.fin", frame, button.Bounds.X, button.Bounds.Y);
         }
 
@@ -1187,6 +1188,9 @@ public sealed class MainForm : Form
         for (var index = 0; index < values.Length; index++)
         {
             var bounds = new Rectangle(start + index * 41, y, 41, 18);
+            var button = Animation("knobe.fin", "BUTTON");
+            if (button is not null)
+                DrawAnimationFrame(graphics, "knobe.fin", button.FirstFrame, bounds.X, bounds.Y);
             if (index == selected)
             {
                 using var highlight = new SolidBrush(Color.FromArgb(70, 255, 0, 0));
@@ -1207,9 +1211,12 @@ public sealed class MainForm : Form
     private void DrawLobbyArrow(Graphics graphics, string animationName, int x, int y)
     {
         var animation = Animation("knobe.fin", animationName);
-        if (animation is not null && DrawAnimationFrame(graphics, "knobe.fin", animation.LastFrame, x, y)) return;
+        if (animation is not null && DrawAnimationFrame(graphics, "knobe.fin", animation.FirstFrame, x, y)) return;
         DrawMenuText(graphics, animationName == "LEFT" ? "<" : ">", new Rectangle(x, y, 41, 18));
     }
+
+    private static ushort LastVisibleFrame(AnimationRange animation) =>
+        animation.LastFrame > animation.FirstFrame ? (ushort)(animation.LastFrame - 1) : animation.FirstFrame;
 
     private static string WarMapDescription(string stem)
     {
