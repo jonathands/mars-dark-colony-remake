@@ -31,6 +31,7 @@ public sealed class MainForm : Form
     private readonly Dictionary<string, Point> _animationOrigins = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Rectangle> _animationOpaqueBounds = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, Bitmap> _fontGlyphs = [];
+    private readonly Dictionary<string, Bitmap> _remappedFontGlyphs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Sprite> _sprites = new(StringComparer.OrdinalIgnoreCase);
     private BitmapFont? _menuFont;
     private EncyclopediaCatalog? _encyclopedia;
@@ -914,7 +915,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private bool DrawMenuText(Graphics graphics, string text, Rectangle bounds, bool center = true)
+    private bool DrawMenuText(Graphics graphics, string text, Rectangle bounds, bool center = true, Color? remap = null)
     {
         if (_installation is null) return false;
         try
@@ -933,13 +934,31 @@ public sealed class MainForm : Form
                 if (frame is null) continue;
                 if (frame.Width != 0 && frame.Height != 0)
                 {
-                    if (!_fontGlyphs.TryGetValue(frameIndex, out var bitmap))
+                    Bitmap? bitmap;
+                    var cacheKey = remap is { } color ? $"{frameIndex}:{color.ToArgb()}" : string.Empty;
+                    var found = remap is null
+                        ? _fontGlyphs.TryGetValue(frameIndex, out bitmap)
+                        : _remappedFontGlyphs.TryGetValue(cacheKey, out bitmap);
+                    if (!found)
                     {
-                        bitmap = BitmapFromRgba(frame.Width, frame.Height, _menuFont.Sprite.FrameRgba(frameIndex));
-                        _fontGlyphs[frameIndex] = bitmap;
+                        var rgba = _menuFont.Sprite.FrameRgba(frameIndex);
+                        if (remap is { } tint)
+                        {
+                            rgba = (byte[])rgba.Clone();
+                            for (var pixel = 0; pixel < rgba.Length; pixel += 4)
+                            {
+                                if (rgba[pixel + 3] == 0) continue;
+                                rgba[pixel] = tint.R;
+                                rgba[pixel + 1] = tint.G;
+                                rgba[pixel + 2] = tint.B;
+                            }
+                        }
+                        bitmap = BitmapFromRgba(frame.Width, frame.Height, rgba);
+                        if (remap is null) _fontGlyphs[frameIndex] = bitmap;
+                        else _remappedFontGlyphs[cacheKey] = bitmap;
                     }
 
-                    graphics.DrawImageUnscaled(bitmap, cursor + frame.AnchorX, lineTop + frame.AnchorY);
+                    graphics.DrawImageUnscaled(bitmap!, cursor + frame.AnchorX, lineTop + frame.AnchorY);
                 }
 
                 cursor += _menuFont.Advance(character);
@@ -973,14 +992,20 @@ public sealed class MainForm : Form
         }
     }
 
-    private bool DrawAnimationFrame(Graphics graphics, string fileName, int frameIndex, int x, int y)
+    private bool DrawAnimationFrame(Graphics graphics, string fileName, int frameIndex, int x, int y, float opacity = 1f)
     {
         var bitmap = AnimationBitmap(fileName, frameIndex);
         if (bitmap is null) return false;
         // Interface source rectangles already specify the gadget origin. FIN
         // layer offsets were consumed while composing/cropping the bitmap and
         // must not be applied a second time here.
-        graphics.DrawImageUnscaled(bitmap, x, y);
+        if (opacity >= 1f) graphics.DrawImageUnscaled(bitmap, x, y);
+        else
+        {
+            using var attributes = new ImageAttributes();
+            attributes.SetColorMatrix(new ColorMatrix { Matrix33 = opacity });
+            graphics.DrawImage(bitmap, new Rectangle(x, y, bitmap.Width, bitmap.Height), 0, 0, bitmap.Width, bitmap.Height, GraphicsUnit.Pixel, attributes);
+        }
         return true;
     }
 
@@ -1150,17 +1175,18 @@ public sealed class MainForm : Form
             var player = _warLobbyPlayers[index];
             var y = 21 + index * 19;
             DrawMenuText(graphics, WarLobbyTypeLabel(player.Type), new Rectangle(45, y, 50, 16));
-            DrawMenuText(graphics, player.Gray ? "Gray" : "Human", new Rectangle(150, y, 50, 16));
+            DrawMenuText(graphics, player.Gray ? "Gray" : "Human", new Rectangle(150, y, 50, 16), remap: Color.FromArgb(110, 230, 40));
             var name = index == 0 && !string.IsNullOrWhiteSpace(_leaderName) ? _leaderName : player.Name;
-            DrawMenuText(graphics, name, new Rectangle(246, y, 160, 16), center: false);
+            DrawMenuText(graphics, name, new Rectangle(246, y, 160, 16), center: false, remap: Color.FromArgb(110, 230, 40));
             var type = Animation("knobe.fin", "PLAYERTYPE");
             if (type is not null) DrawAnimationFrame(graphics, "knobe.fin", type.FirstFrame + (int)player.Type, 99, y);
+            var opacity = player.Type == WarLobbyPlayerType.None ? 0.32f : 1f;
             var race = Animation("knobe.fin", "RACEFACE");
-            if (race is not null) DrawAnimationFrame(graphics, "knobe.fin", race.FirstFrame + (player.Gray ? 1 : 0), 204, y);
+            if (race is not null) DrawAnimationFrame(graphics, "knobe.fin", race.FirstFrame + (player.Gray ? 1 : 0), 204, y, opacity);
             var colors = Animation("knobe.fin", "CUBE");
-            if (colors is not null) DrawAnimationFrame(graphics, "knobe.fin", colors.FirstFrame + player.Color, 425, y + 2);
+            if (colors is not null) DrawAnimationFrame(graphics, "knobe.fin", colors.FirstFrame + player.Color, 425, y + 2, opacity);
             var teams = Animation("knobe.fin", "TEAMS");
-            if (teams is not null) DrawAnimationFrame(graphics, "knobe.fin", teams.FirstFrame + player.Team, 512, y + 2);
+            if (teams is not null) DrawAnimationFrame(graphics, "knobe.fin", teams.FirstFrame + player.Team, 512, y + 2, opacity);
             DrawMenuText(graphics, player.Ready ? "✓" : "", new Rectangle(610, y - 3, 27, 17));
         }
     }
@@ -1184,7 +1210,9 @@ public sealed class MainForm : Form
 
     private void DrawOptionRow(Graphics graphics, string label, int y, int selected, string[] values, int start = 456)
     {
-        DrawMenuText(graphics, label, new Rectangle(332, y, start - 332, 18), center: false);
+        var labelColor = Color.FromArgb(110, 230, 40);
+        var valueColor = Color.FromArgb(235, 45, 35);
+        DrawMenuText(graphics, label, new Rectangle(332, y, start - 332, 18), center: false, remap: labelColor);
         for (var index = 0; index < values.Length; index++)
         {
             var bounds = new Rectangle(start + index * 41, y, 41, 18);
@@ -1196,13 +1224,13 @@ public sealed class MainForm : Form
                     index == selected ? LastVisibleFrame(button) : button.FirstFrame,
                     bounds.X,
                     bounds.Y);
-            DrawMenuText(graphics, values[index], bounds);
+            DrawMenuText(graphics, values[index], bounds, remap: valueColor);
         }
     }
 
     private void DrawMultiplierRow(Graphics graphics, string label, int y, int value)
     {
-        DrawMenuText(graphics, label, new Rectangle(332, y, 207, 18), center: false);
+        DrawMenuText(graphics, label, new Rectangle(332, y, 207, 18), center: false, remap: Color.FromArgb(110, 230, 40));
         DrawMenuText(graphics, $"{value}%", new Rectangle(539, y, 64, 18));
         DrawLobbyArrow(graphics, "LEFT", 521, y);
         DrawLobbyArrow(graphics, "RIGHT", 603, y);
