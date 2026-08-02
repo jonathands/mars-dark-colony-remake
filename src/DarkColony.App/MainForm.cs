@@ -895,7 +895,13 @@ public sealed class MainForm : Form
                 frame = (ushort)Math.Max(art.FirstFrame, LastVisibleFrame(art) - 1);
             }
             else frame = art.FirstFrame;
-            drewOriginal = DrawAnimationFrame(graphics, "knobe.fin", frame, button.Bounds.X, button.Bounds.Y);
+            drewOriginal = DrawAnimationFrame(
+                graphics,
+                "knobe.fin",
+                frame,
+                button.Bounds.X,
+                button.Bounds.Y,
+                remapWarControlPalette: _screen == MenuScreenId.SinglePlayer);
         }
 
         if (!drewOriginal)
@@ -992,9 +998,16 @@ public sealed class MainForm : Form
         }
     }
 
-    private bool DrawAnimationFrame(Graphics graphics, string fileName, int frameIndex, int x, int y, float opacity = 1f)
+    private bool DrawAnimationFrame(
+        Graphics graphics,
+        string fileName,
+        int frameIndex,
+        int x,
+        int y,
+        float opacity = 1f,
+        bool remapWarControlPalette = false)
     {
-        var bitmap = AnimationBitmap(fileName, frameIndex);
+        var bitmap = AnimationBitmap(fileName, frameIndex, remapWarControlPalette);
         if (bitmap is null) return false;
         // Interface source rectangles already specify the gadget origin. FIN
         // layer offsets were consumed while composing/cropping the bitmap and
@@ -1009,10 +1022,10 @@ public sealed class MainForm : Form
         return true;
     }
 
-    private Bitmap? AnimationBitmap(string fileName, int frameIndex)
+    private Bitmap? AnimationBitmap(string fileName, int frameIndex, bool remapWarControlPalette = false)
     {
         if (_installation is null) return null;
-        var key = $"{fileName}:{frameIndex}";
+        var key = $"{fileName}:{frameIndex}:{(remapWarControlPalette ? "war-controls" : "base")}";
         try
         {
             if (_animationFrames.TryGetValue(key, out var cached)) return cached;
@@ -1023,6 +1036,17 @@ public sealed class MainForm : Form
             }
 
             var composite = definition.Compose(frameIndex, LoadSprite);
+            if (remapWarControlPalette && fileName.Equals("knobe.fin", StringComparison.OrdinalIgnoreCase))
+            {
+                // `multie` uses the same knobe sprites as the green menus,
+                // but dc.exe applies its UI palette bank before drawing them.
+                // The captured native War screen maps the three base knobe
+                // shades (12,36,0 / 28,77,0 / 48,117,0) to these exact
+                // neutral/red shades.  Replace only those source colors:
+                // recoloring every opaque pixel would destroy the composite's
+                // black, grey, cyan, and glyph details.
+                RemapWarControlPalette(composite.Rgba);
+            }
             var bitmap = BitmapFromRgba(composite);
             _animationFrames[key] = bitmap;
             _animationOrigins[key] = new Point(composite.X, composite.Y);
@@ -1032,6 +1056,32 @@ public sealed class MainForm : Form
         {
             _status = $"Animation error: {error.Message}";
             return null;
+        }
+    }
+
+    private static void RemapWarControlPalette(byte[] rgba)
+    {
+        for (var pixel = 0; pixel < rgba.Length; pixel += 4)
+        {
+            if (rgba[pixel + 3] == 0) continue;
+            if (rgba[pixel] == 12 && rgba[pixel + 1] == 36 && rgba[pixel + 2] == 0)
+            {
+                rgba[pixel] = 7;
+                rgba[pixel + 1] = 7;
+                rgba[pixel + 2] = 7;
+            }
+            else if (rgba[pixel] == 28 && rgba[pixel + 1] == 77 && rgba[pixel + 2] == 0)
+            {
+                rgba[pixel] = 65;
+                rgba[pixel + 1] = 8;
+                rgba[pixel + 2] = 0;
+            }
+            else if (rgba[pixel] == 48 && rgba[pixel + 1] == 117 && rgba[pixel + 2] == 0)
+            {
+                rgba[pixel] = 175;
+                rgba[pixel + 1] = 11;
+                rgba[pixel + 2] = 15;
+            }
         }
     }
 
@@ -1223,7 +1273,8 @@ public sealed class MainForm : Form
                     "knobe.fin",
                     index == selected ? LastVisibleFrame(button) : button.FirstFrame,
                     bounds.X,
-                    bounds.Y);
+                    bounds.Y,
+                    remapWarControlPalette: true);
             DrawMenuText(graphics, values[index], bounds, remap: valueColor);
         }
     }
@@ -1239,7 +1290,8 @@ public sealed class MainForm : Form
     private void DrawLobbyArrow(Graphics graphics, string animationName, int x, int y)
     {
         var animation = Animation("knobe.fin", animationName);
-        if (animation is not null && DrawAnimationFrame(graphics, "knobe.fin", animation.FirstFrame, x, y)) return;
+        if (animation is not null && DrawAnimationFrame(
+            graphics, "knobe.fin", animation.FirstFrame, x, y, remapWarControlPalette: true)) return;
         DrawMenuText(graphics, animationName == "LEFT" ? "<" : ">", new Rectangle(x, y, 41, 18));
     }
 

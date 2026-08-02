@@ -10,6 +10,13 @@ presents the complete `scenario/mplayer` catalogue by SCN display title. The
 captured first titles are `4 Kingdoms`, `Armageddon`, `Beon Bay`, and `Big
 Crater`.
 
+`multie` also uses a distinct palette treatment for its `knobe` controls. The
+same source sprites are green in the generic menu, while the captured War
+screen maps their three control shades from `(12,36,0)`, `(28,77,0)`, and
+`(48,117,0)` to `(7,7,7)`, `(65,8,0)`, and `(175,11,15)`. The port applies
+that narrow indexed-source mapping only to War buttons, option selectors, and
+arrows, preserving the sprite's black, grey, cyan, and glyph colors.
+
 The compiled port passes a selected map through `SinglePlayerWarLaunch`. That
 data-derived boundary resolves the selected Human or Gray faction to the
 matching enabled `ScenarioTeam.TeamId`; an unavailable faction is rejected,
