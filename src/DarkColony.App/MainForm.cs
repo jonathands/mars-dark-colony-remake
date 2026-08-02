@@ -1240,8 +1240,23 @@ public sealed class MainForm : Form
             if (colors is not null) DrawAnimationFrame(graphics, "knobe.fin", colors.FirstFrame + player.Color, 425, y + 2, opacity);
             var teams = Animation("knobe.fin", "TEAMS");
             if (teams is not null) DrawAnimationFrame(graphics, "knobe.fin", teams.FirstFrame + player.Team, 512, y + 2, opacity);
-            DrawMenuText(graphics, player.Ready ? "✓" : "", new Rectangle(610, y - 3, 27, 17));
+            DrawWarReadyCheckbox(graphics, new Rectangle(610, y - 3, 27, 17), player.Ready, opacity);
         }
+    }
+
+    private void DrawWarReadyCheckbox(Graphics graphics, Rectangle bounds, bool selected, float opacity)
+    {
+        // `multie` declares checkb 16-23 at these bounds. It is a distinct
+        // widget from the player-row CHAB masks, so model the checkbox itself
+        // rather than treating readiness as a floating text glyph.
+        using var fill = new SolidBrush(Color.FromArgb((int)(opacity * 255), 0, 0, 0));
+        using var edge = new Pen(Color.FromArgb((int)(opacity * 255), 65, 65, 65));
+        using var inset = new Pen(Color.FromArgb((int)(opacity * 255), selected ? 175 : 35, selected ? 11 : 35, selected ? 15 : 35));
+        graphics.FillRectangle(fill, bounds);
+        graphics.DrawRectangle(edge, bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
+        var marker = new Rectangle(bounds.X + 8, bounds.Y + 3, 11, 11);
+        graphics.DrawRectangle(inset, marker.X, marker.Y, marker.Width - 1, marker.Height - 1);
+        if (selected) DrawMenuText(graphics, "✓", marker, remap: Color.FromArgb(255, 31, 31));
     }
 
     private void DrawWarLobbyOptions(Graphics graphics)

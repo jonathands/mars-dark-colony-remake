@@ -28,6 +28,11 @@ frames overwrites unrelated parts of the lobby. Continue to use `CHAA` as the
 stable structural layer until the native CHAB state-selection function is
 recovered from the executable.
 
+The Ready column is independent `checkb` gadgets 16-23, each 27×17 at
+`(610, 18 + 19×row)`. The port renders those data-derived bounds and binds
+their selected state to the roster's Ready flag. Their exact native checkbox
+skin remains a presentation-detail follow-up, separate from CHAB.
+
 The compiled port passes a selected map through `SinglePlayerWarLaunch`. That
 data-derived boundary resolves the selected Human or Gray faction to the
 matching enabled `ScenarioTeam.TeamId`; an unavailable faction is rejected,
