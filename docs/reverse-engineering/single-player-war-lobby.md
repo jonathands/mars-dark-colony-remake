@@ -47,11 +47,12 @@ data-derived boundary resolves the selected Human or Gray faction to the
 matching enabled `ScenarioTeam.TeamId`; an unavailable faction is rejected,
 never substituted with another SCN team.
 
-Free-War SCNs use the shared Human commander IDs 69-72 as placement
-placeholders, including on Gray teams. At launch the port now replaces only
-the selected local team's placeholder with its faction/rank commander: Human
-69-72 or Gray 73-76. This is required before creating the world/simulation;
-otherwise a correctly selected Gray team still controls Human marine art.
+Free-War SCNs use shared Human starter slots, including on Gray teams. At
+launch the port converts only the selected local team's basic troop/mech
+placeholders (0/2 ↔ 8/10) and commander slot (Human 69-72 or Gray 73-76) for
+the selected faction/rank. This is required before creating the
+world/simulation; otherwise a correctly selected Gray team still controls
+Human marine art.
 
 In the port, click the first active player's **Race** label or face to switch
 between Human and Gray. If the current map has no team of that race (for

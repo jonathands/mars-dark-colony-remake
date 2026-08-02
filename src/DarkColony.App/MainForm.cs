@@ -659,7 +659,8 @@ public sealed class MainForm : Form
                     using var back = new SolidBrush(Color.FromArgb(190, 0, 0, 0));
                     using var text = new SolidBrush(Color.FromArgb(245, 241, 200));
                     var direction = moveSelection is null ? "" : $" · {candidate.AnimationName}{(moveSelection.ExactSector ? "" : $"~s{moveSelection.RequestedSector}")}";
-                    var label = $"#{entity.EntityId} {definition.Code} · {fileName}{direction}";
+                    var ownership = entity.Team == _localPlayerTeam ? "local" : "remote";
+                    var label = $"#{entity.EntityId} {definition.Code} · team {entity.Team} / faction {definition.Faction} {ownership} · {fileName}{direction}";
                     var size = graphics.MeasureString(label, font);
                     var labelX = worldX + 5 - _cameraX;
                     var labelY = worldY - 12 - _cameraY;
@@ -1534,7 +1535,7 @@ public sealed class MainForm : Form
         WorldEntity? selected = null;
         foreach (var entity in GameplayEntities().OrderBy(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
         {
-            if (entity.Team != _localPlayerTeam) continue;
+            if (!IsLocallyControllable(entity)) continue;
             if (_scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed <= 0) continue;
             if ((uint)entity.EntityId >= (uint)_entityCatalog.Entities.Count) continue;
             var actorState = _scenarioSimulation.Actor(entity.InstanceId);
@@ -1576,7 +1577,7 @@ public sealed class MainForm : Form
     {
         if (_scenarioSimulation is null) return;
         var selected = GameplayEntities()
-            .Where(entity => entity.Team == _localPlayerTeam)
+            .Where(IsLocallyControllable)
             .Where(entity => _scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed > 0)
             .Where(entity =>
             {
@@ -1598,7 +1599,7 @@ public sealed class MainForm : Form
         var target = new CellCoordinate((point.X + _cameraX) / 32, (point.Y + _cameraY) / 32);
         if (target.X < 0 || target.Z < 0 || target.X >= _gameplayMap.Width || target.Z >= _gameplayMap.Height) return;
         var selected = GameplayEntities()
-            .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && entity.Team == _localPlayerTeam)
+            .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && IsLocallyControllable(entity))
             .Where(entity => _scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed > 0)
             .OrderBy(entity => entity.InstanceId)
             .ToArray();
@@ -1625,7 +1626,7 @@ public sealed class MainForm : Form
     {
         if (_scenarioSimulation is null || _selectedEntityInstanceIds.Count == 0) return;
         var stopped = GameplayEntities()
-            .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && entity.Team == _localPlayerTeam)
+            .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && IsLocallyControllable(entity))
             .Where(entity => _scenarioSimulation.Actor(entity.InstanceId)?.Definition.MovementSpeed > 0)
             .OrderBy(entity => entity.InstanceId)
             .ToArray();
@@ -1655,6 +1656,20 @@ public sealed class MainForm : Form
     {
         if (_scenarioSimulation is null) yield break;
         foreach (var actor in _scenarioSimulation.Actors) yield return actor.Seed;
+    }
+
+    private bool IsLocallyControllable(WorldEntity entity)
+    {
+        if (entity.Team != _localPlayerTeam) return false;
+        // A free-War roster identifies the local player twice: first by the
+        // selected SCN team, then by its selected faction. Requiring both for
+        // player input keeps an unconverted/shared commander placeholder or
+        // malformed mixed roster from becoming controllable.
+        var war = _selectedScenario?.WarLaunch;
+        return war is null ||
+            _entityCatalog is not null &&
+            (uint)entity.EntityId < (uint)_entityCatalog.Entities.Count &&
+            _entityCatalog[entity.EntityId].Faction == war.Race;
     }
 
     private FixedPointPosition ActorPosition(WorldEntity entity) =>

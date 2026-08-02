@@ -68,23 +68,32 @@ public sealed class ScenarioDefinition
         .ToArray();
 
     /// <summary>
-    /// Applies the recovered free-War commander handoff for one locally
-    /// selected team.  Multiplayer SCN files seed a Human commander slot
-    /// (69-72) even for a Gray team; the native launch state selects the
-    /// faction- and rank-specific commander before simulation begins.
+    /// Applies the recovered free-War roster handoff for one locally selected
+    /// team. Multiplayer SCNs seed Human starter slots even for a Gray team;
+    /// the native launch state selects faction-specific units before
+    /// simulation begins.
     /// </summary>
-    public ScenarioDefinition WithSelectedCommander(int teamId, int faction, int rank)
+    public ScenarioDefinition WithSelectedWarRoster(int teamId, int faction, int rank)
     {
         if (faction is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(faction));
         if (rank is < 0 or > 3) throw new ArgumentOutOfRangeException(nameof(rank));
 
-        var commanderId = (faction == 0 ? 69 : 73) + rank;
         var placements = Placements.Select(placement =>
-            placement.Team == teamId && placement.EntityId is >= 69 and <= 76
-                ? placement with { EntityId = commanderId }
+            placement.Team == teamId
+                ? placement with { EntityId = SelectedWarRosterEntity(placement.EntityId, faction, rank) }
                 : placement).ToArray();
         return new ScenarioDefinition(Tileset, InternalName, DisplayName, Teams, placements, Vents);
     }
+
+    private static int SelectedWarRosterEntity(int entityId, int faction, int rank) => entityId switch
+    {
+        // The paired basic ground units used by free-War SCN starter slots.
+        0 or 8 => faction == 0 ? 0 : 8,
+        2 or 10 => faction == 0 ? 2 : 10,
+        // Commander ranks use their own contiguous Human/Gray ranges.
+        >= 69 and <= 76 => (faction == 0 ? 69 : 73) + rank,
+        _ => entityId,
+    };
 
     public static ScenarioDefinition Load(string path) =>
         Parse(File.ReadAllText(path, System.Text.Encoding.Latin1));

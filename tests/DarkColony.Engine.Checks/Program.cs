@@ -541,6 +541,12 @@ Check("Single Player War catalog exposes complete faction-matched scenarios", ()
     Equal(true, twoRaceMap.TryCreateLaunch(0, configured with { CommanderRank = 3 }, out var humanLaunch));
     var humanDefinition = humanLaunch.ApplyTo(twoRaceMap.Definition);
     Equal(72, humanDefinition.Placements.Single(placement => placement.Team == humanLaunch.LocalTeamId && placement.EntityId is >= 69 and <= 76).EntityId);
+
+    var eightPlayerMap = catalog.Scenarios.Single(scenario => scenario.Stem == "d8play01");
+    Equal(true, eightPlayerMap.TryCreateLaunch(1, out var eightPlayerGrayLaunch));
+    var eightPlayerGrayDefinition = eightPlayerGrayLaunch.ApplyTo(eightPlayerMap.Definition);
+    Equal(8, eightPlayerGrayDefinition.Placements.Single(placement => placement.Team == eightPlayerGrayLaunch.LocalTeamId && placement.EntityId is 0 or 8).EntityId);
+    Equal(73, eightPlayerGrayDefinition.Placements.Single(placement => placement.Team == eightPlayerGrayLaunch.LocalTeamId && placement.EntityId is >= 69 and <= 76).EntityId);
 });
 
     Check("executable building footprints decode", () =>
@@ -733,6 +739,11 @@ Check("faction-selected War rosters complete a local movement order", () =>
             .ToArray();
         if (commanders.Any(actor => actor.Definition.Faction != faction))
             throw new InvalidDataException($"{choice.Stem} {faction} launch retained an opposing-faction commander.");
+        var localMobileActors = simulation.Actors
+            .Where(actor => actor.Seed.Team == team.TeamId && actor.Definition.MovementSpeed > 0)
+            .ToArray();
+        if (localMobileActors.Any(actor => actor.Definition.Faction != faction))
+            throw new InvalidDataException($"{choice.Stem} {faction} launch exposes an opposing-faction local mobile actor.");
         var finder = new DiagnosticLocalPathfinder(path, simulation.GroundOccupancy, simulation.AlternateOccupancy);
         SimulatedActor? actor = null;
         CellCoordinate? target = null;
