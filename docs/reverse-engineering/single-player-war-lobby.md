@@ -32,6 +32,9 @@ The Ready column is independent `checkb` gadgets 16-23, each 27×17 at
 `(610, 18 + 19×row)`. The port renders those data-derived bounds and binds
 their selected state to the roster's Ready flag. Their exact native checkbox
 skin remains a presentation-detail follow-up, separate from CHAB.
+The refresh routine at `0x40f539-0x40f55b` confirms this mapping: it reads
+eight Boolean values at `+0xa690 + 4×row`, normalizes each to zero/one, and
+writes gadget IDs `0xb4-0xbb` (180-187).
 
 The compiled port passes a selected map through `SinglePlayerWarLaunch`. That
 data-derived boundary resolves the selected Human or Gray faction to the
