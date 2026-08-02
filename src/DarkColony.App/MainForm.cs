@@ -1607,9 +1607,12 @@ public sealed class MainForm : Form
                 player.Type = (WarLobbyPlayerType)(((int)player.Type + 1) % 4);
                 return true;
             }
-            if (new Rectangle(204, y, 26, 22).Contains(point))
+            // The source face gadget is 204..230, but treating the adjacent
+            // read-only Race label as the same target makes the selected
+            // faction discoverable without changing the native visual layout.
+            if (new Rectangle(141, y, 89, 22).Contains(point))
             {
-                player.Gray = !player.Gray;
+                ToggleWarLobbyRace(index);
                 return true;
             }
             if (new Rectangle(409, y + 1, 14, 14).Contains(point))
@@ -1659,6 +1662,26 @@ public sealed class MainForm : Form
             }
         }
         return false;
+    }
+
+    private void ToggleWarLobbyRace(int playerIndex)
+    {
+        var player = _warLobbyPlayers[playerIndex];
+        player.Gray = !player.Gray;
+        if (player.Type != WarLobbyPlayerType.Human) return;
+
+        _grayRace = player.Gray;
+        EnsureSinglePlayerMaps();
+        if (_singlePlayerMaps.Count == 0) return;
+        var faction = player.Gray ? 1 : 0;
+        if (_singlePlayerMaps[_singlePlayerMapIndex].EnabledTeamForRace(faction) is null)
+        {
+            var compatible = _singlePlayerMaps
+                .Select((scenario, index) => (scenario, index))
+                .FirstOrDefault(item => item.scenario.EnabledTeamForRace(faction) is not null);
+            _singlePlayerMapIndex = compatible.index;
+        }
+        _status = $"Player {playerIndex + 1}: {(player.Gray ? "Gray" : "Human")}; map {_singlePlayerMaps[_singlePlayerMapIndex].DisplayName}.";
     }
 
     private static bool TrySelectWarOption(Point point, int y, ref int selected, int count, int start)
