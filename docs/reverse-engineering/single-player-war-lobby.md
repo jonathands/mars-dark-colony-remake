@@ -15,6 +15,13 @@ data-derived boundary resolves the selected Human or Gray faction to the
 matching enabled `ScenarioTeam.TeamId`; an unavailable faction is rejected,
 never substituted with another SCN team.
 
+In the port, click the first active player's **Race** label or face to switch
+between Human and Gray. If the current map has no team of that race (for
+example, the initial `4 Kingdoms` entry has only a Human team), the lobby
+selects the first compatible map before `READY` can start it. The chosen
+faction and resolved SCN team then become the gameplay selection and control
+filter; they are not inferred from team zero.
+
 It also retains a validated `SinglePlayerWarSettings` record (the native lobby
 values) with that launch. This makes the values available at scenario start
 without yet asserting unrecovered gameplay behavior.
@@ -40,3 +47,17 @@ Rank text is selected from Human messages 30-33 (`LEUT.`, `CAPT.`, `MAJ.`,
 The current port mirrors those control choices in the UI state. It must not
 claim that Storage, Artifacts, vents, P7, or rank affect simulation until the
 launch packet/state-to-scenario handoff is separately traced and implemented.
+
+## Verification against the installed corpus
+
+Run the deterministic checks from the port directory with:
+
+```powershell
+dotnet run --project tests\DarkColony.Engine.Checks\DarkColony.Engine.Checks.csproj --no-build
+```
+
+With the supplied installation, the catalog contains 56 complete War maps:
+54 expose a Human roster and 30 expose a Gray roster. Every one of those 84
+valid faction/map selections resolves an SCN team with a mobile unit and
+completes a local movement order. This verifies the selection-to-gameplay
+boundary, not unrecovered AI, resource, or power-up rules.
