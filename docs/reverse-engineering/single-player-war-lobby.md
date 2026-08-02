@@ -17,6 +17,11 @@ screen maps their three control shades from `(12,36,0)`, `(28,77,0)`, and
 that narrow indexed-source mapping only to War buttons, option selectors, and
 arrows, preserving the sprite's black, grey, cyan, and glyph colors.
 
+The same capture distinguishes font roles: map titles and multiplier values
+remain cyan; ordinary War labels use `(91,203,0)`; the active Human type uses
+`(79,7,7)`; and War button captions use `(159,19,19)`. These are presentation
+states, not faction or gameplay rules.
+
 The compiled port passes a selected map through `SinglePlayerWarLaunch`. That
 data-derived boundary resolves the selected Human or Gray faction to the
 matching enabled `ScenarioTeam.TeamId`; an unavailable faction is rejected,

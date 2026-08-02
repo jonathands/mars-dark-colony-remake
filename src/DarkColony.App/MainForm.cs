@@ -912,7 +912,8 @@ public sealed class MainForm : Form
             graphics.DrawRectangle(border, button.Bounds.X, button.Bounds.Y, button.Bounds.Width - 1, button.Bounds.Height - 1);
         }
 
-        if (!DrawMenuText(graphics, button.Label, button.Bounds))
+        var warButtonText = _screen == MenuScreenId.SinglePlayer ? Color.FromArgb(159, 19, 19) : (Color?)null;
+        if (!DrawMenuText(graphics, button.Label, button.Bounds, remap: warButtonText))
         {
             using var font = new Font(FontFamily.GenericSansSerif, 10, FontStyle.Bold, GraphicsUnit.Pixel);
             using var brush = new SolidBrush(pressed ? Color.FromArgb(145, 170, 135) : Color.FromArgb(205, 226, 195));
@@ -1220,14 +1221,16 @@ public sealed class MainForm : Form
     {
         var headings = new[] { ("Type", 36, 102), ("Race", 141, 102), ("Name", 246, 160), ("Color", 409, 84), ("Team", 496, 84), ("Ready", 577, 60) };
         foreach (var (label, x, width) in headings) DrawMenuText(graphics, label, new Rectangle(x, 3, width, 12), center: false);
+        var warGreen = Color.FromArgb(91, 203, 0);
         for (var index = 0; index < _warLobbyPlayers.Length; index++)
         {
             var player = _warLobbyPlayers[index];
             var y = 21 + index * 19;
-            DrawMenuText(graphics, WarLobbyTypeLabel(player.Type), new Rectangle(45, y, 50, 16));
-            DrawMenuText(graphics, player.Gray ? "Gray" : "Human", new Rectangle(150, y, 50, 16), remap: Color.FromArgb(110, 230, 40));
+            var typeColor = player.Type == WarLobbyPlayerType.Human ? Color.FromArgb(79, 7, 7) : warGreen;
+            DrawMenuText(graphics, WarLobbyTypeLabel(player.Type), new Rectangle(45, y, 50, 16), remap: typeColor);
+            DrawMenuText(graphics, player.Gray ? "Gray" : "Human", new Rectangle(150, y, 50, 16), remap: warGreen);
             var name = index == 0 && !string.IsNullOrWhiteSpace(_leaderName) ? _leaderName : player.Name;
-            DrawMenuText(graphics, name, new Rectangle(246, y, 160, 16), center: false, remap: Color.FromArgb(110, 230, 40));
+            DrawMenuText(graphics, name, new Rectangle(246, y, 160, 16), center: false, remap: warGreen);
             var type = Animation("knobe.fin", "PLAYERTYPE");
             if (type is not null) DrawAnimationFrame(graphics, "knobe.fin", type.FirstFrame + (int)player.Type, 99, y);
             var opacity = player.Type == WarLobbyPlayerType.None ? 0.32f : 1f;
@@ -1252,7 +1255,7 @@ public sealed class MainForm : Form
         var rank = _warLobbyPlayers.FirstOrDefault(player => player.Type == WarLobbyPlayerType.Human)?.Gray == true
             ? new[] { "XIMAL.", "IDRAC.", "SITRUC.", "REGLIA." }[_warCommanderRank]
             : new[] { "LEUT.", "CAPT.", "MAJ.", "COL." }[_warCommanderRank];
-        DrawMenuText(graphics, "Commander Rank", new Rectangle(332, 435, 207, 18), center: false);
+        DrawMenuText(graphics, "Commander Rank", new Rectangle(332, 435, 207, 18), center: false, remap: Color.FromArgb(91, 203, 0));
         DrawMenuText(graphics, rank, new Rectangle(539, 436, 64, 16));
         DrawLobbyArrow(graphics, "LEFT", 521, 435);
         DrawLobbyArrow(graphics, "RIGHT", 603, 435);
@@ -1260,8 +1263,8 @@ public sealed class MainForm : Form
 
     private void DrawOptionRow(Graphics graphics, string label, int y, int selected, string[] values, int start = 456)
     {
-        var labelColor = Color.FromArgb(110, 230, 40);
-        var valueColor = Color.FromArgb(235, 45, 35);
+        var labelColor = Color.FromArgb(91, 203, 0);
+        var valueColor = Color.FromArgb(255, 31, 31);
         DrawMenuText(graphics, label, new Rectangle(332, y, start - 332, 18), center: false, remap: labelColor);
         for (var index = 0; index < values.Length; index++)
         {
@@ -1281,7 +1284,7 @@ public sealed class MainForm : Form
 
     private void DrawMultiplierRow(Graphics graphics, string label, int y, int value)
     {
-        DrawMenuText(graphics, label, new Rectangle(332, y, 207, 18), center: false, remap: Color.FromArgb(110, 230, 40));
+        DrawMenuText(graphics, label, new Rectangle(332, y, 207, 18), center: false, remap: Color.FromArgb(91, 203, 0));
         DrawMenuText(graphics, $"{value}%", new Rectangle(539, y, 64, 18));
         DrawLobbyArrow(graphics, "LEFT", 521, y);
         DrawLobbyArrow(graphics, "RIGHT", 603, y);
