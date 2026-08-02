@@ -36,6 +36,12 @@ The refresh routine at `0x40f539-0x40f55b` confirms this mapping: it reads
 eight Boolean values at `+0xa690 + 4×row`, normalizes each to zero/one, and
 writes gadget IDs `0xb4-0xbb` (180-187).
 
+The RaceFace event handler at `0x41145f-0x411521` cycles its packed row value
+through `0 → 1 → 3 → 0`, explicitly skipping `2`. Only 0 (Human) and 1
+(Gray) are supported by the recovered player labels and SCN faction data. The
+port therefore deliberately offers those two playable launch choices and does
+not assign an invented meaning to native value 3.
+
 The compiled port passes a selected map through `SinglePlayerWarLaunch`. That
 data-derived boundary resolves the selected Human or Gray faction to the
 matching enabled `ScenarioTeam.TeamId`; an unavailable faction is rejected,
