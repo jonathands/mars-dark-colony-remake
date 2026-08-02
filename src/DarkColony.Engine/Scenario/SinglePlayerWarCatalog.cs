@@ -85,7 +85,15 @@ public sealed record SinglePlayerWarLaunch(
     string DisplayName,
     int Race,
     int LocalTeamId,
-    SinglePlayerWarSettings Settings);
+    SinglePlayerWarSettings Settings)
+{
+    /// <summary>Transforms the shared SCN commander placeholder for this War launch.</summary>
+    public ScenarioDefinition ApplyTo(ScenarioDefinition scenario)
+    {
+        ArgumentNullException.ThrowIfNull(scenario);
+        return scenario.WithSelectedCommander(LocalTeamId, Race, Settings.CommanderRank);
+    }
+}
 
 /// <summary>
 /// Native Single Player War lobby settings, retained with the launch selection.

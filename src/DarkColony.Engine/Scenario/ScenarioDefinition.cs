@@ -67,6 +67,25 @@ public sealed class ScenarioDefinition
             placement.Flag))
         .ToArray();
 
+    /// <summary>
+    /// Applies the recovered free-War commander handoff for one locally
+    /// selected team.  Multiplayer SCN files seed a Human commander slot
+    /// (69-72) even for a Gray team; the native launch state selects the
+    /// faction- and rank-specific commander before simulation begins.
+    /// </summary>
+    public ScenarioDefinition WithSelectedCommander(int teamId, int faction, int rank)
+    {
+        if (faction is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(faction));
+        if (rank is < 0 or > 3) throw new ArgumentOutOfRangeException(nameof(rank));
+
+        var commanderId = (faction == 0 ? 69 : 73) + rank;
+        var placements = Placements.Select(placement =>
+            placement.Team == teamId && placement.EntityId is >= 69 and <= 76
+                ? placement with { EntityId = commanderId }
+                : placement).ToArray();
+        return new ScenarioDefinition(Tileset, InternalName, DisplayName, Teams, placements, Vents);
+    }
+
     public static ScenarioDefinition Load(string path) =>
         Parse(File.ReadAllText(path, System.Text.Encoding.Latin1));
 

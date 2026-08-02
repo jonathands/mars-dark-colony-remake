@@ -528,6 +528,19 @@ Check("Single Player War catalog exposes complete faction-matched scenarios", ()
     Equal(true, catalog.ForRace(0)[0].TryCreateLaunch(0, configured, out var configuredLaunch));
     Equal(configured, configuredLaunch.Settings);
     Equal(false, catalog.ForRace(0)[0].TryCreateLaunch(0, configured with { P7FlowPercent = 110 }, out _));
+
+    // Free-War SCNs seed entity 69 (Human lieutenant) for both teams. The
+    // selected launch must transform only the local team's commander slot;
+    // otherwise choosing Gray still gives the player a Human marine.
+    var twoRaceMap = catalog.Scenarios.Single(scenario => scenario.Stem == "d2play01");
+    Equal(true, twoRaceMap.TryCreateLaunch(1, configured with { CommanderRank = 2 }, out var grayLaunch));
+    var grayDefinition = grayLaunch.ApplyTo(twoRaceMap.Definition);
+    Equal(75, grayDefinition.Placements.Single(placement => placement.Team == grayLaunch.LocalTeamId && placement.EntityId is >= 69 and <= 76).EntityId);
+    Equal(69, grayDefinition.Placements.Single(placement => placement.Team == 0 && placement.EntityId is >= 69 and <= 76).EntityId);
+
+    Equal(true, twoRaceMap.TryCreateLaunch(0, configured with { CommanderRank = 3 }, out var humanLaunch));
+    var humanDefinition = humanLaunch.ApplyTo(twoRaceMap.Definition);
+    Equal(72, humanDefinition.Placements.Single(placement => placement.Team == humanLaunch.LocalTeamId && placement.EntityId is >= 69 and <= 76).EntityId);
 });
 
     Check("executable building footprints decode", () =>
@@ -711,8 +724,15 @@ Check("faction-selected War rosters complete a local movement order", () =>
         var file = install.DataFile("scenario", "mplayer", $"{choice.Stem}.scn");
         var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
         var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
-        var simulation = ScenarioSimulation.Create(choice.Definition, catalog, path, footprints);
         var team = choice.EnabledTeamForRace(faction) ?? throw new InvalidDataException($"{choice.Stem} lost its {faction} team.");
+        if (!choice.TryCreateLaunch(faction, out var launch))
+            throw new InvalidDataException($"{choice.Stem} cannot create its {faction} launch.");
+        var simulation = ScenarioSimulation.Create(launch.ApplyTo(choice.Definition), catalog, path, footprints);
+        var commanders = simulation.Actors
+            .Where(actor => actor.Seed.Team == team.TeamId && actor.Seed.EntityId is >= 69 and <= 76)
+            .ToArray();
+        if (commanders.Any(actor => actor.Definition.Faction != faction))
+            throw new InvalidDataException($"{choice.Stem} {faction} launch retained an opposing-faction commander.");
         var finder = new DiagnosticLocalPathfinder(path, simulation.GroundOccupancy, simulation.AlternateOccupancy);
         SimulatedActor? actor = null;
         CellCoordinate? target = null;

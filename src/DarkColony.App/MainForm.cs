@@ -530,6 +530,10 @@ public sealed class MainForm : Form
         {
             var scenario = GameplayScenario();
             var definition = ScenarioDefinition.Load(_installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.scn"));
+            // Free-War SCN files hold shared Human commander placeholders.
+            // Apply the selected faction/rank before either the world or the
+            // deterministic simulation consumes placement entity IDs.
+            if (scenario.WarLaunch is { } warLaunch) definition = warLaunch.ApplyTo(definition);
             _gameplayMap = TerrainMap.Load(_installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.map"));
             _gameplayTileset = BtsTileset.Load(_installation.DataFile("scenario", definition.Tileset));
             _gameplayPath = PathRegionMap.Load(
