@@ -22,6 +22,12 @@ remain cyan; ordinary War labels use `(91,203,0)`; the active Human type uses
 `(79,7,7)`; and War button captions use `(159,19,19)`. These are presentation
 states, not faction or gameplay rules.
 
+`chaa.fin`'s `CHAB` range is not a static foreground frame. It is a 29-frame
+dynamic state-mask range made of 607×20 row composites; displaying arbitrary
+frames overwrites unrelated parts of the lobby. Continue to use `CHAA` as the
+stable structural layer until the native CHAB state-selection function is
+recovered from the executable.
+
 The compiled port passes a selected map through `SinglePlayerWarLaunch`. That
 data-derived boundary resolves the selected Human or Gray faction to the
 matching enabled `ScenarioTeam.TeamId`; an unavailable faction is rejected,
