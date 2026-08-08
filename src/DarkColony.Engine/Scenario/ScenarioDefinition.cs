@@ -9,7 +9,9 @@ public sealed record ScenarioTeam(
     int? Race,
     int? StartingResource,
     int? AiProfile,
-    int? TeamColor);
+    int? TeamColor,
+    IReadOnlyList<int> StartingDependencyFlags,
+    IReadOnlyList<int> AllianceFlags);
 
 public sealed record ScenarioPlacement(
     int X,
@@ -128,7 +130,9 @@ public sealed class ScenarioDefinition
                 ValueBefore("Race"),
                 ValueBefore("Money"),
                 ValueBefore("AI"),
-                ValueBefore("TeamColour")));
+                ValueBefore("TeamColour"),
+                ValuesAfter("Depend"),
+                ValuesAfter("TeamAllies")));
 
             int? ValueBefore(string name)
             {
@@ -140,6 +144,25 @@ public sealed class ScenarioDefinition
                 }
 
                 return null;
+            }
+
+            // Unlike the scalar postfix fields above, %Depend and
+            // %TeamAllies own following sentinel-terminated rows. The native
+            // availability checker stores state per dependency record, and its
+            // 10x10 hostile matrix has not yet been bridged to the 15-value
+            // alliance source row. Preserve both inputs instead of conflating
+            // either with completed tech or runtime team relations.
+            IReadOnlyList<int> ValuesAfter(string name)
+            {
+                for (var index = start + 1; index < end - 1; index++)
+                {
+                    if (!lines[index].Equals($"%{name}", StringComparison.OrdinalIgnoreCase)) continue;
+                    var values = Integers(lines[index + 1]);
+                    var sentinel = Array.IndexOf(values, -1);
+                    return sentinel >= 0 ? values[..sentinel] : values;
+                }
+
+                return [];
             }
         }
 

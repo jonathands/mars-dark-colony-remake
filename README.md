@@ -79,8 +79,9 @@ scrolling.
 War maps retain their original per-team roster data. The faction selected on
 the lobby's Human player row selects the matching enabled SCN team; a missing
 faction is rejected rather than remapped. The launcher carries validated lobby
-settings with that map/team selection, although gameplay effects for resources,
-power-ups, P7, and rank await their still-unrecovered scenario-start handoff.
+settings with that map/team selection. SCN starting P7 and team/race state feed
+the local deterministic simulation; the native scenario-start handoff for
+power-ups and rank remains unrecovered.
 The SCN team format labels fields *after* their values; the port decodes that
 layout so race, starting resource, AI profile, and colour are not shifted by
 one field. The New Game leader-name field accepts up to 17 letters, numbers,
@@ -92,6 +93,13 @@ animation matches. World composites retain their FIN logical origins and sort
 by cell Z then X before the HUD is applied. Press **F3** during gameplay to
 toggle `entity ID · code · FIN` labels. Training starts retain the first
 training maps, whose SCNs contain only special vent records.
+
+Campaign launch first presents the recovered native `storye` narrative layout:
+its original `story` background, scroll arrows, and Back/Next geometry remain
+at the 640×480 source coordinates. The briefing comes from the mission's
+original `.txt` file; **Next** enters the map and **Back** returns to race
+selection. Trigger message and outcome texts are loaded but mission scripts
+are not yet executed.
 
 During gameplay, the arrow keys pan the camera in 16-pixel increments within
 the decoded MAP bounds; holding the pointer in the eight-pixel viewport border
@@ -161,19 +169,54 @@ In a campaign mission, team-0 units are locally controllable:
 - **Shift+drag** makes an additive selection box; ordinary left-drag remains map panning.
 - **Right-click** terrain to issue deterministic move orders; selected units receive distinct nearby formation cells.
 - **Shift+right-click** appends a waypoint instead of replacing the active order.
-- **S** cancels active and queued movement for the selected units.
-- **Esc** clears the current selection; press it again with no selection to return to the menu.
+- The recovered right-hand HUD controls provide **Stop**, **Move**, **Move &
+  Attack**, and persistent **Waypoint** mode. Waypoint mode makes each
+  right-click append; each actor has the native maximum of eight queued
+  destinations, and consecutive duplicates are ignored.
+- The top HUD tabs follow the recovered exclusive groups: **Build** maps the
+  faction troop/building catalog, **Research** maps upgrades, and **Options**
+  maps pause/menu and local alliance controls. Build switches back to unit
+  commands when a mobile unit is selected. Paid building drops, troop
+  production, research completion, P7 reservations, and faction-matched
+  footprint validation run through deterministic engine intents.
+- **Move & Attack** directly targets a hostile actor, or attack-moves toward
+  terrain while acquiring visible hostiles. It turns the actor, launches a
+  simulation-owned projectile, applies original weapon-class/armor-class
+  matrix damage, plays recovered effects/sounds, and destroys actors at zero
+  HP. Projectile lifetime and autonomous target reacquisition remain
+  provisional.
+- Contextual fifth-slot commands are live where their rule is recovered:
+  Exploiter/Slug deploy to Petra-7 vents, Engineer/Sloom deploy faction mines,
+  Turret/Xenowort deploy into their armed static forms, and BEON/ZISP use
+  **Heal** against a damaged cooperative unit. Heals use the original class-7
+  `mbullet` formula, recovered firing animation, cursor, and sound; their
+  native cadence and exact target range are still untraced.
+- **Steal Money** converts Cyborg/Psy-raider into the recovered static
+  SARGSTL/PSYCSTL stance with its original deployment animation and sound.
+  The native victim-selection and P7-transfer behavior is not enabled yet.
+- A deployed Turret/Xenowort is a static combat unit: its selected HUD exposes
+  **Stop** (clear an explicit target) and **Attack** only. It can directly
+  target a hostile actor but cannot receive move, waypoint, or Build orders.
+- Selected-unit and structure panels show live HP, effective weapon, movement,
+  current day/night sight, and completed weapon/armor research level.
+- **S** cancels active and queued movement for the selected units. **M** selects
+  Move mode and **W** selects Waypoint mode, matching the source button
+  dictionary annotations.
+- **Esc** first cancels the active map-target mode while retaining selection;
+  the next press clears selection. A paid pending building drop is kept active
+  because no native refund/cancel rule has been recovered.
 - **Left-drag** or use the arrow keys to pan.
 - **F3** shows resolved entity/animation identity; **F4** shows PTH regions.
 
 Move orders chain through any number of 32-step packed segments. A temporarily
 blocked unit first rebuilds its local route around the current occupancy grid;
-if no route is available it waits four simulation ticks before retrying. The compact top-left gameplay readout shows the selected unit,
-cell, facing sector, target, segment count, and wait state.
+if no route is available it waits four simulation ticks before retrying. The
+compact top-left gameplay readout shows the selected unit, live
+health/movement/sight fields, research level, and queued-waypoint count.
 
 Neutral SCN team `-1` rows are now treated as autonomous spawn groups rather
 than single placed sprites. The installed corpus contains 561 such groups and
 requests 1,767 nature actors, exclusively Salamander, Bat, Renat, Spider, and
 Grub entity IDs. Initial members receive internal team 9 and occupy distinct
-movement-class-specific cells near the group origin. Wandering and population
-maintenance are not active yet.
+movement-class-specific cells near the group origin. Members issue deterministic
+eight-tick wander orders; native population-maintenance rules remain untraced.

@@ -11,9 +11,15 @@ public sealed class BuildingFootprintCatalog
     private const int PatternCount = 15;
     private const int MaximumOffsets = 8;
     private readonly IReadOnlyDictionary<int, IReadOnlyList<CellCoordinate>> byEntityId;
+    private readonly IReadOnlyDictionary<(int Faction, int Variant, int Slot), int> buildEntityIds;
 
-    private BuildingFootprintCatalog(IReadOnlyDictionary<int, IReadOnlyList<CellCoordinate>> byEntityId) =>
+    private BuildingFootprintCatalog(
+        IReadOnlyDictionary<int, IReadOnlyList<CellCoordinate>> byEntityId,
+        IReadOnlyDictionary<(int Faction, int Variant, int Slot), int> buildEntityIds)
+    {
         this.byEntityId = byEntityId;
+        this.buildEntityIds = buildEntityIds;
+    }
 
     public static BuildingFootprintCatalog Load(string executablePath)
     {
@@ -43,11 +49,13 @@ public sealed class BuildingFootprintCatalog
 
         var entityTable = image.AtVirtualAddress(BuildEntityTableAddress, 4 * PatternCount * 4);
         var slotsByEntity = new Dictionary<int, HashSet<int>>();
+        var resolvedBuildEntities = new Dictionary<(int Faction, int Variant, int Slot), int>();
         for (var set = 0; set < 4; set++)
         for (var slot = 0; slot < PatternCount; slot++)
         {
             var entityId = BinaryPrimitives.ReadInt32LittleEndian(entityTable.Slice((set * PatternCount + slot) * 4, 4));
             if (entityId <= 0) continue;
+            resolvedBuildEntities[(set / 2, set % 2, slot)] = entityId;
             if (!slotsByEntity.TryGetValue(entityId, out var slots)) slotsByEntity[entityId] = slots = [];
             slots.Add(slot);
         }
@@ -55,11 +63,18 @@ public sealed class BuildingFootprintCatalog
         var resolved = slotsByEntity
             .Where(pair => pair.Value.Count == 1)
             .ToDictionary(pair => pair.Key, pair => patterns[pair.Value.Single()]);
-        return new BuildingFootprintCatalog(resolved);
+        return new BuildingFootprintCatalog(resolved, resolvedBuildEntities);
     }
 
     public bool TryGetOffsets(int entityId, out IReadOnlyList<CellCoordinate> offsets) =>
         byEntityId.TryGetValue(entityId, out offsets!);
+
+    /// <summary>
+    /// Resolves the original <c>depend.txt</c> building tuple using dc.exe's
+    /// four 15-slot build sets (two factions × two variants).
+    /// </summary>
+    public bool TryResolveBuildingEntity(int faction, int variant, int slot, out int entityId) =>
+        buildEntityIds.TryGetValue((faction, variant, slot), out entityId);
 
     public IReadOnlyList<CellCoordinate> OccupiedCells(int entityId, CellCoordinate origin)
     {

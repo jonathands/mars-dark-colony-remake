@@ -16,7 +16,19 @@ public sealed record EntityDefinition(
     public int DayObservation => Values[3];
     public int NightObservation => Values[4];
     public int MovementClass => Values[10];
+    // The original table slot also indexes the ten-column resistance matrix.
+    // Keep MovementClass as the established pathing name until the distinct
+    // runtime field is fully traced, but expose the combat interpretation
+    // explicitly so callers cannot rely on a magic positional value.
+    public int ArmorClass => Values[10];
     public int Health => Values[11];
+    /// <summary>
+    /// The shipped field 30 links equivalent Human/Gray records (for example
+    /// SARG↔PSYC and BEON↔ZISP). It is a faction counterpart, not a deployed
+    /// form or a state-transition target.
+    /// </summary>
+    public int FactionCounterpartEntityId => Values[30];
+    public IReadOnlyList<int> WeaponSlots => Values.Skip(5).Take(3).ToArray();
 }
 
 public sealed class EntityCatalog

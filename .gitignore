@@ -6,3 +6,20 @@
 *.userosscache
 *.sln.docstates
 screenshots/
+
+# Local release artifacts
+artifacts/
+
+# Original Dark Colony (1997) installation and decoded native asset formats.
+# The port reads these from a user-selected external installation; they must
+# never be committed to this clean-room repository.
+Dark Colony/
+original-game-assets/
+game-data/
+*.fin
+*.spr
+*.gif
+*.scn
+*.map
+*.pth
+*.bts
