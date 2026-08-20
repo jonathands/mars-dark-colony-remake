@@ -19,6 +19,18 @@ public sealed record ScenarioConditionLogicalNode(
     ScenarioTriggerCondition Right) : ScenarioTriggerCondition;
 
 /// <summary>
+/// A source condition consisting of one value without a comparison. Its
+/// truthiness is intentionally not assigned by the structural reader.
+/// </summary>
+public sealed record ScenarioConditionValueNode(ScenarioConditionValue Value) : ScenarioTriggerCondition;
+
+/// <summary>
+/// Original trigger text that falls outside the recovered expression grammar.
+/// It remains observable without a guessed repair or executable meaning.
+/// </summary>
+public sealed record ScenarioConditionOpaqueNode(string Text) : ScenarioTriggerCondition;
+
+/// <summary>
 /// A numeric literal or original condition variable/function. Function
 /// identities such as <c>c</c>, <c>s(...)</c>, <c>b(...)</c>, and <c>m(...)</c>
 /// deliberately remain unevaluated until their native state bindings are
@@ -86,9 +98,10 @@ public static class ScenarioTriggerConditionParser
                 return nested;
             }
             var left = ParseValue();
-            var comparison = ParseComparison();
+            var comparison = TryParseComparison();
+            if (comparison is null) return new ScenarioConditionValueNode(left);
             var right = ParseValue();
-            return new ScenarioConditionComparisonNode(left, comparison, right);
+            return new ScenarioConditionComparisonNode(left, comparison.Value, right);
         }
 
         private ScenarioConditionValue ParseValue()
@@ -118,7 +131,7 @@ public static class ScenarioTriggerConditionParser
             return new ScenarioConditionVariable(name, arguments);
         }
 
-        private ScenarioConditionComparison ParseComparison()
+        private ScenarioConditionComparison? TryParseComparison()
         {
             if (Consume("==")) return ScenarioConditionComparison.Equal;
             if (Consume("!=")) return ScenarioConditionComparison.NotEqual;
@@ -126,7 +139,7 @@ public static class ScenarioTriggerConditionParser
             if (Consume("<=")) return ScenarioConditionComparison.LessOrEqual;
             if (Consume(">")) return ScenarioConditionComparison.Greater;
             if (Consume("<")) return ScenarioConditionComparison.Less;
-            throw Error("expected comparison operator");
+            return null;
         }
 
         public void RequireEnd()

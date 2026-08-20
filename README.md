@@ -193,7 +193,9 @@ In a campaign mission, team-0 units are locally controllable:
   native cadence and exact target range are still untraced.
 - **Steal Money** converts Cyborg/Psy-raider into the recovered static
   SARGSTL/PSYCSTL stance with its original deployment animation and sound.
-  The native victim-selection and P7-transfer behavior is not enabled yet.
+  Campaign-authored rules now intercept 50% of a nearby hostile miner's vent
+  income without requiring visibility. Exact native range and tie-breaking
+  between multiple stealing units remain explicit provisional policies.
 - A deployed Turret/Xenowort is a static combat unit: its selected HUD exposes
   **Stop** (clear an explicit target) and **Attack** only. It can directly
   target a hostile actor but cannot receive move, waypoint, or Build orders.

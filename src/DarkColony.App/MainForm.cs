@@ -23,10 +23,9 @@ internal enum GameplayCommandMode
 {
     MoveOnly,
     AttackTarget,
-    HealTarget,
+    GroundSpecialTarget,
     Waypoints,
     HarvestVent,
-    DeployMine,
     PlaceBuilding,
 }
 
@@ -42,6 +41,17 @@ public sealed class MainForm : Form
     private sealed record DeathEffect(int EntityId, FixedPointPosition Position, ulong StartedAtTick);
     private sealed record ImpactEffect(int WeaponId, FixedPointPosition Position, ulong StartedAtTick);
     private sealed record CombatPresentation(EntityAnimationCandidate Candidate, ulong StartedAtTick);
+    private sealed record GameplayActorVisual(
+        SimulatedActor Actor,
+        int RenderEntityId,
+        EntityAnimationCandidate Candidate,
+        CombatPresentation? CombatPresentation,
+        DirectionalAnimationSelection? MoveSelection,
+        string FileName,
+        ushort Frame,
+        Bitmap Bitmap,
+        Rectangle CanvasBounds,
+        Rectangle OpaqueBounds);
     // Campaigns use team zero. War maps choose their enabled team from the
     // player's selected faction in the decoded SCN roster.
     private int _localPlayerTeam;
@@ -128,8 +138,10 @@ public sealed class MainForm : Form
     private readonly List<DeathEffect> _deathEffects = [];
     private readonly List<ImpactEffect> _impactEffects = [];
     private readonly Dictionary<int, ulong> _firingActorStartedAt = [];
+    private readonly Dictionary<int, byte> _firingActorVariantRoll = [];
     private readonly Dictionary<int, ulong> _hitActorStartedAt = [];
     private readonly Dictionary<int, ulong> _formDeploymentStartedAt = [];
+    private readonly Dictionary<int, ulong> _formRetractionStartedAt = [];
     private Point? _mapDragStart;
     private Point _mapDragCamera;
     private bool _mapDragged;
@@ -137,6 +149,8 @@ public sealed class MainForm : Form
     private Point? _selectionDragStart;
     private Point _selectionDragCurrent;
     private ulong _selectionGestureStartedAtTick;
+    private bool _selectionGestureToggle;
+    private UnitSelectionLayerFilter _selectionGestureLayerFilter;
     private Point? _gameplayPointer;
     private bool _gameplayCursorHidden;
     // `maine` declares Last Msg / Next Msg at (4,460) and (24,460). The port
@@ -226,8 +240,10 @@ public sealed class MainForm : Form
                     CaptureDeathEffects();
                     CaptureCombatSounds();
                     CaptureCombatAnimations();
+                    CaptureBattlefieldTransportFeedback();
                     CaptureAttackOrderFeedback();
                     CaptureHealingFeedback();
+                    CaptureInspireFeedback();
                     CaptureHarvesterFeedback();
                     CaptureConstructionFeedback();
                 }
@@ -238,7 +254,7 @@ public sealed class MainForm : Form
     }
 
     protected override bool ProcessCmdKey(ref Message message, Keys keyData) =>
-        HandleNewGameKey(keyData & Keys.KeyCode) || HandleGameplayKey(keyData & Keys.KeyCode) || base.ProcessCmdKey(ref message, keyData);
+        HandleNewGameKey(keyData & Keys.KeyCode) || HandleGameplayKey(keyData) || base.ProcessCmdKey(ref message, keyData);
 
     private bool HandleNewGameKey(Keys key)
     {
@@ -248,9 +264,13 @@ public sealed class MainForm : Form
         return true;
     }
 
-    private bool HandleGameplayKey(Keys key)
+    private bool HandleGameplayKey(Keys keyData)
     {
         if (_screen != MenuScreenId.Gameplay) return false;
+        var key = keyData & Keys.KeyCode;
+        var shift = keyData.HasFlag(Keys.Shift);
+        var control = keyData.HasFlag(Keys.Control);
+        var alt = keyData.HasFlag(Keys.Alt);
         if (key == Keys.Escape && _gameplayCommandMode != GameplayCommandMode.MoveOnly)
         {
             // A paid building reservation has no recovered refund/cancel path;
@@ -278,16 +298,31 @@ public sealed class MainForm : Form
             _status = "Selection cleared.";
             return true;
         }
-        if (key == Keys.F3)
+        // F1-F10 are native unit-type selections. Keep diagnostics in a
+        // port-owned F12 namespace so Ctrl/Alt/Shift remain available to the
+        // original selection filters rather than being stolen by debug UI.
+        if (key == Keys.F12 && !shift)
         {
             _showAssetNames = !_showAssetNames;
-            _status = $"Gameplay asset names {(_showAssetNames ? "on" : "off")}.";
+            _status = $"Gameplay asset names {(_showAssetNames ? "on" : "off")} (F12).";
             return true;
         }
-        if (key == Keys.F4)
+        if (key == Keys.F12 && shift)
         {
             _showPathRegions = !_showPathRegions;
-            _status = $"PTH region diagnostic {(_showPathRegions ? "on" : "off")}; zero is an unresolved sentinel.";
+            _status = $"PTH region diagnostic {(_showPathRegions ? "on" : "off")} (Shift+F12); zero is an unresolved sentinel.";
+            return true;
+        }
+        var functionKey = key switch
+        {
+            Keys.F1 => 1, Keys.F2 => 2, Keys.F3 => 3, Keys.F4 => 4, Keys.F5 => 5,
+            Keys.F6 => 6, Keys.F7 => 7, Keys.F8 => 8, Keys.F9 => 9, Keys.F10 => 10,
+            _ => 0,
+        };
+        if (functionKey != 0)
+        {
+            SelectGameplayActorsByFunctionKey(functionKey, shift,
+                UnitSelectionLayerFilter.FromModifiers(control, alt));
             return true;
         }
         if (key == Keys.S)
@@ -303,6 +338,11 @@ public sealed class MainForm : Form
                 return true;
             }
             SetGameplayCommandMode(key == Keys.M ? GameplayCommandMode.MoveOnly : GameplayCommandMode.Waypoints);
+            return true;
+        }
+        if (key == Keys.Enter)
+        {
+            ExecuteNativeImmediateSpecial();
             return true;
         }
         var delta = key switch
@@ -371,8 +411,10 @@ public sealed class MainForm : Form
             _diagnosticPathCells = [];
             _autonomousEntities = [];
             _firingActorStartedAt.Clear();
+            _firingActorVariantRoll.Clear();
             _hitActorStartedAt.Clear();
             _formDeploymentStartedAt.Clear();
+            _formRetractionStartedAt.Clear();
             _deathEffects.Clear();
             _groundOccupancy = null;
             _alternateOccupancy = null;
@@ -712,6 +754,7 @@ public sealed class MainForm : Form
             if (background is not null) DrawGameplayHud(graphics, background);
             DrawGameplayMinimap(graphics);
             DrawGameplayUnitHud(graphics);
+            DrawGameplayPanelPrompt(graphics);
             DrawGameplayCursor(graphics);
             // Keep the native gameplay viewport clear. The previous
             // developer-control panel covered the upper-left map area, which
@@ -1013,6 +1056,52 @@ public sealed class MainForm : Form
         _cameraY = Math.Clamp(_cameraY, 0, Math.Max(0, _gameplayMap.Height * 32 - 458));
     }
 
+    /// <summary>
+    /// Projects the actor's current authoritative form/facing/action into the
+    /// exact cached FIN frame used by drawing, click hit-testing, and box
+    /// selection. The returned rectangles are screen-space viewport geometry.
+    /// </summary>
+    private bool TryGameplayActorVisual(WorldEntity entity, out GameplayActorVisual visual)
+    {
+        visual = null!;
+        if (_scenarioSimulation is null || _entityCatalog is null || _entityAnimations is null ||
+            _scenarioSimulation.Actor(entity.InstanceId) is not { } actorState) return false;
+        var renderEntityId = actorState.DeployedEntityId ?? entity.EntityId;
+        if ((uint)renderEntityId >= (uint)_entityCatalog.Entities.Count) return false;
+        var deploymentPresentation = ActiveFormDeploymentPresentation(entity, actorState);
+        var combatPresentation = deploymentPresentation ?? ActiveCombatPresentation(entity, actorState);
+        var moveSelection = combatPresentation is null && actorState.Playback is not null && actorState.DeployedEntityId is null
+            ? _entityAnimations.PreferredMove(renderEntityId, actorState.Facing.RenderSector16)
+            : null;
+        var candidate = combatPresentation?.Candidate ?? moveSelection?.Candidate ?? _entityAnimations.Preferred(renderEntityId);
+        if (candidate is null) return false;
+        var span = candidate.LastFrame - candidate.FirstFrame + 1;
+        var frameAge = combatPresentation is null
+            ? (_world.TickCount - _screenStartedAtTick) / 3
+            : _world.TickCount - combatPresentation.StartedAtTick;
+        var frame = (ushort)(candidate.FirstFrame + frameAge % (ulong)span);
+        var fileName = Path.GetFileName(candidate.FinPath);
+        var bitmap = AnimationBitmap(fileName, frame);
+        if (bitmap is null) return false;
+        var key = $"{fileName}:{frame}";
+        var origin = _animationOrigins.GetValueOrDefault(key);
+        var position = ActorPosition(entity);
+        var canvas = new Rectangle(
+            position.XRaw / 8 - _cameraX + origin.X,
+            position.ZRaw / 8 - _cameraY + origin.Y,
+            bitmap.Width,
+            bitmap.Height);
+        var localOpaque = AnimationOpaqueBounds(key, bitmap);
+        var opaque = new Rectangle(
+            canvas.X + localOpaque.X,
+            canvas.Y + localOpaque.Y,
+            localOpaque.Width,
+            localOpaque.Height);
+        visual = new GameplayActorVisual(actorState, renderEntityId, candidate, combatPresentation,
+            moveSelection, fileName, frame, bitmap, canvas, opaque);
+        return true;
+    }
+
     private void DrawGameplayActors(Graphics graphics)
     {
         if (_installation is null || _scenarioSimulation is null) return;
@@ -1023,35 +1112,25 @@ public sealed class MainForm : Form
             _weaponEffects ??= _weaponCatalog is null ? null : WeaponEffectCatalog.Build(_weaponCatalog, _installation.DataFile("animate"));
             var state = graphics.Save();
             graphics.SetClip(new Rectangle(0, 0, 516, 458));
+            var targetedInstanceIds = _scenarioSimulation.Actors
+                .Where(actor => !actor.IsDestroyed && actor.AttackTargetInstanceId is not null)
+                .Select(actor => actor.AttackTargetInstanceId!.Value)
+                .ToHashSet();
             foreach (var entity in GameplayEntities().OrderBy(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
             {
-                var actorState = _scenarioSimulation.Actor(entity.InstanceId);
-                var renderEntityId = actorState?.DeployedEntityId ?? entity.EntityId;
-                if ((uint)renderEntityId >= (uint)_entityCatalog.Entities.Count) continue;
-                var deploymentPresentation = actorState is null ? null : ActiveFormDeploymentPresentation(entity, actorState);
-                var combatPresentation = deploymentPresentation ?? (actorState is null ? null : ActiveCombatPresentation(entity, actorState));
-                var moveSelection = combatPresentation is null && actorState?.Playback is not null && actorState.DeployedEntityId is null
-                    ? _entityAnimations.PreferredMove(renderEntityId, actorState.Facing.RenderSector16)
-                    : null;
-                var candidate = combatPresentation?.Candidate ?? moveSelection?.Candidate ?? _entityAnimations.Preferred(renderEntityId);
-                if (candidate is null) continue;
-                var span = candidate.LastFrame - candidate.FirstFrame + 1;
-                var frameAge = combatPresentation is null
-                    ? (_world.TickCount - _screenStartedAtTick) / 3
-                    : _world.TickCount - combatPresentation.StartedAtTick;
-                var frame = candidate.FirstFrame + (ushort)(frameAge % (ulong)span);
-                var fileName = Path.GetFileName(candidate.FinPath);
-                var bitmap = AnimationBitmap(fileName, frame);
-                if (bitmap is null) continue;
-                var key = $"{fileName}:{frame}";
-                var origin = _animationOrigins.GetValueOrDefault(key);
+                if (!TryGameplayActorVisual(entity, out var visual)) continue;
+                var actorState = visual.Actor;
+                var renderEntityId = visual.RenderEntityId;
+                var candidate = visual.Candidate;
+                var combatPresentation = visual.CombatPresentation;
+                var moveSelection = visual.MoveSelection;
+                var fileName = visual.FileName;
+                var bitmap = visual.Bitmap;
                 var position = ActorPosition(entity);
                 var worldX = position.XRaw / 8;
                 var worldY = position.ZRaw / 8;
-                var screenX = worldX - _cameraX + origin.X;
-                var screenY = worldY - _cameraY + origin.Y;
-                var opaque = AnimationOpaqueBounds(key, bitmap);
-                var centerX = screenX + opaque.Left + opaque.Width / 2;
+                var opaque = visual.OpaqueBounds;
+                var centerX = opaque.Left + opaque.Width / 2;
                 if (_selectedEntityInstanceIds.Contains(entity.InstanceId))
                 {
                     using var selection = new Pen(Color.FromArgb(72, 255, 255), 2);
@@ -1059,17 +1138,30 @@ public sealed class MainForm : Form
                     // feet of its composed sprite. Anchor the provisional
                     // ground indicator to the frame's opaque visual base so
                     // it stays with the unit instead of its abstract cell.
-                    var groundY = screenY + opaque.Bottom;
+                    var groundY = opaque.Bottom;
                     graphics.DrawEllipse(selection, centerX - 25, groundY - 12, 50, 20);
                 }
-                if (actorState is not null && (_selectedEntityInstanceIds.Contains(entity.InstanceId) || actorState.Health < actorState.MaximumHealth))
-                    DrawActorHealthBar(graphics, actorState, centerX, screenY + opaque.Top - 5);
-                if (_scenarioSimulation.Actors.Any(actor => actor.AttackTargetInstanceId == entity.InstanceId))
+                graphics.DrawImageUnscaled(bitmap, visual.CanvasBounds.Location);
+
+                // Status indicators are foreground UI. Draw them after the
+                // FIN composite and bind target geometry to the visible pixels,
+                // not to transparent canvas margins whose origins vary by frame.
+                if (targetedInstanceIds.Contains(entity.InstanceId))
                 {
                     using var targeted = new Pen(Color.FromArgb(220, 255, 80, 55), 2);
-                    graphics.DrawRectangle(targeted, screenX - 2, screenY - 2, bitmap.Width + 3, bitmap.Height + 3);
+                    graphics.DrawRectangle(targeted,
+                        opaque.Left - 2,
+                        opaque.Top - 2,
+                        opaque.Width + 3,
+                        opaque.Height + 3);
                 }
-                graphics.DrawImageUnscaled(bitmap, screenX, screenY);
+                if (actorState is not null && (_selectedEntityInstanceIds.Contains(entity.InstanceId) || actorState.Health < actorState.MaximumHealth))
+                    DrawActorHealthBar(graphics, actorState, centerX, opaque.Top - 5);
+                if (actorState?.InspirationTicksRemaining > 0)
+                {
+                    using var inspired = new SolidBrush(Color.FromArgb(235, 255, 214, 72));
+                    graphics.FillEllipse(inspired, centerX - 3, opaque.Top - 13, 7, 7);
+                }
 
                 if (_showAssetNames)
                 {
@@ -1096,29 +1188,44 @@ public sealed class MainForm : Form
                 }
             }
             DrawGameplayImpactEffects(graphics);
+            DrawGameplayTransportEffects(graphics);
             DrawGameplayDeathEffects(graphics);
             foreach (var projectile in _scenarioSimulation.Projectiles)
             {
                 var x = projectile.Position.XRaw / 8 - _cameraX;
-                var y = projectile.Position.ZRaw / 8 - _cameraY;
+                var y = projectile.Position.ZRaw / 8 - projectile.HeightRaw / 8 - _cameraY;
                 var candidate = _weaponEffects?.Bullet(projectile.WeaponId);
+                var rendered = false;
                 if (candidate is not null)
                 {
                     var fileName = Path.GetFileName(candidate.FinPath);
                     var span = candidate.LastFrame - candidate.FirstFrame + 1;
-                    var frame = candidate.FirstFrame + (ushort)(projectile.ElapsedTicks % span);
+                    var frame = candidate.FirstFrame + (ushort)(projectile.AnimationTicks % span);
                     var bitmap = AnimationBitmap(fileName, frame);
                     if (bitmap is not null)
                     {
                         var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
                         graphics.DrawImageUnscaled(bitmap, x + origin.X, y + origin.Y);
-                        continue;
+                        rendered = true;
                     }
                 }
-                using var glow = new SolidBrush(Color.FromArgb(235, 255, 225, 95));
-                using var core = new SolidBrush(Color.FromArgb(255, 255, 255, 215));
-                graphics.FillEllipse(glow, x - 4, y - 4, 8, 8);
-                graphics.FillEllipse(core, x - 1, y - 1, 3, 3);
+                if (!rendered)
+                {
+                    using var glow = new SolidBrush(Color.FromArgb(235, 255, 225, 95));
+                    using var core = new SolidBrush(Color.FromArgb(255, 255, 255, 215));
+                    graphics.FillEllipse(glow, x - 4, y - 4, 8, 8);
+                    graphics.FillEllipse(core, x - 1, y - 1, 3, 3);
+                }
+                if (_showAssetNames)
+                {
+                    using var font = new Font(FontFamily.GenericMonospace, 8, FontStyle.Regular, GraphicsUnit.Pixel);
+                    using var back = new SolidBrush(Color.FromArgb(190, 0, 0, 0));
+                    using var text = new SolidBrush(Color.FromArgb(245, 241, 200));
+                    var label = $"W{projectile.WeaponId} M{projectile.ProjectileMode} H{projectile.HeightRaw} U{projectile.ElapsedTicks}";
+                    var size = graphics.MeasureString(label, font);
+                    graphics.FillRectangle(back, x + 5, y - 10, size.Width, size.Height);
+                    graphics.DrawString(label, font, text, x + 5, y - 10);
+                }
             }
             DrawSelectedWaypointQueue(graphics);
             if (_diagnosticMoveTarget is { } target)
@@ -1140,9 +1247,7 @@ public sealed class MainForm : Form
             }
             if (_selectionDragStart is { } selectionStart && IsSelectionBoxGesture(selectionStart, _selectionDragCurrent, _selectionGestureStartedAtTick))
             {
-                var bounds = Rectangle.FromLTRB(
-                    Math.Min(selectionStart.X, _selectionDragCurrent.X), Math.Min(selectionStart.Y, _selectionDragCurrent.Y),
-                    Math.Max(selectionStart.X, _selectionDragCurrent.X), Math.Max(selectionStart.Y, _selectionDragCurrent.Y));
+                var bounds = GameplaySelectionBounds(selectionStart, _selectionDragCurrent);
                 using var selectionFill = new SolidBrush(Color.FromArgb(35, 80, 235, 220));
                 using var selectionBorder = new Pen(Color.FromArgb(210, 110, 255, 235));
                 graphics.FillRectangle(selectionFill, bounds);
@@ -1221,6 +1326,10 @@ public sealed class MainForm : Form
             _diagnosticMoveTarget = null;
             _diagnosticPathCells = [];
         }
+        else if (removedSelection)
+        {
+            RevalidateGameplayCommandModeForSelection();
+        }
     }
 
     private void CaptureCombatSounds()
@@ -1229,12 +1338,18 @@ public sealed class MainForm : Form
         foreach (var fired in _scenarioSimulation.LastWeaponFires)
         {
             var source = _scenarioSimulation.Actor(fired.SourceActorInstanceId);
-            if (source is not null) PlayGameplaySound(source.Definition.Id, "GUN");
+            if (_weaponCatalog?.TryGet(fired.WeaponId, out var weapon) == true)
+                PlayGameplaySound(weapon.SoundId, "GUN");
+            else if (source is not null)
+                PlayGameplaySound(source.Definition.Id, "GUN");
         }
         foreach (var impact in _scenarioSimulation.LastProjectileImpacts)
         {
             var source = _scenarioSimulation.Actor(impact.SourceActorInstanceId);
-            if (source is not null) PlayGameplaySound(source.Definition.Id, "EXP");
+            if (_weaponCatalog?.TryGet(impact.WeaponId, out var weapon) == true)
+                PlayGameplaySound(weapon.SoundId, "EXP");
+            else if (source is not null)
+                PlayGameplaySound(source.Definition.Id, "EXP");
         }
     }
 
@@ -1242,14 +1357,46 @@ public sealed class MainForm : Form
     {
         if (_scenarioSimulation is null) return;
         foreach (var fired in _scenarioSimulation.LastWeaponFires)
+        {
             _firingActorStartedAt[fired.SourceActorInstanceId] = _world.TickCount;
+            _firingActorVariantRoll[fired.SourceActorInstanceId] = fired.PresentationVariantRoll;
+        }
         foreach (var impact in _scenarioSimulation.LastProjectileImpacts)
         {
-            var target = _scenarioSimulation.Actor(impact.TargetActorInstanceId);
-            if (target is not null)
-                _impactEffects.Add(new ImpactEffect(impact.WeaponId, target.Movement.VisualPosition, _world.TickCount));
-            _hitActorStartedAt[impact.TargetActorInstanceId] = _world.TickCount;
+            _impactEffects.Add(new ImpactEffect(impact.WeaponId, impact.Position, _world.TickCount));
+            if (impact.TargetActorInstanceId >= 0)
+                _hitActorStartedAt[impact.TargetActorInstanceId] = _world.TickCount;
         }
+    }
+
+    private void CaptureBattlefieldTransportFeedback()
+    {
+        if (_scenarioSimulation is null) return;
+        var selectionChanged = false;
+        foreach (var transport in _scenarioSimulation.LastBattlefieldTransports)
+        {
+            if (transport.Kind == BattlefieldTransportEventKind.Started)
+            {
+                PlayGameplaySound(transport.TransportEntityId, "DPY");
+                var inboundSource = _scenarioSimulation.Actor(transport.SourceActorInstanceId);
+                if (inboundSource?.Seed.Team == _localPlayerTeam)
+                    _status = transport.TransportEntityId == 92 ? "Dropship inbound." : "Saucer inbound.";
+                continue;
+            }
+            if (transport.Kind != BattlefieldTransportEventKind.PayloadResolved) continue;
+            foreach (var abducted in transport.AbductedInstanceIds)
+                selectionChanged |= _selectedEntityInstanceIds.Remove(abducted);
+
+            var source = _scenarioSimulation.Actor(transport.SourceActorInstanceId);
+            if (source?.Seed.Team != _localPlayerTeam) continue;
+            if (transport.ReinforcementInstanceIds.Count != 0)
+                _status = $"Dropship delivered {transport.ReinforcementInstanceIds.Count} reinforcement(s).";
+            else if (transport.AbductedInstanceIds.Count != 0)
+                _status = $"Saucer abducted {transport.AbductedInstanceIds.Count} hostile unit(s).";
+        }
+        if (!selectionChanged) return;
+        if (_selectedEntityInstanceIds.Count == 0) _gameplayCommandMode = GameplayCommandMode.MoveOnly;
+        else RevalidateGameplayCommandModeForSelection();
     }
 
     private void CaptureAttackOrderFeedback()
@@ -1261,27 +1408,47 @@ public sealed class MainForm : Form
             _status = $"Attack-move order #{attackMove.SourceActorInstanceId} → ({attackMove.Target.X},{attackMove.Target.Z}) rejected: {attackMove.Outcome}.";
         foreach (var acquisition in _scenarioSimulation.LastAttackMoveAcquisitions)
             _status = $"Attack-move unit #{acquisition.SourceActorInstanceId} acquired target #{acquisition.TargetActorInstanceId}.";
+        foreach (var special in _scenarioSimulation.LastGroundSpecialAttacks.Where(order => order.Outcome != GroundSpecialAttackOutcome.Accepted))
+            _status = $"Ground-special order #{special.SourceActorInstanceId} at ({special.Target.X},{special.Target.Z}) rejected: {special.Outcome}.";
     }
 
     private void CaptureHealingFeedback()
     {
         if (_scenarioSimulation is null) return;
-        foreach (var heal in _scenarioSimulation.LastHeals)
+        foreach (var group in _scenarioSimulation.LastHeals.GroupBy(heal => heal.SourceActorInstanceId))
         {
-            var source = _scenarioSimulation.Actor(heal.SourceActorInstanceId);
+            var source = _scenarioSimulation.Actor(group.Key);
             if (source?.Seed.Team != _localPlayerTeam) continue;
-            if (heal.Outcome == HealOutcome.Healed)
+            var healed = group.Where(heal => heal.Outcome == HealOutcome.Healed).ToArray();
+            if (healed.Length != 0)
             {
                 // Healer firing is supplied by the shared glot.fin family,
                 // not the units' own FIN files. Reuse the normal recovered
                 // directional fire presentation so the command's visual,
                 // sound, and authoritative HP event begin together.
-                _firingActorStartedAt[heal.SourceActorInstanceId] = _world.TickCount;
+                _firingActorStartedAt[group.Key] = _world.TickCount;
+                _firingActorVariantRoll[group.Key] = 0;
                 PlayGameplaySound(source.Definition.Id, "DPY");
-                var target = _scenarioSimulation.Actor(heal.TargetActorInstanceId);
-                _status = $"{source.Definition.DisplayName} restored {heal.Amount} HP to {target?.Definition.DisplayName ?? $"unit #{heal.TargetActorInstanceId}"}.";
+                var target = _scenarioSimulation.Actor(healed[0].TargetActorInstanceId);
+                _status = $"{source.Definition.DisplayName} restored {healed[0].Amount} HP to {target?.Definition.DisplayName ?? $"unit #{healed[0].TargetActorInstanceId}"}; heal charge drained.";
             }
-            else _status = $"Heal rejected: {heal.Outcome}.";
+            else _status = $"Heal rejected: {group.Last().Outcome}.";
+        }
+    }
+
+    private void CaptureInspireFeedback()
+    {
+        if (_scenarioSimulation is null) return;
+        foreach (var group in _scenarioSimulation.LastInspires.GroupBy(effect => effect.SourceActorInstanceId))
+        {
+            var source = _scenarioSimulation.Actor(group.Key);
+            if (source?.Seed.Team != _localPlayerTeam) continue;
+            var applied = group.Where(effect => effect.Outcome == InspireOutcome.Applied).ToArray();
+            if (applied.Length != 0)
+                _status = $"{source.Definition.DisplayName} inspired {applied.Select(effect => effect.TargetActorInstanceId).Distinct().Count()} nearby combat unit(s).";
+            else if (group.Any(effect => effect.Outcome == InspireOutcome.Preparing))
+                _status = $"{source.Definition.DisplayName} is inspiring nearby troops.";
+            else _status = $"Inspire completed: {group.Last().Outcome}.";
         }
     }
 
@@ -1355,22 +1522,34 @@ public sealed class MainForm : Form
             // not when the player merely requests a vent.
             if (deployment.Outcome == HarvesterDeploymentOutcome.Attached && actor is not null)
                 PlayGameplaySound(actor.Definition.Id, "DPY");
+            if (deployment.Outcome == HarvesterDeploymentOutcome.Retracted && actor is not null)
+                _formRetractionStartedAt[deployment.EntityInstanceId] = _world.TickCount;
             _status = deployment.Outcome switch
             {
                 HarvesterDeploymentOutcome.Attached => $"{name} attached to Petra-7 vent {deployment.VentId + 1}; P7 flow increased.",
+                HarvesterDeploymentOutcome.Retracted => $"{name} retracted from Petra-7 vent {deployment.VentId + 1} and is mobile.",
+                HarvesterDeploymentOutcome.Preparing => $"{name} is deploying on Petra-7 vent {deployment.VentId + 1}.",
                 HarvesterDeploymentOutcome.EnRoute => $"{name} is moving to Petra-7 vent {deployment.VentId + 1}.",
                 HarvesterDeploymentOutcome.VentUnavailable => $"Petra-7 vent {deployment.VentId + 1} already has a harvester.",
-                HarvesterDeploymentOutcome.NoApproach => $"No free approach cell for Petra-7 vent {deployment.VentId + 1}.",
+                HarvesterDeploymentOutcome.NoApproach => $"Petra-7 vent {deployment.VentId + 1} cannot be entered.",
                 _ => "Deploy rejected: select a live Exploiter or Gray Slug.",
             };
         }
         foreach (var deployment in _scenarioSimulation.LastMineDeployments)
         {
-            if (deployment.Outcome == MineDeploymentOutcome.Deployed)
+            if (deployment.Outcome == MineDeploymentOutcome.Preparing)
+            {
+                _status = $"Mine deployment preparing ({ScenarioSimulation.NativeImmediateSpecialTicks} ticks).";
+            }
+            else if (deployment.Outcome == MineDeploymentOutcome.Deployed)
             {
                 var source = _scenarioSimulation.Actor(deployment.SourceActorInstanceId);
-                if (source is not null) PlayGameplaySound(source.Definition.Id, "DPY");
-                _status = $"Mine deployed at ({deployment.Target.X},{deployment.Target.Z}).";
+                if (source is not null)
+                {
+                    _formDeploymentStartedAt[deployment.EntityInstanceId] = _world.TickCount;
+                    PlayGameplaySound(source.Definition.Id, "DPY");
+                }
+                _status = $"Mine unit #{deployment.EntityInstanceId} deployed in place at ({deployment.Target.X},{deployment.Target.Z}).";
             }
             else _status = $"Mine deployment rejected: {deployment.Outcome}.";
         }
@@ -1392,9 +1571,21 @@ public sealed class MainForm : Form
             {
                 _formDeploymentStartedAt[deployment.EntityInstanceId] = _world.TickCount;
                 PlayGameplaySound(source.Definition.Id, "DPY");
-                _status = $"{source.Definition.DisplayName} entered its static stealing stance; native victim/transfer rules remain untraced.";
+                _status = $"{source.Definition.DisplayName} deployed; nearby enemy mining income will be intercepted.";
+            }
+            else if (deployment.Outcome == StealDeploymentOutcome.Retracted && source is not null)
+            {
+                _formRetractionStartedAt[deployment.EntityInstanceId] = _world.TickCount;
+                _status = $"{source.Definition.DisplayName} retracted from its stealing stance and is mobile.";
             }
             else _status = $"Steal deployment rejected: {deployment.Outcome}.";
+        }
+        foreach (var theft in _scenarioSimulation.LastP7Thefts)
+        {
+            if (theft.ThiefTeamId == _localPlayerTeam)
+                _status = $"Stole {theft.Amount} P7 from enemy miner #{theft.VictimHarvesterInstanceId}.";
+            else if (theft.VictimTeamId == _localPlayerTeam)
+                _status = $"Enemy unit #{theft.ThiefInstanceId} intercepted {theft.Amount} P7.";
         }
     }
 
@@ -1423,6 +1614,37 @@ public sealed class MainForm : Form
             if (bitmap is null) continue;
             var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
             graphics.DrawImageUnscaled(bitmap, effect.Position.XRaw / 8 - _cameraX + origin.X, effect.Position.ZRaw / 8 - _cameraY + origin.Y);
+        }
+    }
+
+    private void DrawGameplayTransportEffects(Graphics graphics)
+    {
+        if (_entityAnimations is null || _scenarioSimulation is null) return;
+        foreach (var transport in _scenarioSimulation.BattlefieldTransports.OrderBy(item => item.InstanceId))
+        {
+            var move = transport.IsPursuing
+                ? _entityAnimations.PreferredMove(transport.TransportEntityId, transport.Facing.RenderSector16)
+                : null;
+            var candidate = move?.Candidate ?? _entityAnimations.Preferred(transport.TransportEntityId);
+            if (candidate is null) continue;
+            var span = candidate.LastFrame - candidate.FirstFrame + 1;
+            var frame = candidate.FirstFrame + (ushort)((_world.TickCount / 3) % (ulong)span);
+            var fileName = Path.GetFileName(candidate.FinPath);
+            var bitmap = AnimationBitmap(fileName, frame);
+            if (bitmap is null) continue;
+            var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
+            graphics.DrawImageUnscaled(bitmap,
+                transport.Position.XRaw / 8 - _cameraX + origin.X,
+                transport.Position.ZRaw / 8 - transport.HeightRaw / 8 - _cameraY + origin.Y);
+            if (!_showAssetNames) continue;
+            using var font = new Font(FontFamily.GenericMonospace, 8, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var text = new SolidBrush(Color.FromArgb(245, 241, 200));
+            var pursuit = transport.IsPursuing
+                ? $" {(transport.IsTurning ? $"TURN:{transport.Facing.Current}→{transport.Facing.Target}" : $"MOVE:{transport.HorizontalExecutionsRemaining}")}→({transport.PursuitTarget!.Value.Cell.X},{transport.PursuitTarget.Value.Cell.Z})"
+                : string.Empty;
+            graphics.DrawString($"transport #{transport.TransportEntityId}/{transport.InstanceId} · {transport.Phase}{pursuit} H{transport.HeightRaw} · {fileName}:{candidate.AnimationName}", font, text,
+                transport.Position.XRaw / 8 - _cameraX + 8,
+                transport.Position.ZRaw / 8 - transport.HeightRaw / 8 - _cameraY - 20);
         }
     }
 
@@ -1462,7 +1684,8 @@ public sealed class MainForm : Form
         // when both occur in one tick.
         if (TryPresentation(_hitActorStartedAt, _entityAnimations.PreferredHit(renderEntityId, actor.Facing.RenderSector16), entity.InstanceId, out var hit))
             return hit;
-        return TryPresentation(_firingActorStartedAt, _entityAnimations.PreferredFire(renderEntityId, actor.Facing.RenderSector16), entity.InstanceId, out var fire)
+        var variantRoll = _firingActorVariantRoll.GetValueOrDefault(entity.InstanceId);
+        return TryPresentation(_firingActorStartedAt, _entityAnimations.PreferredFire(renderEntityId, actor.Facing.RenderSector16, variantRoll), entity.InstanceId, out var fire)
             ? fire : null;
     }
 
@@ -1470,6 +1693,9 @@ public sealed class MainForm : Form
     private CombatPresentation? ActiveFormDeploymentPresentation(WorldEntity entity, SimulatedActor actor)
     {
         if (_entityAnimations is null) return null;
+        if (TryPresentation(_formRetractionStartedAt,
+                _entityAnimations.PreferredRetract(entity.EntityId, actor.Facing.RenderSector16), entity.InstanceId, out var retract))
+            return retract;
         return TryPresentation(_formDeploymentStartedAt,
             _entityAnimations.PreferredDeploy(entity.EntityId, actor.Facing.RenderSector16), entity.InstanceId, out var deploy)
             ? deploy : null;
@@ -1519,24 +1745,43 @@ public sealed class MainForm : Form
         if (_scenarioSimulation is not null)
         {
             CaptureGameplayStatus();
-            DrawGameplayHudText(graphics, $"P7 {_scenarioSimulation.ResourceForTeam(_localPlayerTeam)}  {_scenarioSimulation.DayNight.Phase.ToString().ToUpperInvariant()}",
-                new Rectangle(_gameplayHudLayout.ResourceStatus.Origin, new Size(160, 14)));
-            // The port already funnels authoritative command and simulation
-            // outcomes through `_status`. Keep them visible in the remaining
-            // bottom strip instead of leaving production and rejected orders
-            // observable only while debugging MainForm state.
+            DrawGameplayPetraCounter(graphics, _scenarioSimulation.ResourceForTeam(_localPlayerTeam));
+            // The port funnels authoritative command and simulation outcomes
+            // through `_status`. UI 148 is the authored 61-character message
+            // line, so keep the adapter within that exact control rather than
+            // dividing it into invented P7 and status regions.
             DrawGameplayIconButton(graphics, _gameplayHudLayout.LastMessage.Bounds, _gameplayHudLayout.LastMessage.Frame, false, _gameplayMessageIndex > 0);
             DrawGameplayIconButton(graphics, _gameplayHudLayout.NextMessage.Bounds, _gameplayHudLayout.NextMessage.Frame, false,
                 _gameplayMessageIndex >= 0 && _gameplayMessageIndex < _gameplayMessageHistory.Count - 1);
-            DrawGameplayHudText(graphics, GameplayMessageText(), new Rectangle(210, 462, 425, 14));
+            var message = GameplayMessageText();
+            DrawGameplayHudText(graphics, FitGameplayReadout(message, _gameplayHudLayout.MessageStatus.CharacterCapacity),
+                new Rectangle(_gameplayHudLayout.MessageStatus.Origin, new Size(427, 14)));
             // maine in_text 234: the original HUD's days counter at 613,433.
             DrawMenuText(graphics, _scenarioSimulation.DayNight.CompletedDays.ToString(), new Rectangle(604, 427, 30, 14), remap: Color.FromArgb(205, 225, 190));
         }
-        var selected = SelectedGameplayEntities().ToArray();
+        var inspected = SelectedInspectableGameplayEntities().ToArray();
+        var selected = inspected.Where(IsLocallyControllable).ToArray();
+        if (inspected.Length != 0 && selected.Length == 0 && _gameplayHudTab == GameplayHudTab.Build)
+        {
+            DrawObservedEntityHud(graphics, inspected);
+            return;
+        }
+        var deployedHarvesters = selected.Where(IsDeployedHarvester).ToArray();
+        if (deployedHarvesters.Length == selected.Length && selected.Length != 0 && _gameplayHudTab == GameplayHudTab.Build)
+        {
+            DrawSelectedHarvesterHud(graphics, deployedHarvesters);
+            return;
+        }
         var staticStealSelected = selected.Where(IsDeployedStealStance).ToArray();
         if (staticStealSelected.Length == selected.Length && selected.Length != 0 && _gameplayHudTab == GameplayHudTab.Build)
         {
             DrawSelectedStealStanceHud(graphics, staticStealSelected);
+            return;
+        }
+        var deployedMines = selected.Where(IsDeployedMine).ToArray();
+        if (deployedMines.Length == selected.Length && selected.Length != 0 && _gameplayHudTab == GameplayHudTab.Build)
+        {
+            DrawSelectedMineHud(graphics, deployedMines);
             return;
         }
         var staticCombatSelected = selected.Where(IsDeployedStaticCombatUnit).ToArray();
@@ -1548,7 +1793,11 @@ public sealed class MainForm : Form
         var mobileSelected = selected.Where(IsActiveMobileUnit).ToArray();
         if (mobileSelected.Length != 0 && _gameplayHudTab == GameplayHudTab.Build)
         {
-            DrawSelectedUnitCommands(graphics, mobileSelected);
+            // Movement may apply to a capable subset, but contextual slots are
+            // homogeneous-selection commands. Pass the complete local
+            // selection so rendering cannot expose an action by silently
+            // discarding selected static or differently typed actors.
+            DrawSelectedUnitCommands(graphics, selected);
             return;
         }
         if (selected.Length != 0 && _gameplayHudTab == GameplayHudTab.Build)
@@ -1572,12 +1821,15 @@ public sealed class MainForm : Form
 
         if (selected.Length == 0)
         {
-            DrawGameplayHudText(graphics, _gameplayHudTab == GameplayHudTab.Build ? "BUILD CATALOG" : _gameplayHudTab.ToString().ToUpperInvariant(), new Rectangle(8, 425, 300, 14));
-            DrawGameplayHudText(graphics, _gameplayHudTab == GameplayHudTab.Build
-                ? "Choose a structure, then right-click its drop location"
-                : _showAlliesPanel
-                    ? "Toggle a team: alliance changes direct attacks and attack-move acquisition."
-                    : "UI mapped; engine behavior pending", new Rectangle(8, 440, 400, 14));
+            if (_showAssetNames)
+            {
+                DrawGameplayLowerReadout(graphics, _gameplayHudTab == GameplayHudTab.Build ? "BUILD CATALOG" : _gameplayHudTab.ToString().ToUpperInvariant());
+                DrawGameplayLowerReadout(graphics, _gameplayHudTab == GameplayHudTab.Build
+                    ? "Choose a structure, then right-click its drop location"
+                    : _showAlliesPanel
+                        ? "Toggle a team: alliance changes direct attacks and attack-move acquisition."
+                        : "UI mapped; engine behavior pending", bottom: true);
+            }
             return;
         }
 
@@ -1585,14 +1837,10 @@ public sealed class MainForm : Form
         var definition = GameplayDefinition(lead);
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
         var name = selected.Length == 1 && definition is not null
-            ? definition.DisplayName.ToUpperInvariant()
-            : $"{selected.Length} UNITS SELECTED";
-        DrawGameplayHudText(graphics, name, new Rectangle(_gameplayHudLayout.SelectedName.Origin, new Size(340, 14)));
-        if (definition is not null)
-            DrawGameplayHudText(graphics, GameplayStatsLine(actor, definition), new Rectangle(_gameplayHudLayout.SelectedStats.Origin, new Size(500, 14)));
-        DrawGameplayHudText(graphics, GameplayCommandModeLabel(), new Rectangle(_gameplayHudLayout.CommandStatus.Origin, new Size(112, 14)));
-        if (actor is not null && ActiveOrderHudStatus(actor) is { } orderStatus)
-            DrawGameplayHudText(graphics, orderStatus, new Rectangle(250, 425, 265, 14));
+            ? definition.DisplayName
+            : $"{selected.Length} Units";
+        DrawGameplayPanelIdentity(graphics, name);
+        DrawGameplaySelectionDiagnostics(graphics, actor, definition);
     }
 
     private void DrawGameplayCursor(Graphics graphics)
@@ -1618,9 +1866,8 @@ public sealed class MainForm : Form
             {
                 var edge = GameplayEdgeCursorAnimation(pointer);
                 if (edge is not null) return edge;
-                if (_gameplayCommandMode == GameplayCommandMode.AttackTarget) return "ATTACK";
-                if (_gameplayCommandMode == GameplayCommandMode.HealTarget) return "HEAL&REPAIR";
-                if (_gameplayCommandMode is GameplayCommandMode.Waypoints or GameplayCommandMode.HarvestVent or GameplayCommandMode.DeployMine or GameplayCommandMode.PlaceBuilding)
+                if (_gameplayCommandMode is GameplayCommandMode.AttackTarget or GameplayCommandMode.GroundSpecialTarget) return "ATTACK";
+                if (_gameplayCommandMode is GameplayCommandMode.Waypoints or GameplayCommandMode.HarvestVent or GameplayCommandMode.PlaceBuilding)
                 return "MOVE";
             if (FindGameplayActorAt(pointer, locallyControllableOnly: true) is not null) return "UNITSELECT";
         }
@@ -1654,10 +1901,11 @@ public sealed class MainForm : Form
     {
         // Group 40 has common actions plus one shared, contextual ability
         // slot. Keep its label/frame tied to the original `maine` controls.
-        DrawGameplayCommandButton(graphics, _gameplayHudLayout.Stop, true);
-        DrawGameplayCommandButton(graphics, _gameplayHudLayout.MoveOnly, true, GameplayCommandMode.MoveOnly);
-        DrawGameplayCommandButton(graphics, _gameplayHudLayout.MoveAndAttack, selected.Any(HasWeapon), GameplayCommandMode.AttackTarget);
-        DrawGameplayCommandButton(graphics, _gameplayHudLayout.Waypoints, true, GameplayCommandMode.Waypoints);
+        var commandState = GameplayCommandState(selected);
+        DrawGameplayCommandButton(graphics, _gameplayHudLayout.Stop, commandState.AnyCanStop);
+        DrawGameplayCommandButton(graphics, _gameplayHudLayout.MoveOnly, commandState.AnyCanMove, GameplayCommandMode.MoveOnly);
+        DrawGameplayCommandButton(graphics, _gameplayHudLayout.MoveAndAttack, commandState.AnyCanAttack, GameplayCommandMode.AttackTarget);
+        DrawGameplayCommandButton(graphics, _gameplayHudLayout.Waypoints, commandState.AnyCanUseWaypoints, GameplayCommandMode.Waypoints);
         var special = SelectedUnitSpecial(selected);
         DrawGameplayCommandButton(graphics, _gameplayHudLayout.Contextual with { Frame = special.Frame, Label = special.Label },
             special.EngineBacked, special.SelectedMode);
@@ -1676,24 +1924,38 @@ public sealed class MainForm : Form
             };
         if (secondary is not null)
             DrawGameplayCommandButton(graphics, _gameplayHudLayout.Secondary with { Frame = secondary.Value.Frame, Label = secondary.Value.Label },
-                available: false);
+                SecondaryCommandAvailable(secondary.Value), GameplayCommandMode.GroundSpecialTarget);
 
         var lead = selected[0];
         var definition = GameplayDefinition(lead);
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
-        var name = selected.Count == 1 && definition is not null ? definition.DisplayName.ToUpperInvariant() : $"{selected.Count} UNITS SELECTED";
-        DrawGameplayHudText(graphics, name, new Rectangle(_gameplayHudLayout.SelectedName.Origin, new Size(340, 14)));
-        if (definition is not null)
-            DrawGameplayHudText(graphics, GameplayStatsLine(actor, definition), new Rectangle(_gameplayHudLayout.SelectedStats.Origin, new Size(500, 14)));
-        if (actor is not null && ActiveOrderHudStatus(actor) is { } orderStatus)
-            DrawGameplayHudText(graphics, orderStatus, new Rectangle(250, 425, 265, 14));
-        // The sixth command is deliberately disabled until an engine executor
-        // is recovered.  Still distinguish a missing authored technology gate
-        // from a researched-but-unimplemented action; otherwise the original
-        // button art makes both states look like the same unavailable command.
-        var commandStatus = HoveredGameplayCommandLabel(displayedButtons) ??
-            (secondary is { } secondaryCommand ? SecondaryCommandHudStatus(secondaryCommand) : GameplayCommandModeLabel());
-        DrawGameplayHudText(graphics, commandStatus, new Rectangle(_gameplayHudLayout.CommandStatus.Origin, new Size(112, 14)));
+        var name = selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Units";
+        DrawGameplayPanelIdentity(graphics, name);
+        DrawGameplaySelectionDiagnostics(graphics, actor, definition);
+        if (HoveredGameplayCommandLabel(displayedButtons) is { } hoveredCommand)
+            DrawGameplayPanelIdentity(graphics, hoveredCommand);
+    }
+
+    private void DrawObservedEntityHud(Graphics graphics, IReadOnlyList<WorldEntity> selected)
+    {
+        var lead = selected[0];
+        var definition = GameplayDefinition(lead);
+        var actor = _scenarioSimulation?.Actor(lead.InstanceId);
+        var name = selected.Count == 1 && definition is not null
+            ? definition.DisplayName
+            : $"{selected.Count} Units";
+        DrawGameplayPanelIdentity(graphics, name);
+        var relation = lead.Team == _localPlayerTeam
+            ? "LOCAL / NOT CONTROLLABLE"
+            : _scenarioSimulation?.TeamRelations.IsHostile(_localPlayerTeam, lead.Team) == true
+                ? "HOSTILE"
+                : "ALLY";
+        if (_showAssetNames)
+        {
+            DrawGameplayLowerReadout(graphics, $"{relation} TEAM {lead.Team + 1} - INSPECTION ONLY");
+            if (definition is not null)
+                DrawGameplayLowerReadout(graphics, GameplayStatsLine(actor, definition), bottom: true);
+        }
     }
 
     private void DrawSelectedStructureHud(Graphics graphics, IReadOnlyList<WorldEntity> selected)
@@ -1702,9 +1964,8 @@ public sealed class MainForm : Form
         var definition = _entityCatalog is not null && (uint)lead.EntityId < (uint)_entityCatalog.Entities.Count
             ? _entityCatalog[lead.EntityId] : null;
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
-        DrawGameplayHudText(graphics,
-            selected.Count == 1 && definition is not null ? definition.DisplayName.ToUpperInvariant() : $"{selected.Count} STRUCTURES SELECTED",
-            new Rectangle(_gameplayHudLayout.SelectedName.Origin, new Size(350, 14)));
+        DrawGameplayPanelIdentity(graphics,
+            selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Structures");
         // A selected completed structure is a production source, not a
         // generic faction palette.  `depend.txt` records the prerequisite
         // building for every troop, so expose only the entries this exact
@@ -1714,10 +1975,10 @@ public sealed class MainForm : Form
         // Structures use the same live actor state as units. Showing their
         // health and decoded stats here keeps production selection from
         // hiding damage state behind a generic instruction.
-        DrawGameplayHudText(graphics, definition is null
-            ? (!AvailableTroopItems().Any() ? "NO MATCHED PRODUCTION" : "SELECT UNIT")
-            : GameplayStatsLine(actor, definition), new Rectangle(_gameplayHudLayout.SelectedStats.Origin, new Size(500, 14)));
-        DrawGameplayHudText(graphics, "PRODUCTION", new Rectangle(_gameplayHudLayout.CommandStatus.Origin, new Size(112, 14)));
+        if (_showAssetNames)
+            DrawGameplayLowerReadout(graphics, definition is null
+                ? (!AvailableTroopItems().Any() ? "NO MATCHED PRODUCTION" : "SELECT UNIT")
+                : GameplayStatsLine(actor, definition), bottom: true);
     }
 
     private void DrawSelectedStaticCombatHud(Graphics graphics, IReadOnlyList<WorldEntity> selected)
@@ -1730,34 +1991,59 @@ public sealed class MainForm : Form
         var lead = selected[0];
         var definition = GameplayDefinition(lead);
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
-        var name = selected.Count == 1 && definition is not null ? definition.DisplayName.ToUpperInvariant() : $"{selected.Count} STATIC UNITS";
-        DrawGameplayHudText(graphics, name, new Rectangle(_gameplayHudLayout.SelectedName.Origin, new Size(340, 14)));
-        if (definition is not null)
-            DrawGameplayHudText(graphics, GameplayStatsLine(actor, definition), new Rectangle(_gameplayHudLayout.SelectedStats.Origin, new Size(500, 14)));
-        if (actor is not null && ActiveOrderHudStatus(actor) is { } orderStatus)
-            DrawGameplayHudText(graphics, orderStatus, new Rectangle(250, 425, 265, 14));
-        DrawGameplayHudText(graphics,
-            HoveredGameplayCommandLabel([_gameplayHudLayout.Stop, _gameplayHudLayout.MoveAndAttack]) ?? "STATIC COMBAT",
-            new Rectangle(_gameplayHudLayout.CommandStatus.Origin, new Size(112, 14)));
+        var name = selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Static";
+        DrawGameplayPanelIdentity(graphics, name);
+        DrawGameplaySelectionDiagnostics(graphics, actor, definition);
+        if (HoveredGameplayCommandLabel([_gameplayHudLayout.Stop, _gameplayHudLayout.MoveAndAttack]) is { } hoveredCommand)
+            DrawGameplayPanelIdentity(graphics, hoveredCommand);
     }
 
     private void DrawSelectedStealStanceHud(Graphics graphics, IReadOnlyList<WorldEntity> selected)
     {
+        DrawGameplayCommandButton(graphics,
+            _gameplayHudLayout.Contextual with { Frame = 75, Label = "STEAL MONEY" }, true);
         var lead = selected[0];
         var definition = GameplayDefinition(lead);
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
-        var name = selected.Count == 1 && definition is not null ? definition.DisplayName.ToUpperInvariant() : $"{selected.Count} STEALING UNITS";
-        DrawGameplayHudText(graphics, name, new Rectangle(_gameplayHudLayout.SelectedName.Origin, new Size(340, 14)));
-        if (definition is not null)
-            DrawGameplayHudText(graphics, GameplayStatsLine(actor, definition), new Rectangle(_gameplayHudLayout.SelectedStats.Origin, new Size(500, 14)));
-        DrawGameplayHudText(graphics, "STEALING STANCE", new Rectangle(_gameplayHudLayout.CommandStatus.Origin, new Size(112, 14)));
-        DrawGameplayHudText(graphics, "P7 TARGET / TRANSFER PENDING", new Rectangle(520, 420, 112, 14));
+        var name = selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Stealing";
+        DrawGameplayPanelIdentity(graphics, name);
+        DrawGameplaySelectionDiagnostics(graphics, actor, definition, "STEALING: 50% NEARBY MINER P7");
+        if (HoveredGameplayCommandLabel([_gameplayHudLayout.Contextual with { Frame = 75, Label = "STEAL MONEY" }]) is { } hoveredCommand)
+            DrawGameplayPanelIdentity(graphics, hoveredCommand);
+    }
+
+    private void DrawSelectedHarvesterHud(Graphics graphics, IReadOnlyList<WorldEntity> selected)
+    {
+        DrawGameplayCommandButton(graphics,
+            _gameplayHudLayout.Contextual with { Frame = 74, Label = "DEPLOY" }, true);
+        var lead = selected[0];
+        var definition = GameplayDefinition(lead);
+        var actor = _scenarioSimulation?.Actor(lead.InstanceId);
+        var name = selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Miners";
+        DrawGameplayPanelIdentity(graphics, name);
+        DrawGameplaySelectionDiagnostics(graphics, actor, definition,
+            actor?.HarvestVentId is { } ventId ? $"P7 VENT {ventId + 1}: ATTACHED" : "P7 MINER: DEPLOYED");
+        if (HoveredGameplayCommandLabel([_gameplayHudLayout.Contextual with { Frame = 74, Label = "DEPLOY" }]) is { } hoveredCommand)
+            DrawGameplayPanelIdentity(graphics, hoveredCommand);
+    }
+
+    private void DrawSelectedMineHud(Graphics graphics, IReadOnlyList<WorldEntity> selected)
+    {
+        var lead = selected[0];
+        var definition = GameplayDefinition(lead);
+        var actor = _scenarioSimulation?.Actor(lead.InstanceId);
+        var name = selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Mines";
+        DrawGameplayPanelIdentity(graphics, name);
+        var triggerCount = actor is null ? 0 : _scenarioSimulation?.MineTriggersRemainingFor(actor) ?? 0;
+        var readiness = actor?.CooldownTicks > 0 ? $"REARM {actor.CooldownTicks}" : "READY";
+        DrawGameplaySelectionDiagnostics(graphics, actor, definition,
+            $"ARMED - {triggerCount} TRIGGER{(triggerCount == 1 ? string.Empty : "S")} - {readiness}");
     }
 
     private void DrawBuildCatalog(Graphics graphics)
     {
         DrawBuildCatalogButtons(graphics);
-        DrawGameplayHudText(graphics, _grayRace ? "GRAY BUILD / TROOPS" : "HUMAN BUILD / TROOPS", new Rectangle(_gameplayHudLayout.CommandStatus.Origin, new Size(112, 14)));
+        DrawGameplayPanelIdentity(graphics, "Build");
     }
 
     // `maine` group 84 (Human) and group 53 (Gray) combine their troop
@@ -1923,13 +2209,33 @@ public sealed class MainForm : Form
     private PurchaseEligibility PurchaseEligibilityFor(DependencyDefinition item) =>
         _scenarioSimulation?.EconomyForTeam(_localPlayerTeam)?.Evaluate(_dependencyCatalog, item.Id) ?? PurchaseEligibility.CatalogUnavailable;
 
-    private string HarvesterHudStatus(SimulatedActor actor, int ventId) =>
-        _scenarioSimulation?.PetraVents.ElementAtOrDefault(ventId)?.HarvesterInstanceId == actor.Seed.InstanceId
-            ? $"P7 VENT {ventId + 1}: ATTACHED"
-            : $"P7 VENT {ventId + 1}: EN ROUTE";
+    private string HarvesterHudStatus(SimulatedActor actor, int ventId)
+    {
+        var vent = _scenarioSimulation?.PetraVents.ElementAtOrDefault(ventId);
+        if (vent?.HarvesterInstanceId == actor.Seed.InstanceId)
+            return $"P7 VENT {ventId + 1}: ATTACHED";
+        if (vent?.PendingHarvesterInstanceId == actor.Seed.InstanceId)
+            return $"P7 VENT {ventId + 1}: DEPLOYING {vent.AttachTicksRemaining}";
+        return $"P7 VENT {ventId + 1}: EN ROUTE";
+    }
 
     private string? ActiveOrderHudStatus(SimulatedActor actor)
     {
+        if (actor.InspireCastTicksRemaining > 0)
+            return $"INSPIRE: CASTING {actor.InspireCastTicksRemaining}";
+        if (actor.GroundSpecialAttackTarget is { } specialTarget)
+        {
+            var label = UnitSecondaryCommandCatalog.TryGet(_scenarioSimulation!.EffectiveDefinition(actor), out var special)
+                ? special.Label.Replace(" ATTACK", string.Empty, StringComparison.Ordinal)
+                : "SPECIAL";
+            if (_scenarioSimulation.IsGroundSpecialTargetInRange(actor))
+            {
+                if (actor.Facing.Current != actor.Facing.Target) return $"{label} ({specialTarget.X},{specialTarget.Z}): TURNING";
+                if (actor.CooldownTicks > 0) return $"{label} ({specialTarget.X},{specialTarget.Z}): WAIT {actor.CooldownTicks}";
+                return $"{label} ({specialTarget.X},{specialTarget.Z}): READY";
+            }
+            return $"{label} ({specialTarget.X},{specialTarget.Z}): APPROACHING";
+        }
         if (actor.AttackTargetInstanceId is { } targetId)
         {
             if (_scenarioSimulation?.IsAttackTargetInRange(actor) != true)
@@ -1937,7 +2243,7 @@ public sealed class MainForm : Form
             var weapon = _scenarioSimulation.EffectiveWeaponFor(actor);
             if (actor.CooldownTicks > 0)
             {
-                var burst = weapon?.Shots > 0 ? $" B{actor.BurstShotCount}/{weapon.Shots}" : string.Empty;
+                var burst = weapon?.BurstShotLimit > 0 ? $" B{actor.BurstShotCount}/{weapon.BurstShotLimit}" : string.Empty;
                 return $"TARGET #{targetId}: RELOAD {actor.CooldownTicks}{burst}";
             }
             return $"TARGET #{targetId}: READY";
@@ -2011,12 +2317,17 @@ public sealed class MainForm : Form
 
     private string GameplaySpecialTechnologyStatus(SimulatedActor? actor)
     {
+        var status = actor?.InspirationTicksRemaining > 0
+            ? $" INSPIRED:{actor.InspirationTicksRemaining}"
+            : string.Empty;
+        if (actor?.Definition.Code is "BEON" or "ZISP")
+            status += $" HEAL:{actor.AbilityCharge}/{SimulatedActor.NativeMaximumAbilityCharge}";
         if (actor is null || !UnitSecondaryCommandCatalog.TryGet(actor.Definition, out var special) ||
-            special.RequiredResearchItemId is not { } itemId) return string.Empty;
+            special.RequiredResearchItemId is not { } itemId) return status;
         var researched = _scenarioSimulation?.EconomyForTeam(actor.Seed.Team)?.CompletedItems.Contains(itemId) == true;
         // This is capability state only; it deliberately does not claim that
         // the untraced command executor itself is available.
-        return $" {special.Label.Replace(" ATTACK", string.Empty, StringComparison.Ordinal)} TECH:{(researched ? "ON" : "OFF")}";
+        return status + $" {special.Label.Replace(" ATTACK", string.Empty, StringComparison.Ordinal)} TECH:{(researched ? "ON" : "OFF")}";
     }
 
     private IEnumerable<DependencyDefinition> UpgradeItemsForStructure(WorldEntity structure)
@@ -2085,7 +2396,7 @@ public sealed class MainForm : Form
             var upgrades = ResearchButtonsForStructure(structure);
             foreach (var (item, position) in upgrades)
                 DrawMappedCatalogButton(graphics, CatalogBounds(item.UiId, position), item.UiId, UpgradeLabel(item), PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
-            DrawGameplayHudText(graphics, upgrades.Count == 0 ? "NO MATCHED RESEARCH" : "RESEARCH", new Rectangle(_gameplayHudLayout.CommandStatus.Origin, new Size(112, 14)));
+            DrawGameplayPanelIdentity(graphics, upgrades.Count == 0 ? "NO RESEARCH" : "RESEARCH");
             return;
         }
         var entries = _grayRace
@@ -2094,7 +2405,7 @@ public sealed class MainForm : Form
         var slots = new[] { new Point(518,112), new Point(577,112), new Point(518,194), new Point(577,194) };
         for (var index = 0; index < entries.Length; index++)
             DrawMappedCatalogButton(graphics, new Rectangle(slots[index], new Size(59, 41)), entries[index].Item2, entries[index].Item1);
-        DrawGameplayHudText(graphics, "UPGRADES", new Rectangle(_gameplayHudLayout.CommandStatus.Origin, new Size(112, 14)));
+        DrawGameplayPanelIdentity(graphics, "UPGRADES");
     }
 
     private void DrawOptionsCatalog(Graphics graphics)
@@ -2115,7 +2426,7 @@ public sealed class MainForm : Form
         };
         foreach (var entry in entries)
             DrawMappedCatalogButton(graphics, entry.Bounds, entry.Frame, entry.Label, entry.UiId is 62 or 196);
-        DrawGameplayHudText(graphics, _gameplayPaused ? "PAUSED" : "GAME OPTIONS", new Rectangle(_gameplayHudLayout.CommandStatus.Origin, new Size(112, 14)));
+        DrawGameplayPanelIdentity(graphics, _gameplayPaused ? "PAUSED" : "GAME OPTIONS");
     }
 
     private void DrawAlliesPanel(Graphics graphics)
@@ -2133,7 +2444,7 @@ public sealed class MainForm : Form
                 DrawMappedCatalogButton(graphics, slots[index + 1], 117, $"T{team + 1} {(allied ? "ALLY" : "FOE")}", true);
             }
         }
-        DrawGameplayHudText(graphics, "ALLIES", new Rectangle(_gameplayHudLayout.CommandStatus.Origin, new Size(112, 14)));
+        DrawGameplayPanelIdentity(graphics, "ALLIES");
     }
 
     private static Rectangle[] AllianceSlots() =>
@@ -2186,6 +2497,21 @@ public sealed class MainForm : Form
         }
     }
 
+    private void DrawGameplayPetraCounter(Graphics graphics, int amount)
+    {
+        var counter = _gameplayHudLayout.PetraCounter;
+        var text = Math.Clamp(amount, 0, 999_999).ToString();
+        const int digitWidth = 12;
+        var x = counter.Bounds.Right - text.Length * digitWidth;
+        foreach (var digit in text)
+        {
+            var bitmap = SpriteFrameBitmap("mainbut", counter.Frame + digit - '0');
+            if (bitmap is not null)
+                graphics.DrawImageUnscaled(bitmap, x, counter.Bounds.Y);
+            x += digitWidth;
+        }
+    }
+
     private void DrawGameplayHudText(Graphics graphics, string text, Rectangle bounds)
     {
         if (DrawMenuText(graphics, text, bounds, center: false, remap: Color.FromArgb(205, 225, 190))) return;
@@ -2193,6 +2519,54 @@ public sealed class MainForm : Form
         using var brush = new SolidBrush(Color.FromArgb(220, 230, 205));
         graphics.DrawString(text, font, brush, bounds.Location);
     }
+
+    private void DrawGameplayPanelIdentity(Graphics graphics, string text)
+    {
+        var readout = _gameplayHudLayout.PanelIdentity;
+        var fitted = FitGameplayReadout(text, readout.CharacterCapacity);
+        var bounds = new Rectangle(readout.Origin, new Size(112, 14));
+        // `maine` control 79 uses remap 2. The original selected-Trooper
+        // capture renders this strip in a warm yellow, distinct from the pale
+        // green lower message readouts.
+        if (DrawMenuText(graphics, fitted, bounds, center: false, remap: Color.FromArgb(250, 225, 95))) return;
+        using var font = new Font(FontFamily.GenericMonospace, 10, FontStyle.Bold, GraphicsUnit.Pixel);
+        using var brush = new SolidBrush(Color.FromArgb(250, 225, 95));
+        graphics.DrawString(fitted, font, brush, bounds.Location);
+    }
+
+    private void DrawGameplayPanelPrompt(Graphics graphics)
+    {
+        var prompt = _gameplayCommandMode switch
+        {
+            GameplayCommandMode.Waypoints => _gameplayHudLayout.SetWaypointsMessage,
+            GameplayCommandMode.AttackTarget or GameplayCommandMode.GroundSpecialTarget or GameplayCommandMode.HarvestVent => _gameplayHudLayout.SelectTargetMessage,
+            _ => null,
+        };
+        if (prompt is not null) DrawGameplayPanelIdentity(graphics, prompt);
+    }
+
+    private void DrawGameplayLowerReadout(Graphics graphics, string text, bool bottom = false)
+    {
+        var readout = bottom ? _gameplayHudLayout.LowerReadoutBottom : _gameplayHudLayout.LowerReadoutTop;
+        DrawGameplayHudText(graphics, FitGameplayReadout(text, readout.CharacterCapacity),
+            new Rectangle(readout.Origin, new Size(500, 14)));
+    }
+
+    private void DrawGameplaySelectionDiagnostics(
+        Graphics graphics,
+        SimulatedActor? actor,
+        EntityDefinition? definition,
+        string? context = null)
+    {
+        if (!_showAssetNames) return;
+        var state = context ?? (actor is null ? null : ActiveOrderHudStatus(actor)) ?? GameplayCommandModeLabel();
+        DrawGameplayLowerReadout(graphics, state);
+        if (definition is not null)
+            DrawGameplayLowerReadout(graphics, GameplayStatsLine(actor, definition), bottom: true);
+    }
+
+    private static string FitGameplayReadout(string text, int capacity) =>
+        text.Length <= capacity ? text : text[..capacity];
 
     private Bitmap? SpriteFrameBitmap(string spriteName, int frameIndex)
     {
@@ -2217,26 +2591,17 @@ public sealed class MainForm : Form
     private void SetGameplayCommandMode(GameplayCommandMode mode)
     {
         _gameplayCommandMode = mode;
-        _status = mode == GameplayCommandMode.Waypoints
-            ? "Waypoint mode: right-click the map to add up to eight destinations."
-            : mode == GameplayCommandMode.AttackTarget
-                ? "Move & Attack: terrain scans while moving; an opposing actor is a direct target."
-                : mode == GameplayCommandMode.HealTarget
-                    ? "Heal mode: right-click a cooperative damaged unit within the healer's current sight range."
-                : mode == GameplayCommandMode.HarvestVent
-                    ? "Deploy mode: right-click a Petra-7 vent; the Exploiter/Slug walks to it and attaches when it arrives."
-                    : mode == GameplayCommandMode.DeployMine
-                        ? "Deploy Mine mode: right-click a clear map cell to place a faction-matched mine."
-                : "Move mode: right-click the map to replace the current destination.";
+        // Native mode prompts are continuously projected through UI 79 by
+        // the gameplay input loop; they are not appended to message history.
+        _surface.Invalidate();
     }
 
     private string GameplayCommandModeLabel() => _gameplayCommandMode switch
     {
         GameplayCommandMode.Waypoints => "WAYPOINT MODE",
         GameplayCommandMode.AttackTarget => "MOVE & ATTACK",
-        GameplayCommandMode.HealTarget => "HEAL / REPAIR",
+        GameplayCommandMode.GroundSpecialTarget => "SPECIAL GROUND TARGET",
         GameplayCommandMode.HarvestVent => "DEPLOY ON VENT",
-        GameplayCommandMode.DeployMine => "DEPLOY MINE",
         GameplayCommandMode.PlaceBuilding => "DROP BUILDING",
         _ => "MOVE MODE",
     };
@@ -3083,7 +3448,7 @@ public sealed class MainForm : Form
             _surface.Invalidate();
             return;
         }
-        if (_screen == MenuScreenId.Gameplay && _mapDragStart is { } start && eventArgs.Button.HasFlag(MouseButtons.Left))
+        if (_screen == MenuScreenId.Gameplay && _mapDragStart is { } start && eventArgs.Button.HasFlag(MouseButtons.Middle))
         {
             var dx = eventArgs.X - start.X;
             var dy = eventArgs.Y - start.Y;
@@ -3134,18 +3499,20 @@ public sealed class MainForm : Form
         }
         if (_screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left && eventArgs.X < 516 && eventArgs.Y < 458)
         {
-            if (ModifierKeys.HasFlag(Keys.Shift))
-            {
-                _selectionDragStart = eventArgs.Location;
-                _selectionDragCurrent = eventArgs.Location;
-                _selectionGestureStartedAtTick = _world.TickCount;
-            }
-            else
-            {
-                _mapDragStart = eventArgs.Location;
-                _mapDragCamera = new Point(_cameraX, _cameraY);
-                _mapDragged = false;
-            }
+            _selectionDragStart = eventArgs.Location;
+            _selectionDragCurrent = eventArgs.Location;
+            _selectionGestureStartedAtTick = _world.TickCount;
+            _selectionGestureToggle = ModifierKeys.HasFlag(Keys.Shift);
+            _selectionGestureLayerFilter = UnitSelectionLayerFilter.FromModifiers(
+                ModifierKeys.HasFlag(Keys.Control),
+                ModifierKeys.HasFlag(Keys.Alt));
+            _surface.Capture = true;
+        }
+        if (_screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Middle && eventArgs.X < 516 && eventArgs.Y < 458)
+        {
+            _mapDragStart = eventArgs.Location;
+            _mapDragCamera = new Point(_cameraX, _cameraY);
+            _mapDragged = false;
             _surface.Capture = true;
         }
         if (eventArgs.Button != MouseButtons.Left) return;
@@ -3160,15 +3527,19 @@ public sealed class MainForm : Form
         var wasSinglePlayerScrollDrag = _singlePlayerScrollDragging;
         var selectionStart = _selectionDragStart;
         var selectionGestureStartedAtTick = _selectionGestureStartedAtTick;
-        var selectionBounds = selectionStart is { } start ? Rectangle.FromLTRB(
-            Math.Min(start.X, eventArgs.X), Math.Min(start.Y, eventArgs.Y),
-            Math.Max(start.X, eventArgs.X), Math.Max(start.Y, eventArgs.Y)) : Rectangle.Empty;
+        var selectionToggle = _selectionGestureToggle;
+        var selectionLayerFilter = _selectionGestureLayerFilter;
+        var selectionBounds = selectionStart is { } start
+            ? GameplaySelectionBounds(start, eventArgs.Location)
+            : Rectangle.Empty;
         var wasSelectionDrag = selectionStart is { } dragStart && IsSelectionBoxGesture(dragStart, eventArgs.Location, selectionGestureStartedAtTick);
         _mapDragStart = null;
         _mapDragged = false;
         _minimapDragging = false;
         _selectionDragStart = null;
         _selectionGestureStartedAtTick = 0;
+        _selectionGestureToggle = false;
+        _selectionGestureLayerFilter = default;
         _singlePlayerScrollDragging = false;
         _surface.Capture = false;
         if (wasSinglePlayerScrollDrag)
@@ -3194,11 +3565,11 @@ public sealed class MainForm : Form
         }
         if (button is null && wasSelectionDrag && _screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left)
         {
-            SelectGameplayActorsInRectangle(selectionBounds);
+            SelectGameplayActorsInRectangle(selectionBounds, selectionToggle, selectionLayerFilter);
         }
         else if (button is null && !wasMapDrag && _screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left)
         {
-            SelectGameplayActor(eventArgs.Location);
+            SelectGameplayActor(eventArgs.Location, selectionToggle, selectionLayerFilter);
         }
         if (button is null && _screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Right)
         {
@@ -3265,98 +3636,140 @@ public sealed class MainForm : Form
         if (x != 0 || y != 0) MoveGameplayCamera(x, y);
     }
 
-    // `0x4096e8` promotes the left-button gesture at more than 45 Manhattan
-    // pixels, or after 1,500 ms. The compiled port preserves its existing
-    // Shift-to-box adapter so ordinary left dragging can remain the explicitly
-    // supported camera-pan convenience, but uses the recovered promotion rule
-    // inside that adapter.
+    // `0x4096e8` promotes the ordinary left-button gesture at more than 45
+    // Manhattan pixels, or after 1,500 ms. Direct camera dragging is retained
+    // on the middle button as a port convenience; edge, keyboard, and minimap
+    // navigation remain available through their own recovered paths.
     private bool IsSelectionBoxGesture(Point start, Point current, ulong startedAtTick) =>
         Math.Abs(current.X - start.X) + Math.Abs(current.Y - start.Y) > 45 ||
         _world.TickCount - startedAtTick >= 23; // 23 * 66 ms = 1,518 ms
 
-    private void SelectGameplayActor(Point point)
+    private static Rectangle GameplaySelectionBounds(Point start, Point current) => Rectangle.FromLTRB(
+        Math.Min(start.X, current.X),
+        Math.Min(start.Y, current.Y),
+        Math.Max(start.X, current.X) + 1,
+        Math.Max(start.Y, current.Y) + 1);
+
+    private void SelectGameplayActor(Point point, bool toggle, UnitSelectionLayerFilter layerFilter)
     {
         if (_scenarioSimulation is null || _entityCatalog is null || _entityAnimations is null || point.X >= 516 || point.Y >= 458)
         {
             _selectedEntityInstanceIds.Clear();
+            _status = "Selection cleared.";
+            RevalidateGameplayCommandModeForSelection();
             return;
         }
 
-        var selected = FindGameplayActorAt(point, locallyControllableOnly: true);
-        var additive = ModifierKeys.HasFlag(Keys.Shift);
-        if (!additive) _selectedEntityInstanceIds.Clear();
-        if (selected is not null)
-        {
-            if (additive && !_selectedEntityInstanceIds.Add(selected.InstanceId))
-                _selectedEntityInstanceIds.Remove(selected.InstanceId);
-            else
-                _selectedEntityInstanceIds.Add(selected.InstanceId);
-        }
+        var selected = FindGameplayActorAt(point, locallyControllableOnly: false, layerFilter);
+        var updated = UnitCommandProfiles.ApplyActorSelection(
+            _selectedEntityInstanceIds,
+            selected is null ? [] : [selected.InstanceId],
+            toggle);
+        updated = PreferLocallyOwnedSelection(updated);
+        _selectedEntityInstanceIds.Clear();
+        _selectedEntityInstanceIds.UnionWith(updated);
+        var selectedDefinition = selected is null ? null : GameplayDefinition(selected);
         _status = selected is null
-            ? "Selection cleared."
-            : $"{_selectedEntityInstanceIds.Count} selected · #{selected.EntityId} {_entityCatalog[selected.EntityId].DisplayName} · team {selected.Team}.";
-        if (selected is not null) PlayGameplaySound(selected.EntityId, "SEL");
+            ? toggle && _selectedEntityInstanceIds.Count != 0 ? $"{_selectedEntityInstanceIds.Count} selected." : "Selection cleared."
+            : $"{_selectedEntityInstanceIds.Count} selected · #{selectedDefinition?.Id ?? selected.EntityId} {selectedDefinition?.DisplayName ?? _entityCatalog[selected.EntityId].DisplayName} · team {selected.Team}" +
+              (IsLocallyControllable(selected) ? "." : " · inspection only.");
+        RevalidateGameplayCommandModeForSelection();
+        if (selected is not null && IsLocallyControllable(selected)) PlayGameplaySound(selectedDefinition?.Id ?? selected.EntityId, "SEL");
     }
 
-    private WorldEntity? FindGameplayActorAt(Point point, bool locallyControllableOnly)
+    private WorldEntity? FindGameplayActorAt(
+        Point point,
+        bool locallyControllableOnly,
+        UnitSelectionLayerFilter? selectionLayerFilter = null)
     {
         if (_scenarioSimulation is null || _entityCatalog is null || _entityAnimations is null || point.X >= 516 || point.Y >= 458) return null;
         WorldEntity? hit = null;
         foreach (var entity in GameplayEntities().OrderBy(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
         {
             if (locallyControllableOnly && !IsLocallyControllable(entity)) continue;
+            if (selectionLayerFilter is { } filter && GameplayDefinition(entity) is { } definition && !filter.Includes(definition)) continue;
             var actorState = _scenarioSimulation.Actor(entity.InstanceId);
             if (!locallyControllableOnly && entity.Team != _localPlayerTeam &&
                 (actorState is null || !_scenarioSimulation.IsActorVisibleToTeam(_localPlayerTeam, actorState))) continue;
-            var renderEntityId = actorState?.DeployedEntityId ?? entity.EntityId;
-            if ((uint)renderEntityId >= (uint)_entityCatalog.Entities.Count) continue;
-            // Selection/targeting must use the same transient frame family as
-            // drawing. A firing healer or deploying tower can otherwise be
-            // visibly under the pointer while hit-tested at a stale stand
-            // sprite with a different footprint and origin.
-            var deploymentPresentation = actorState is null ? null : ActiveFormDeploymentPresentation(entity, actorState);
-            var combatPresentation = deploymentPresentation ?? (actorState is null ? null : ActiveCombatPresentation(entity, actorState));
-            var moveSelection = combatPresentation is null && actorState?.Playback is not null && actorState.DeployedEntityId is null
-                ? _entityAnimations.PreferredMove(renderEntityId, actorState.Facing.RenderSector16)
-                : null;
-            var candidate = combatPresentation?.Candidate ?? moveSelection?.Candidate ?? _entityAnimations.Preferred(renderEntityId);
-            if (candidate is null) continue;
-            var span = candidate.LastFrame - candidate.FirstFrame + 1;
-            var frameAge = combatPresentation is null
-                ? (_world.TickCount - _screenStartedAtTick) / 3
-                : _world.TickCount - combatPresentation.StartedAtTick;
-            var frame = candidate.FirstFrame + (ushort)(frameAge % (ulong)span);
-            var fileName = Path.GetFileName(candidate.FinPath);
-            var bitmap = AnimationBitmap(fileName, frame);
-            if (bitmap is null) continue;
-            var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
-            var position = ActorPosition(entity);
-            var left = position.XRaw / 8 - _cameraX + origin.X;
-            var top = position.ZRaw / 8 - _cameraY + origin.Y;
-            var localX = point.X - left;
-            var localY = point.Y - top;
-            if (localX < 0 || localY < 0 || localX >= bitmap.Width || localY >= bitmap.Height) continue;
-            if (bitmap.GetPixel(localX, localY).A != 0) hit = entity;
+            if (!TryGameplayActorVisual(entity, out var visual) || !visual.CanvasBounds.Contains(point)) continue;
+            var localX = point.X - visual.CanvasBounds.X;
+            var localY = point.Y - visual.CanvasBounds.Y;
+            if (visual.Bitmap.GetPixel(localX, localY).A != 0) hit = entity;
         }
         return hit;
     }
 
-    private void SelectGameplayActorsInRectangle(Rectangle bounds)
+    private void SelectGameplayActorsInRectangle(
+        Rectangle bounds,
+        bool toggle,
+        UnitSelectionLayerFilter layerFilter)
     {
         if (_scenarioSimulation is null) return;
-        var selected = GameplayEntities()
-            .Where(IsLocallyControllable)
-            .Where(entity =>
-            {
-                var position = ActorPosition(entity);
-                return bounds.Contains(position.XRaw / 8 - _cameraX, position.ZRaw / 8 - _cameraY);
-            })
+        var candidates = GameplayEntities()
+            .Where(IsVisibleToLocalTeam)
+            .Where(entity => GameplayDefinition(entity) is { } definition && layerFilter.Includes(definition))
+            .Where(entity => TryGameplayActorVisual(entity, out var visual) && bounds.IntersectsWith(visual.OpaqueBounds))
             .Select(entity => entity.InstanceId)
+            .OrderBy(instanceId => instanceId)
             .ToArray();
-        foreach (var instanceId in selected) _selectedEntityInstanceIds.Add(instanceId);
-        _status = selected.Length == 0
-            ? "No mobile local units in selection box."
-            : $"{_selectedEntityInstanceIds.Count} unit(s) selected.";
+        var updated = UnitCommandProfiles.ApplyActorSelection(_selectedEntityInstanceIds, candidates, toggle);
+        updated = PreferLocallyOwnedSelection(updated);
+        _selectedEntityInstanceIds.Clear();
+        _selectedEntityInstanceIds.UnionWith(updated);
+        var locallyOwnedCount = SelectedInspectableGameplayEntities().Count(entity => entity.Team == _localPlayerTeam);
+        _status = candidates.Length == 0
+            ? "No visible units in selection box."
+            : candidates.Length > UnitSelectionCommandProfile.MaximumActors
+                ? _gameplayHudLayout.TooManyUnitsMessage
+            : locallyOwnedCount != 0
+                ? $"{_selectedEntityInstanceIds.Count} local unit(s) selected."
+                : $"{_selectedEntityInstanceIds.Count} remote unit(s) selected for inspection.";
+        RevalidateGameplayCommandModeForSelection();
+        var localLead = SelectedGameplayEntities().FirstOrDefault();
+        if (localLead is not null) PlayGameplaySound(GameplayDefinition(localLead)?.Id ?? localLead.EntityId, "SEL");
+    }
+
+    private void SelectGameplayActorsByFunctionKey(
+        int functionKey,
+        bool toggle,
+        UnitSelectionLayerFilter layerFilter)
+    {
+        if (_scenarioSimulation is null || _entityCatalog is null) return;
+        var entityIds = NativeUnitSelectionHotkeys.EntityIds(functionKey);
+        var viewport = new Rectangle(0, 0, 516, 458);
+        var candidates = GameplayEntities()
+            .Where(IsVisibleToLocalTeam)
+            .Where(entity => GameplayDefinition(entity) is { } definition && entityIds.Contains(definition.Id))
+            .Where(entity => GameplayDefinition(entity) is { } definition && layerFilter.Includes(definition))
+            .Where(entity => TryGameplayActorVisual(entity, out var visual) && viewport.IntersectsWith(visual.OpaqueBounds))
+            .Select(entity => entity.InstanceId)
+            .Order()
+            .ToArray();
+        var updated = UnitCommandProfiles.ApplyActorSelection(_selectedEntityInstanceIds, candidates, toggle);
+        updated = PreferLocallyOwnedSelection(updated);
+        _selectedEntityInstanceIds.Clear();
+        _selectedEntityInstanceIds.UnionWith(updated);
+        var localLead = SelectedGameplayEntities().FirstOrDefault();
+        var mode = toggle ? "toggle" : "select";
+        _status = candidates.Length == 0
+            ? $"F{functionKey} {mode}: no matching visible units in the viewport."
+            : $"F{functionKey} {mode}: {_selectedEntityInstanceIds.Count} unit(s).";
+        RevalidateGameplayCommandModeForSelection();
+        if (localLead is not null) PlayGameplaySound(GameplayDefinition(localLead)?.Id ?? localLead.EntityId, "SEL");
+        _surface.Invalidate();
+    }
+
+    private IReadOnlyList<int> PreferLocallyOwnedSelection(IEnumerable<int> selectedInstanceIds)
+    {
+        var owners = GameplayEntities().ToDictionary(entity => entity.InstanceId, entity => entity.Team);
+        return UnitCommandProfiles.PreferLocalOwnerSelection(selectedInstanceIds, owners, _localPlayerTeam);
+    }
+
+    private bool IsVisibleToLocalTeam(WorldEntity entity)
+    {
+        if (entity.Team == _localPlayerTeam) return true;
+        var actor = _scenarioSimulation?.Actor(entity.InstanceId);
+        return actor is not null && _scenarioSimulation!.IsActorVisibleToTeam(_localPlayerTeam, actor);
     }
 
     private void QueueDiagnosticMove(Point point)
@@ -3371,17 +3784,6 @@ public sealed class MainForm : Form
                 QueueAttackTarget(targetActor);
                 return;
             }
-        }
-        if (_gameplayCommandMode == GameplayCommandMode.HealTarget)
-        {
-            var targetActor = FindGameplayActorAt(point, locallyControllableOnly: false);
-            if (targetActor is null)
-            {
-                _status = "Heal mode: right-click a visible cooperative unit.";
-                return;
-            }
-            QueueHealTarget(targetActor);
-            return;
         }
         var target = new CellCoordinate((point.X + _cameraX) / 32, (point.Y + _cameraY) / 32);
         if (target.X < 0 || target.Z < 0 || target.X >= _gameplayMap.Width || target.Z >= _gameplayMap.Height) return;
@@ -3400,6 +3802,26 @@ public sealed class MainForm : Form
             return;
         }
         if (_selectedEntityInstanceIds.Count == 0) return;
+        if (_gameplayCommandMode == GameplayCommandMode.GroundSpecialTarget)
+        {
+            var attackers = SelectedGameplayActors()
+                .Where(entity => SelectedUnitSecondary([entity]) is { } command && SecondaryCommandAvailable(command))
+                .OrderBy(entity => entity.InstanceId)
+                .ToArray();
+            if (attackers.Length == 0)
+            {
+                _status = "The selected unit has no researched ground-special attack.";
+                _gameplayCommandMode = GameplayCommandMode.MoveOnly;
+                return;
+            }
+            foreach (var attacker in attackers)
+                _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1,
+                    new GroundSpecialAttackIntent(attacker.InstanceId, target));
+            _status = $"{SelectedUnitSecondary(attackers)!.Value.Label} ordered at ({target.X},{target.Z}).";
+            PlayGameplaySound(attackers[0].EntityId, "ACK");
+            _gameplayCommandMode = GameplayCommandMode.MoveOnly;
+            return;
+        }
         if (_gameplayCommandMode == GameplayCommandMode.HarvestVent)
         {
             var vent = _scenarioSimulation.PetraVents.FirstOrDefault(candidate =>
@@ -3419,20 +3841,6 @@ public sealed class MainForm : Form
                 _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new HarvestVentIntent(harvester.InstanceId, vent.Id));
             _status = $"Deploy ordered for {harvesters.Length} harvester(s) at vent {vent.Id + 1}.";
             PlayGameplaySound(harvesters[0].EntityId, "ACK");
-            return;
-        }
-        if (_gameplayCommandMode == GameplayCommandMode.DeployMine)
-        {
-            var layers = SelectedGameplayActors().Where(IsMineLayer).ToArray();
-            if (layers.Length == 0)
-            {
-                _status = "Deploy Mine requires a selected Human Engineer or Gray Sloom.";
-                return;
-            }
-            foreach (var layer in layers)
-                _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new DeployMineIntent(layer.InstanceId, target));
-            _status = $"Mine deployment ordered for {layers.Length} unit(s) at ({target.X},{target.Z}).";
-            PlayGameplaySound(layers[0].EntityId, "ACK");
             return;
         }
         var selected = GameplayEntities()
@@ -3506,24 +3914,16 @@ public sealed class MainForm : Form
         PlayGameplaySound(attackers[0].EntityId, "ACK");
     }
 
-    private void QueueHealTarget(WorldEntity target)
+    private void QueueAreaHeal(IReadOnlyList<WorldEntity> healers)
     {
-        if (_scenarioSimulation is null || _entityCatalog is null) return;
-        if (_scenarioSimulation.TeamRelations.IsHostile(_localPlayerTeam, target.Team))
-        {
-            _status = "Heal mode: target must be cooperative.";
-            return;
-        }
-        var healers = SelectedGameplayActors().Where(IsHealer).ToArray();
-        if (healers.Length == 0)
+        if (healers.Count == 0)
         {
             _status = "Select a Human Medi-craft or Gray Zisp before healing.";
             return;
         }
         foreach (var healer in healers)
-            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new HealIntent(healer.InstanceId, target.InstanceId));
-        var targetName = (uint)target.EntityId < (uint)_entityCatalog.Entities.Count ? _entityCatalog[target.EntityId].DisplayName : $"#{target.EntityId}";
-        _status = $"Heal ordered: {healers.Length} unit(s) → {targetName}.";
+            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new HealAreaIntent(healer.InstanceId));
+        _status = $"Area heal ordered for {healers.Count} healer(s).";
         PlayGameplaySound(healers[0].EntityId, "ACK");
     }
 
@@ -3649,10 +4049,28 @@ public sealed class MainForm : Form
             return true;
         }
         var selectedEntities = SelectedGameplayEntities().ToArray();
+        var deployedHarvesters = selectedEntities.Where(IsDeployedHarvester).ToArray();
+        if (_gameplayHudTab == GameplayHudTab.Build && deployedHarvesters.Length != 0 && deployedHarvesters.Length == selectedEntities.Length)
+        {
+            if (_gameplayHudLayout.Contextual.Bounds.Contains(point))
+                QueueHarvesterRetraction(deployedHarvesters);
+            else
+                _status = "Deployed harvester is attached; use its contextual control or Enter to retract.";
+            return true;
+        }
         var staticSteal = selectedEntities.Where(IsDeployedStealStance).ToArray();
         if (_gameplayHudTab == GameplayHudTab.Build && staticSteal.Length != 0 && staticSteal.Length == selectedEntities.Length)
         {
-            _status = "Stealing stance is static; native P7 target and transfer rules are not recovered yet.";
+            if (_gameplayHudLayout.Contextual.Bounds.Contains(point))
+                QueueStealToggle(staticSteal);
+            else
+                _status = "Stealing stance is static; use its contextual control or Enter to retract.";
+            return true;
+        }
+        var deployedMines = selectedEntities.Where(IsDeployedMine).ToArray();
+        if (_gameplayHudTab == GameplayHudTab.Build && deployedMines.Length != 0 && deployedMines.Length == selectedEntities.Length)
+        {
+            _status = "Deployed mines are armed and acquire nearby hostile units automatically.";
             return true;
         }
         var staticCombat = selectedEntities.Where(IsDeployedStaticCombatUnit).ToArray();
@@ -3720,12 +4138,17 @@ public sealed class MainForm : Form
         }
         if (_gameplayHudLayout.Stop.Bounds.Contains(point))
         {
+            if (!GameplayCommandState(SelectedGameplayEntities().ToArray()).AnyCanStop)
+            {
+                _status = "No selected actor can receive a Stop order.";
+                return true;
+            }
             StopSelectedUnits();
             return true;
         }
         if (_gameplayHudLayout.MoveOnly.Bounds.Contains(point))
         {
-            if (SelectedGameplayActors().Any() && SelectedGameplayActors().All(entity => !IsActiveMobileUnit(entity)))
+            if (!GameplayCommandState(SelectedGameplayEntities().ToArray()).AnyCanMove)
             {
                 _status = "That deployed unit is static and cannot receive move orders.";
                 return true;
@@ -3735,7 +4158,7 @@ public sealed class MainForm : Form
         }
         if (_gameplayHudLayout.MoveAndAttack.Bounds.Contains(point))
         {
-            if (!SelectedGameplayActors().Any(HasWeapon))
+            if (!GameplayCommandState(SelectedGameplayEntities().ToArray()).AnyCanAttack)
             {
                 _status = "Select a unit with a resolved weapon before entering attack mode.";
                 return true;
@@ -3745,7 +4168,7 @@ public sealed class MainForm : Form
         }
         if (_gameplayHudLayout.Waypoints.Bounds.Contains(point))
         {
-            if (SelectedGameplayActors().Any() && SelectedGameplayActors().All(entity => !IsActiveMobileUnit(entity)))
+            if (!GameplayCommandState(SelectedGameplayEntities().ToArray()).AnyCanUseWaypoints)
             {
                 _status = "That deployed unit is static and cannot receive waypoint orders.";
                 return true;
@@ -3755,59 +4178,61 @@ public sealed class MainForm : Form
         }
         if (_gameplayHudLayout.Contextual.Bounds.Contains(point))
         {
-            if (SelectedGameplayActors().Any() && SelectedGameplayActors().All(IsHealer))
+            var selectedActors = SelectedGameplayEntities().ToArray();
+            var contextual = SelectedCommonContextualCommand(selectedActors);
+            if (contextual is null)
             {
-                SetGameplayCommandMode(GameplayCommandMode.HealTarget);
+                _status = SelectedUnitSpecial(selectedActors).PendingReason ??
+                    "The selected units do not share one recovered contextual action.";
                 return true;
             }
-            if (SelectedGameplayActors().Any() && SelectedGameplayActors().All(IsTowerBuilder))
+            if (contextual.Command == UnitSpecialCommand.HealUnits)
             {
-                var builders = SelectedGameplayActors().ToArray();
-                if (builders.Any(builder => _scenarioSimulation?.Actor(builder.InstanceId)?.DeployedEntityId is not null))
-                {
-                    _status = "That tower builder is already deployed.";
-                    return true;
-                }
-                foreach (var builder in builders)
-                    _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new DeployTowerIntent(builder.InstanceId));
-                _status = $"Tower deployment ordered for {builders.Length} builder(s).";
-                PlayGameplaySound(builders[0].EntityId, "ACK");
+                QueueAreaHeal(selectedActors);
                 return true;
             }
-            if (SelectedGameplayActors().Any() && SelectedGameplayActors().All(IsMoneyThief))
+            if (contextual.Command == UnitSpecialCommand.DeployTurret)
             {
-                var thieves = SelectedGameplayActors().ToArray();
-                foreach (var thief in thieves)
-                    _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new DeployStealIntent(thief.InstanceId));
-                _status = $"Stealing stance ordered for {thieves.Length} unit(s); transfer targeting is still being reconstructed.";
-                PlayGameplaySound(thieves[0].EntityId, "ACK");
+                QueueTowerDeployment(selectedActors);
                 return true;
             }
-            if (SelectedGameplayActors().Any() && SelectedGameplayActors().All(IsMineLayer))
+            if (contextual.Command == UnitSpecialCommand.StealMoney)
             {
-                SetGameplayCommandMode(GameplayCommandMode.DeployMine);
+                QueueStealToggle(selectedActors);
                 return true;
             }
-            if (!SelectedGameplayActors().Any(IsHarvester))
+            if (contextual.Command == UnitSpecialCommand.DeployMine)
             {
-                _status = SelectedUnitSpecial(SelectedGameplayActors().ToArray()).PendingReason ??
-                    "Deploy requires a selected Exploiter, Gray Slug, Human Engineer, or Gray Sloom.";
+                QueueMineDeployment(selectedActors);
                 return true;
             }
-            SetGameplayCommandMode(GameplayCommandMode.HarvestVent);
+            if (contextual.Command == UnitSpecialCommand.InspireTroops)
+            {
+                QueueInspire(selectedActors);
+                return true;
+            }
+            if (contextual.Command == UnitSpecialCommand.HarvestPetra)
+            {
+                SetGameplayCommandMode(GameplayCommandMode.HarvestVent);
+                return true;
+            }
+            _status = contextual.PendingReason;
             return true;
         }
         if (_gameplayHudLayout.Secondary.Bounds.Contains(point))
         {
-            var secondary = SelectedUnitSecondary(SelectedGameplayActors().ToArray());
+            var secondary = SelectedUnitSecondary(SelectedGameplayEntities().ToArray());
             if (secondary is not null)
             {
                 var requiredResearch = secondary.Value.RequiredResearchItemId;
                 var researched = requiredResearch is null ||
                     _scenarioSimulation?.EconomyForTeam(_localPlayerTeam)?.CompletedItems.Contains(requiredResearch.Value) == true;
-                _status = !researched
-                    ? $"{secondary.Value.Label} requires research item {requiredResearch}."
-                    : secondary.Value.PendingReason;
+                if (!researched)
+                    _status = $"{secondary.Value.Label} requires research item {requiredResearch}.";
+                else if (secondary.Value.WeaponId is null)
+                    _status = secondary.Value.PendingReason;
+                else
+                    SetGameplayCommandMode(GameplayCommandMode.GroundSpecialTarget);
                 return true;
             }
         }
@@ -3818,7 +4243,8 @@ public sealed class MainForm : Form
     {
         if (string.IsNullOrWhiteSpace(_status) || string.Equals(_status, _lastRecordedGameplayStatus, StringComparison.Ordinal)) return;
         _gameplayMessageHistory.Add(_status);
-        if (_gameplayMessageHistory.Count > 32) _gameplayMessageHistory.RemoveAt(0);
+        // Native message state initializes indexes 0..15 at 0x44da88.
+        if (_gameplayMessageHistory.Count > 16) _gameplayMessageHistory.RemoveAt(0);
         _lastRecordedGameplayStatus = _status;
         _gameplayMessageIndex = _gameplayMessageHistory.Count - 1;
     }
@@ -3890,6 +4316,10 @@ public sealed class MainForm : Form
         .Where(IsActiveMobileUnit)
         .OrderBy(entity => entity.InstanceId);
 
+    private IEnumerable<WorldEntity> SelectedInspectableGameplayEntities() => GameplayEntities()
+        .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId))
+        .OrderBy(entity => entity.InstanceId);
+
     private IEnumerable<WorldEntity> SelectedGameplayEntities() => GameplayEntities()
         .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId))
         .Where(IsLocallyControllable)
@@ -3915,7 +4345,8 @@ public sealed class MainForm : Form
     private bool IsActiveMobileUnit(WorldEntity entity) => GameplayCommandProfile(entity)?.CanMove == true;
 
     private bool IsDeployedStaticCombatUnit(WorldEntity entity) => _scenarioSimulation?.Actor(entity.InstanceId) is { } actor &&
-        actor.DeployedEntityId is not null && _scenarioSimulation.EffectiveDefinition(actor).MovementSpeed <= 0 && HasWeapon(entity);
+        actor.DeployedEntityId is not null && _scenarioSimulation.EffectiveDefinition(actor).MovementSpeed <= 0 &&
+        _scenarioSimulation.EffectiveDefinition(actor).Code != "HMINE" && HasWeapon(entity);
 
     private bool HasContextualCommand(WorldEntity entity, UnitSpecialCommand command) =>
         GameplayCommandProfile(entity)?.ContextualCommand?.Command == command;
@@ -3924,15 +4355,19 @@ public sealed class MainForm : Form
 
     private bool IsMineLayer(WorldEntity entity) => HasContextualCommand(entity, UnitSpecialCommand.DeployMine);
 
-    private bool IsTowerBuilder(WorldEntity entity) => HasContextualCommand(entity, UnitSpecialCommand.DeployTurret);
-
     private bool IsHealer(WorldEntity entity) => HasContextualCommand(entity, UnitSpecialCommand.HealUnits);
-
-    private bool IsMoneyThief(WorldEntity entity) => HasContextualCommand(entity, UnitSpecialCommand.StealMoney);
 
     private bool IsDeployedStealStance(WorldEntity entity) =>
         _scenarioSimulation?.Actor(entity.InstanceId) is { DeployedEntityId: not null } actor &&
         _scenarioSimulation.EffectiveDefinition(actor).Code is "SARGSTL" or "PSYCSTL";
+
+    private bool IsDeployedHarvester(WorldEntity entity) =>
+        _scenarioSimulation?.Actor(entity.InstanceId) is { DeployedEntityId: not null } actor &&
+        _scenarioSimulation.EffectiveDefinition(actor).Code is "EDPLY" or "SDPL";
+
+    private bool IsDeployedMine(WorldEntity entity) =>
+        _scenarioSimulation?.Actor(entity.InstanceId) is { DeployedEntityId: not null } actor &&
+        _scenarioSimulation.EffectiveDefinition(actor).Code == "HMINE";
 
     private readonly record struct UnitSpecial(
         string Label,
@@ -3940,49 +4375,85 @@ public sealed class MainForm : Form
         bool EngineBacked,
         string? PendingReason = null,
         GameplayCommandMode? SelectedMode = null);
-    private readonly record struct UnitSecondary(string Label, int Frame, string PendingReason, int? RequiredResearchItemId);
+    private readonly record struct UnitSecondary(string Label, int Frame, UnitCommandActivation Activation, string PendingReason, int? RequiredResearchItemId, int? WeaponId);
 
     private UnitSpecial SelectedUnitSpecial(IReadOnlyList<WorldEntity> selected)
     {
         // This uses engine-owned recovery data so menu rendering cannot drift
         // from command identities as further abilities are implemented.
-        var mapped = selected
-            .Select(entity => GameplayCommandProfile(entity)?.ContextualCommand)
-            .Where(definition => definition is not null)
-            .Select(definition => definition!)
-            .Distinct()
-            .ToArray();
-        var mappedCount = selected.Count(entity => GameplayCommandProfile(entity)?.HasContextualCommand == true);
-        if (selected.Count == 0 || mappedCount != selected.Count || mapped.Length != 1 || mapped[0] is null)
+        var definition = SelectedCommonContextualCommand(selected);
+        if (definition is null)
             return new UnitSpecial("DEPLOY", 74, false, "This unit has no recovered shared-slot action.");
 
-        var definition = mapped[0];
         var towerAlreadyDeployed = definition.Command == UnitSpecialCommand.DeployTurret && selected.Any(entity =>
             _scenarioSimulation?.Actor(entity.InstanceId)?.DeployedEntityId is not null);
-        var engineBacked = definition.Command is UnitSpecialCommand.HarvestPetra or UnitSpecialCommand.DeployMine or UnitSpecialCommand.HealUnits or UnitSpecialCommand.StealMoney ||
-            definition.Command == UnitSpecialCommand.DeployTurret && !towerAlreadyDeployed;
-        GameplayCommandMode? selectedMode = definition.Command switch
-        {
-            UnitSpecialCommand.HarvestPetra => GameplayCommandMode.HarvestVent,
-            UnitSpecialCommand.DeployMine => GameplayCommandMode.DeployMine,
-            UnitSpecialCommand.HealUnits => GameplayCommandMode.HealTarget,
-            _ => null,
-        };
+        var engineBacked = definition.Activation != UnitCommandActivation.Pending && !towerAlreadyDeployed;
+        GameplayCommandMode? selectedMode = definition.Activation == UnitCommandActivation.MapTarget &&
+            definition.Command == UnitSpecialCommand.HarvestPetra ? GameplayCommandMode.HarvestVent : null;
         return new UnitSpecial(definition.Label, definition.InterfaceFrame, engineBacked, definition.PendingReason, selectedMode);
     }
 
     private UnitSecondary? SelectedUnitSecondary(IReadOnlyList<WorldEntity> selected)
     {
-        var mapped = selected
-            .Select(entity => GameplayCommandProfile(entity)?.SecondaryCommand)
-            .Where(definition => definition is not null)
-            .Select(definition => definition!)
-            .Distinct()
+        var definition = SelectedCommonSecondaryCommand(selected);
+        if (definition is null) return null;
+        return new UnitSecondary(definition.Label, definition.InterfaceFrame, definition.Activation, definition.PendingReason,
+            definition.RequiredResearchItemId, definition.CandidateEffectWeaponId);
+    }
+
+    private UnitSpecialCommandDefinition? SelectedCommonContextualCommand(IReadOnlyList<WorldEntity> selected)
+    {
+        var profiles = selected.Select(GameplayCommandProfile).ToArray();
+        return profiles.Length == selected.Count && profiles.All(profile => profile is not null)
+            ? UnitCommandProfiles.CommonContextualCommand(profiles.Select(profile => profile!))
+            : null;
+    }
+
+    private UnitSecondaryCommandDefinition? SelectedCommonSecondaryCommand(IReadOnlyList<WorldEntity> selected)
+    {
+        var profiles = selected.Select(GameplayCommandProfile).ToArray();
+        return profiles.Length == selected.Count && profiles.All(profile => profile is not null)
+            ? UnitCommandProfiles.CommonSecondaryCommand(profiles.Select(profile => profile!))
+            : null;
+    }
+
+    private UnitSelectionCommandProfile GameplayCommandState(IEnumerable<WorldEntity> selected)
+    {
+        var profiles = selected
+            .Select(GameplayCommandProfile)
+            .Where(profile => profile is not null)
+            .Select(profile => profile!)
             .ToArray();
-        if (selected.Count == 0 || mapped.Length != 1 || mapped[0] is null ||
-            selected.Any(entity => GameplayCommandProfile(entity)?.HasSecondaryCommand != true)) return null;
-        var definition = mapped[0];
-        return new UnitSecondary(definition.Label, definition.InterfaceFrame, definition.PendingReason, definition.RequiredResearchItemId);
+        return UnitCommandProfiles.DescribeSelection(profiles);
+    }
+
+    private UnitSelectionCommandProfile SelectedGameplayCommandState() =>
+        GameplayCommandState(SelectedGameplayEntities());
+
+    /// <summary>
+    /// A targeting cursor belongs to the selection that activated it. When
+    /// selection changes, keep the mode only if the new actors expose the same
+    /// authoritative capability. Paid building placement is intentionally
+    /// exempt because its reservation must remain completable.
+    /// </summary>
+    private void RevalidateGameplayCommandModeForSelection()
+    {
+        if (_gameplayCommandMode is GameplayCommandMode.MoveOnly or GameplayCommandMode.PlaceBuilding) return;
+        var selection = SelectedGameplayCommandState();
+        var supported = _gameplayCommandMode switch
+        {
+            GameplayCommandMode.AttackTarget => SelectedGameplayEntities().Any(HasWeapon),
+            GameplayCommandMode.GroundSpecialTarget => SelectedUnitSecondary(SelectedGameplayEntities().ToArray()) is { } secondary && SecondaryCommandAvailable(secondary),
+            GameplayCommandMode.Waypoints => selection.AnyCanUseWaypoints,
+            GameplayCommandMode.HarvestVent => selection.CommonContextualCommand is { Command: UnitSpecialCommand.HarvestPetra, Activation: UnitCommandActivation.MapTarget },
+            _ => true,
+        };
+        if (supported) return;
+        var cancelled = GameplayCommandModeLabel();
+        _gameplayCommandMode = GameplayCommandMode.MoveOnly;
+        _diagnosticMoveTarget = null;
+        _diagnosticPathCells = [];
+        _status = $"{_status} {cancelled} cancelled for the new selection.".Trim();
     }
 
     private string SecondaryCommandHudStatus(UnitSecondary command)
@@ -3990,8 +4461,13 @@ public sealed class MainForm : Form
         if (command.RequiredResearchItemId is { } itemId &&
             _scenarioSimulation?.EconomyForTeam(_localPlayerTeam)?.CompletedItems.Contains(itemId) != true)
             return "TECH REQUIRED";
-        return "EXECUTOR PENDING";
+        return command.WeaponId is null ? "EXECUTOR PENDING" : "GROUND TARGET READY";
     }
+
+    private bool SecondaryCommandAvailable(UnitSecondary command) =>
+        command.Activation == UnitCommandActivation.MapTarget && command.WeaponId is not null &&
+        (command.RequiredResearchItemId is not { } itemId ||
+         _scenarioSimulation?.EconomyForTeam(_localPlayerTeam)?.CompletedItems.Contains(itemId) == true);
 
     private bool IsLocallyControllable(WorldEntity entity)
     {
@@ -4113,6 +4589,105 @@ public sealed class MainForm : Form
         if (point.Y < y || point.Y >= y + 18 || point.X < start || point.X >= start + count * 41) return false;
         selected = (point.X - start) / 41;
         return true;
+    }
+
+    private void ExecuteNativeImmediateSpecial()
+    {
+        var selected = SelectedGameplayEntities().ToArray();
+        if (selected.Length == 0)
+        {
+            _status = "Select at least one local unit before pressing Enter.";
+            return;
+        }
+        var eligible = selected.Where(entity =>
+            _scenarioSimulation?.Actor(entity.InstanceId) is { } actor &&
+            _scenarioSimulation.EffectiveDefinition(actor).ImmediateSpecialCode != 0).ToArray();
+        var contextual = SelectedCommonContextualCommand(eligible);
+        if (contextual?.Command == UnitSpecialCommand.DeployTurret)
+        {
+            QueueTowerDeployment(eligible);
+            return;
+        }
+        if (contextual?.Command == UnitSpecialCommand.StealMoney)
+        {
+            QueueStealToggle(eligible);
+            return;
+        }
+        if (contextual?.Command == UnitSpecialCommand.DeployMine)
+        {
+            QueueMineDeployment(eligible);
+            return;
+        }
+        if (contextual?.Command == UnitSpecialCommand.InspireTroops)
+        {
+            QueueInspire(eligible);
+            return;
+        }
+        if (contextual?.Command == UnitSpecialCommand.HarvestPetra && eligible.All(IsDeployedHarvester))
+        {
+            QueueHarvesterRetraction(eligible);
+            return;
+        }
+        _status = "The selected unit has no executable native immediate-special adapter yet.";
+    }
+
+    private void QueueTowerDeployment(IReadOnlyList<WorldEntity> builders)
+    {
+        if (builders.Any(builder => _scenarioSimulation?.Actor(builder.InstanceId)?.DeployedEntityId is not null))
+        {
+            _status = "That tower builder is already deployed.";
+            return;
+        }
+        foreach (var builder in builders)
+            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new DeployTowerIntent(builder.InstanceId));
+        _status = $"Tower deployment ordered for {builders.Count} builder(s).";
+        PlayGameplaySound(builders[0].EntityId, "ACK");
+    }
+
+    private void QueueStealToggle(IReadOnlyList<WorldEntity> thieves)
+    {
+        var deployed = thieves.Where(IsDeployedStealStance).ToArray();
+        if (deployed.Length != 0 && deployed.Length != thieves.Count)
+        {
+            _status = "Mixed mobile/deployed stealing selections cannot share one transition.";
+            return;
+        }
+        if (deployed.Length != 0)
+        {
+            foreach (var thief in deployed)
+                _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new RetractStealIntent(thief.InstanceId));
+            _status = $"Stealing-stance retraction ordered for {deployed.Length} unit(s).";
+            PlayGameplaySound(deployed[0].EntityId, "ACK");
+            return;
+        }
+        foreach (var thief in thieves)
+            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new DeployStealIntent(thief.InstanceId));
+        _status = $"Stealing stance ordered for {thieves.Count} unit(s); nearby hostile miners will lose half their vent income.";
+        PlayGameplaySound(thieves[0].EntityId, "ACK");
+    }
+
+    private void QueueHarvesterRetraction(IReadOnlyList<WorldEntity> harvesters)
+    {
+        foreach (var harvester in harvesters)
+            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new RetractHarvesterIntent(harvester.InstanceId));
+        _status = $"Harvester retraction ordered for {harvesters.Count} unit(s).";
+        PlayGameplaySound(harvesters[0].EntityId, "ACK");
+    }
+
+    private void QueueMineDeployment(IReadOnlyList<WorldEntity> layers)
+    {
+        foreach (var layer in layers)
+            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new DeployMineIntent(layer.InstanceId));
+        _status = $"In-place mine deployment ordered for {layers.Count} unit(s).";
+        PlayGameplaySound(layers[0].EntityId, "ACK");
+    }
+
+    private void QueueInspire(IReadOnlyList<WorldEntity> commanders)
+    {
+        foreach (var commander in commanders)
+            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new InspireTroopsIntent(commander.InstanceId));
+        _status = $"Inspire ordered for {commanders.Count} commander(s); effect follows the native 50-tick cast.";
+        PlayGameplaySound(commanders[0].EntityId, "ACK");
     }
 
     private static bool TrySelectWarBinaryOption(Point point, int y, ref bool selected)

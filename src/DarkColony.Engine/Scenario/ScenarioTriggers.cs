@@ -17,6 +17,7 @@ public sealed record ScenarioTrigger(
     string Mode,
     int RepeatCount,
     string Condition,
+    ScenarioTriggerCondition ParsedCondition,
     IReadOnlyList<ScenarioTriggerCommand> Commands);
 
 /// <summary>
@@ -67,13 +68,19 @@ public static partial class ScenarioTriggers
             if (words.Length == 0) throw new InvalidDataException("TRO contains an empty command line.");
             return new ScenarioTriggerCommand(words[0], words.Skip(1).ToArray(), line);
         }).ToArray();
+        var conditionText = header.Groups["condition"].Value;
+        var parsedCondition = ScenarioTriggerConditionParser.TryParse(conditionText, out var parsed)
+            ? parsed!
+            : new ScenarioConditionOpaqueNode(conditionText);
+
         return new ScenarioTrigger(
             int.Parse(header.Groups["id"].Value, System.Globalization.CultureInfo.InvariantCulture),
             header.Groups["mode"].Value,
             header.Groups["repeat"].Success
                 ? int.Parse(header.Groups["repeat"].Value, System.Globalization.CultureInfo.InvariantCulture)
                 : 1,
-            header.Groups["condition"].Value,
+            conditionText,
+            parsedCondition,
             commands);
     }
 

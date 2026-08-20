@@ -16,6 +16,22 @@ public sealed record EntityDefinition(
     public int DayObservation => Values[3];
     public int NightObservation => Values[4];
     public int MovementClass => Values[10];
+    /// <summary>
+    /// Source value 22, loaded to entity runtime byte +0xe0. Actor constructor
+    /// 0x41B2E7 copies it to facing byte +0x09.
+    /// </summary>
+    public byte InitialFacing => unchecked((byte)Values[21]);
+    /// <summary>
+    /// Source value 25, loaded to entity runtime +0xf8. Actor update 0x4192C0
+    /// adds it to byte +0x0a every 32 world ticks, saturating at 255.
+    /// </summary>
+    public int AbilityChargeRecovery => Values[24];
+    /// <summary>
+    /// Shipped field 14 is tested before movement class when dc.exe assigns an
+    /// actor to one of its three world-selection grids. Only the two HMINE
+    /// definitions set it, placing those actors in the dedicated mine layer.
+    /// </summary>
+    public bool UsesNativeMineLayer => Values[14] != 0;
     // The original table slot also indexes the ten-column resistance matrix.
     // Keep MovementClass as the established pathing name until the distinct
     // runtime field is fully traced, but expose the combat interpretation
@@ -28,6 +44,36 @@ public sealed record EntityDefinition(
     /// form or a state-transition target.
     /// </summary>
     public int FactionCounterpartEntityId => Values[30];
+    /// <summary>
+    /// Native runtime +0x104, tested by packet opcode 0x1a before entering
+    /// actor state 13. The loader maps it exactly to gamestat value 27.
+    /// </summary>
+    public int ImmediateSpecialCode => Values[27];
+    /// <summary>
+    /// Native runtime <c>+0xfc</c>, loaded from gamestat value 25 and used as
+    /// the generic state-13 area-effect gate. The loader converts the source
+    /// percentage to 8.8 before storing it; command eligibility only needs its
+    /// source-level zero/nonzero identity.
+    /// </summary>
+    public bool HasImmediateAreaEffect => Values[25] != 0;
+    /// <summary>
+    /// Native runtime <c>+0x100</c>, loaded directly from gamestat value 26.
+    /// Commander Inspire passes it to the area scan as the maximum number of
+    /// qualifying occupancy hits (6/8/10/12 across the four ranks).
+    /// </summary>
+    public int ImmediateAreaTargetLimit => Values[26];
+    /// <summary>
+    /// Native loader field +0x108. The loader derives its +0x10c command gate
+    /// from whether this value is nonzero; opcode 0x1b tests that gate before
+    /// placing an actor in ground-special state 18.
+    /// </summary>
+    public int GroundSpecialCapability => Values[28];
+    /// <summary>
+    /// Native runtime +0x110, read by actor state 18 and temporarily installed
+    /// as the actor's weapon before the common ground-fire routine executes.
+    /// </summary>
+    public int GroundSpecialWeaponId => Values[29];
+    public bool HasGroundSpecialAttack => GroundSpecialCapability != 0 && GroundSpecialWeaponId >= 0;
     public IReadOnlyList<int> WeaponSlots => Values.Skip(5).Take(3).ToArray();
 }
 

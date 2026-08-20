@@ -27,17 +27,16 @@ public sealed class FacingState
         _ => throw new ArgumentOutOfRangeException(nameof(direction)),
     };
 
+    public void Face(byte bearing) => Target = bearing;
+
     /// <summary>
     /// Reconstructed equivalent of the native target-bearing helper used
     /// before firing. World Z grows south, matching the cardinal table above.
     /// </summary>
     public void FaceTowards(FixedPointPosition source, FixedPointPosition target)
     {
-        var x = (long)target.XRaw - source.XRaw;
-        var z = (long)target.ZRaw - source.ZRaw;
-        if (x == 0 && z == 0) return;
-        var angle = Math.Atan2(z, x);
-        Target = unchecked((byte)Math.Round((angle < 0 ? angle + Math.Tau : angle) * 256 / Math.Tau));
+        if (source == target) return;
+        Target = NativeBearing.Between(source, target);
     }
 
     public bool Step(int turnSpeed)

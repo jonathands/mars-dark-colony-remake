@@ -10,7 +10,7 @@ namespace DarkColony.App.Ui;
 /// an unrelated port-only HUD layout.
 /// </summary>
 internal sealed record GameplayHudButton(int UiId, Rectangle Bounds, int Frame, string Label);
-internal sealed record GameplayHudReadout(int UiId, Point Origin);
+internal sealed record GameplayHudReadout(int UiId, Point Origin, int CharacterCapacity);
 
 internal sealed class GameplayHudLayout
 {
@@ -36,13 +36,24 @@ internal sealed class GameplayHudLayout
         Objectives = Button(source, 202, "OBJECTIVES", new Rectangle(518, 316, 59, 41), 118);
         LastMessage = Button(source, 147, "LAST MSG", new Rectangle(4, 460, 20, 19), 40);
         NextMessage = Button(source, 149, "NEXT MSG", new Rectangle(24, 460, 20, 19), 57);
+        PetraCounter = Button(source, 75, "P7", new Rectangle(524, 456, 72, 17), 104);
 
-        // `maine` in_text controls: these are source origins, while the wider
-        // App bounds remain a port diagnostic area for decoded live state.
-        CommandStatus = Readout(source, 79, new Point(520, 404));
-        SelectedName = Readout(source, 204, new Point(10, 425));
-        SelectedStats = Readout(source, 203, new Point(10, 440));
-        ResourceStatus = Readout(source, 148, new Point(50, 462));
+        // `maine` declares control 79 as the 15-character identity strip at
+        // the foot of the command panel. Original gameplay captures show the
+        // selected unit name here (for example, "Trooper"), not a command
+        // mode. Controls 204/203 are the two wide lower readouts; their exact
+        // native writers remain unresolved, so the port reserves them for
+        // opt-in diagnostics rather than presenting invented unit stats as
+        // original UI.
+        PanelIdentity = Readout(source, 79, new Point(520, 404), 15);
+        LowerReadoutTop = Readout(source, 204, new Point(10, 425), 72);
+        LowerReadoutBottom = Readout(source, 203, new Point(10, 440), 72);
+        MessageStatus = Readout(source, 148, new Point(50, 462), 61);
+        AuxiliaryReadout = Readout(source, 200, new Point(480, 463), 3);
+        SetWaypointsMessage = Message(source, 180, "Set waypoints.");
+        SelectTargetMessage = Message(source, 181, "Select target.");
+        TooManyUnitsMessage = Message(source, 182, "Too many units");
+        IssuingRefundMessage = Message(source, 183, "Issuing refund");
     }
 
     public GameplayHudButton Stop { get; }
@@ -62,10 +73,16 @@ internal sealed class GameplayHudLayout
     public GameplayHudButton Objectives { get; }
     public GameplayHudButton LastMessage { get; }
     public GameplayHudButton NextMessage { get; }
-    public GameplayHudReadout CommandStatus { get; }
-    public GameplayHudReadout SelectedName { get; }
-    public GameplayHudReadout SelectedStats { get; }
-    public GameplayHudReadout ResourceStatus { get; }
+    public GameplayHudButton PetraCounter { get; }
+    public GameplayHudReadout PanelIdentity { get; }
+    public GameplayHudReadout LowerReadoutTop { get; }
+    public GameplayHudReadout LowerReadoutBottom { get; }
+    public GameplayHudReadout MessageStatus { get; }
+    public GameplayHudReadout AuxiliaryReadout { get; }
+    public string SetWaypointsMessage { get; }
+    public string SelectTargetMessage { get; }
+    public string TooManyUnitsMessage { get; }
+    public string IssuingRefundMessage { get; }
 
     /// <summary>
     /// Resolves a data-authored production or research gadget by its native UI
@@ -112,12 +129,15 @@ internal sealed class GameplayHudLayout
         return new GameplayHudButton(controlId, fallbackBounds, fallbackFrame, fallbackLabel);
     }
 
-    private static GameplayHudReadout Readout(InterfaceDefinition? source, int id, Point fallbackOrigin)
+    private static GameplayHudReadout Readout(InterfaceDefinition? source, int id, Point fallbackOrigin, int fallbackCapacity)
     {
         if (source?.Controls.TryGetValue(id, out var control) == true)
-            return new GameplayHudReadout(id, new Point(control.Bounds.X, control.Bounds.Y));
-        return new GameplayHudReadout(id, fallbackOrigin);
+            return new GameplayHudReadout(id, new Point(control.Bounds.X, control.Bounds.Y), control.Bounds.Width);
+        return new GameplayHudReadout(id, fallbackOrigin, fallbackCapacity);
     }
+
+    private static string Message(InterfaceDefinition? source, int id, string fallback) =>
+        source?.LabelFor(id) ?? fallback;
 
     private static Rectangle ToRectangle(InterfaceRectangle rectangle) =>
         new(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);

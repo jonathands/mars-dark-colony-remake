@@ -20,6 +20,7 @@ public sealed class EntityAnimationCatalog
     private readonly IReadOnlyDictionary<int, IReadOnlyList<EntityAnimationCandidate>> candidates;
     private readonly IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> moveCandidates;
     private readonly IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> deployCandidates;
+    private readonly IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> retractCandidates;
     private readonly IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> fireCandidates;
     private readonly IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> hitCandidates;
     private readonly IReadOnlyDictionary<int, IReadOnlyList<EntityAnimationCandidate>> deathCandidates;
@@ -28,6 +29,7 @@ public sealed class EntityAnimationCatalog
         IReadOnlyDictionary<int, IReadOnlyList<EntityAnimationCandidate>> candidates,
         IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> moveCandidates,
         IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> deployCandidates,
+        IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> retractCandidates,
         IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> fireCandidates,
         IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> hitCandidates,
         IReadOnlyDictionary<int, IReadOnlyList<EntityAnimationCandidate>> deathCandidates)
@@ -35,6 +37,7 @@ public sealed class EntityAnimationCatalog
         this.candidates = candidates;
         this.moveCandidates = moveCandidates;
         this.deployCandidates = deployCandidates;
+        this.retractCandidates = retractCandidates;
         this.fireCandidates = fireCandidates;
         this.hitCandidates = hitCandidates;
         this.deathCandidates = deathCandidates;
@@ -47,6 +50,7 @@ public sealed class EntityAnimationCatalog
         var byCode = codes.ToDictionary(code => code, _ => new List<EntityAnimationCandidate>(), StringComparer.OrdinalIgnoreCase);
         var movesByCode = codes.ToDictionary(code => code, _ => new List<(int Sector, EntityAnimationCandidate Candidate)>(), StringComparer.OrdinalIgnoreCase);
         var deploysByCode = codes.ToDictionary(code => code, _ => new List<(int Sector, EntityAnimationCandidate Candidate)>(), StringComparer.OrdinalIgnoreCase);
+        var retractsByCode = codes.ToDictionary(code => code, _ => new List<(int Sector, EntityAnimationCandidate Candidate)>(), StringComparer.OrdinalIgnoreCase);
         var firesByCode = codes.ToDictionary(code => code, _ => new List<(int Sector, EntityAnimationCandidate Candidate)>(), StringComparer.OrdinalIgnoreCase);
         var hitsByCode = codes.ToDictionary(code => code, _ => new List<(int Sector, EntityAnimationCandidate Candidate)>(), StringComparer.OrdinalIgnoreCase);
         var deathsByCode = codes.ToDictionary(code => code, _ => new List<EntityAnimationCandidate>(), StringComparer.OrdinalIgnoreCase);
@@ -72,6 +76,7 @@ public sealed class EntityAnimationCatalog
 
                 AddDirectional("MOVE", movesByCode);
                 AddDirectional("DEPLOY", deploysByCode);
+                AddDirectional("RETRACT", retractsByCode);
                 AddDirectional("FIRE", firesByCode);
                 AddDirectional("HIT", hitsByCode);
 
@@ -92,6 +97,7 @@ public sealed class EntityAnimationCatalog
         var result = new Dictionary<int, IReadOnlyList<EntityAnimationCandidate>>();
         var moveResult = new Dictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>>();
         var deployResult = new Dictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>>();
+        var retractResult = new Dictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>>();
         var fireResult = new Dictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>>();
         var hitResult = new Dictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>>();
         var deathResult = new Dictionary<int, IReadOnlyList<EntityAnimationCandidate>>();
@@ -110,6 +116,8 @@ public sealed class EntityAnimationCatalog
             moveResult[entity.Id] = movesByCode[entity.Code]
                 .OrderBy(item => item.Candidate.ExactFileStem ? 0 : 1).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
             deployResult[entity.Id] = deploysByCode[entity.Code]
+                .OrderBy(item => item.Candidate.ExactFileStem ? 0 : 1).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
+            retractResult[entity.Id] = retractsByCode[entity.Code]
                 .OrderBy(item => item.Candidate.ExactFileStem ? 0 : 1).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
             fireResult[entity.Id] = firesByCode[entity.Code]
                 // FIREA/B/C are distinct families in the installed assets.
@@ -131,7 +139,7 @@ public sealed class EntityAnimationCatalog
                 .ToArray();
         }
 
-        return new EntityAnimationCatalog(result, moveResult, deployResult, fireResult, hitResult, deathResult);
+        return new EntityAnimationCatalog(result, moveResult, deployResult, retractResult, fireResult, hitResult, deathResult);
     }
 
     public IReadOnlyList<EntityAnimationCandidate> Candidates(int entityId) => candidates.GetValueOrDefault(entityId, []);
@@ -143,8 +151,41 @@ public sealed class EntityAnimationCatalog
     public DirectionalAnimationSelection? PreferredDeploy(int entityId, int sector)
         => PreferredDirectional(deployCandidates, entityId, sector);
 
+    public DirectionalAnimationSelection? PreferredRetract(int entityId, int sector)
+        => PreferredDirectional(retractCandidates, entityId, sector);
+
     public DirectionalAnimationSelection? PreferredFire(int entityId, int sector)
-        => PreferredDirectional(fireCandidates, entityId, sector);
+        => PreferredFire(entityId, sector, 0);
+
+    /// <summary>
+    /// Mirrors the native animation-pointer loader at 0x43b970: FIREA replaces
+    /// plain FIRE in slot zero when both exist, then FIREB and FIREC append.
+    /// The common firing routine chooses one slot by a random roll modulo the
+    /// resulting count.
+    /// </summary>
+    public DirectionalAnimationSelection? PreferredFire(int entityId, int sector, int variantRoll)
+    {
+        if (sector is < 0 or > 15) throw new ArgumentOutOfRangeException(nameof(sector));
+        var source = fireCandidates.GetValueOrDefault(entityId, []);
+        if (source.Count == 0) return null;
+        var variants = source
+            .GroupBy(item => FireVariant(item.Candidate.AnimationName))
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>)group.ToArray());
+        var orderedKeys = new List<string>();
+        if (variants.ContainsKey("A")) orderedKeys.Add("A");
+        else if (variants.ContainsKey("")) orderedKeys.Add("");
+        if (variants.ContainsKey("B")) orderedKeys.Add("B");
+        if (variants.ContainsKey("C")) orderedKeys.Add("C");
+        orderedKeys.AddRange(variants.Keys.Where(key => !orderedKeys.Contains(key, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(key => key, StringComparer.OrdinalIgnoreCase));
+        var key = orderedKeys[Math.Abs(variantRoll % orderedKeys.Count)];
+        var selected = variants[key]
+            .OrderBy(item => CircularDistance(item.Sector, sector))
+            .ThenBy(item => item.Candidate.ExactFileStem ? 0 : 1)
+            .ThenBy(item => item.Sector)
+            .First();
+        return new DirectionalAnimationSelection(selected.Candidate, sector, selected.Sector, selected.Sector == sector);
+    }
 
     public DirectionalAnimationSelection? PreferredHit(int entityId, int sector)
         => PreferredDirectional(hitCandidates, entityId, sector);
@@ -193,5 +234,15 @@ public sealed class EntityAnimationCatalog
             "C" => 3,
             _ => 4,
         };
+    }
+
+    private static string FireVariant(string animationName)
+    {
+        var fire = animationName.IndexOf("FIRE", StringComparison.OrdinalIgnoreCase);
+        if (fire < 0) return string.Empty;
+        var suffix = animationName[(fire + "FIRE".Length)..];
+        var firstDigit = suffix.Length;
+        while (firstDigit > 0 && char.IsDigit(suffix[firstDigit - 1])) firstDigit--;
+        return suffix[..firstDigit].ToUpperInvariant();
     }
 }

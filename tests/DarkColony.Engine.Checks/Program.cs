@@ -36,20 +36,37 @@ Check("projectile elapsed lifetime advances with authoritative flight", () =>
 {
     var projectile = new ProjectileState(1, 2, 3, 4, 5, new FixedPointPosition(100, 200), 7, -9, 3);
     Equal(3, projectile.TotalTicks);
+    Equal(3, projectile.MaximumLifetimeTicks);
     Equal(0, projectile.ElapsedTicks);
-    Equal(false, projectile.Step());
+    Equal(0, projectile.AnimationTicks);
+    projectile.Step();
+    Equal(false, projectile.ReachedAimedPosition);
     Equal(1, projectile.ElapsedTicks);
     Equal(2, projectile.RemainingTicks);
     Equal(new FixedPointPosition(107, 191), projectile.Position);
 });
 
-Check("weapon catalog preserves the source-named magic chewing column", () =>
+Check("mode-one timed projectiles follow the recovered 17-sample height arc", () =>
+{
+    var projectile = new ProjectileState(1, 2, -1, 50, 20, new FixedPointPosition(128, 128),
+        32, 0, 8, 64, new CellCoordinate(1, 0), new CellCoordinate(1, 0), projectileMode: 1);
+    projectile.Step();
+    Equal(3, projectile.HeightRaw); // table[16] 25 * 8 >> 6
+    projectile.Step();
+    Equal(35, projectile.HeightRaw); // table[14] 280 * 8 >> 6
+    Equal(1, projectile.ProjectileMode);
+});
+
+Check("weapon catalog maps stale header columns to recovered native fields", () =>
 {
     var catalog = WeaponCatalog.Parse("1\n7 TEST 3 10 75 250 60 12 1 -1 -1 1 0\n");
     var weapon = catalog.Weapons[7];
-    Equal(-1, weapon.MagicChewing);
     Equal(1, weapon.AreaEffectTemplateId);
-    Equal(0, weapon.UnknownField11);
+    Equal(-1, weapon.BurstShotLimit);
+    Equal(-1, weapon.BurstReloadTicks);
+    Equal(0, weapon.PostFireReset);
+    Equal(1, weapon.ProjectileMode);
+    Equal(69, weapon.ProjectileLifetimeTicks);
 });
 
 Check("day-night cycle exposes completed days for the native HUD counter", () =>
@@ -85,21 +102,35 @@ Check("unit special-command identities preserve recovered HUD mappings", () =>
     Equal(72, cyborgSecondary.InterfaceFrame);
     Equal(80, cyborgSecondary.RequiredResearchItemId!.Value);
     Equal(50, cyborgSecondary.CandidateEffectWeaponId!.Value);
+    Equal(UnitCommandActivation.MapTarget, cyborgSecondary.Activation);
     Equal(true, UnitSecondaryCommandCatalog.TryGet("PSYC", out var psySecondary));
     Equal("DISEASE ATTACK", psySecondary.Label);
     Equal(73, psySecondary.InterfaceFrame);
     Equal(54, psySecondary.RequiredResearchItemId!.Value);
     Equal(51, psySecondary.CandidateEffectWeaponId!.Value);
-    Equal(true, UnitSecondaryCommandCatalog.TryGet("DROP", out var dropshipSecondary));
+    Equal(false, UnitSecondaryCommandCatalog.TryGet("DROP", out _));
+    var humanCaptainValues = new int[32];
+    humanCaptainValues[28] = 132;
+    humanCaptainValues[29] = 57;
+    Equal(true, UnitSecondaryCommandCatalog.TryGet(
+        new EntityDefinition(70, "TRSC", "Human captain", 0, humanCaptainValues), out var dropshipSecondary));
     Equal("DROP SHIP", dropshipSecondary.Label);
     Equal(125, dropshipSecondary.InterfaceFrame);
-    Equal(true, UnitSecondaryCommandCatalog.TryGet("SAUC", out var saucerSecondary));
+    Equal(57, dropshipSecondary.CandidateEffectWeaponId!.Value);
+    Equal(UnitCommandActivation.MapTarget, dropshipSecondary.Activation);
+    var grayCaptainValues = new int[32];
+    grayCaptainValues[28] = 134;
+    grayCaptainValues[29] = 60;
+    Equal(true, UnitSecondaryCommandCatalog.TryGet(
+        new EntityDefinition(74, "GRAY", "Gray captain", 1, grayCaptainValues), out var saucerSecondary));
     Equal("SAUCER", saucerSecondary.Label);
     Equal(126, saucerSecondary.InterfaceFrame);
+    Equal(60, saucerSecondary.CandidateEffectWeaponId!.Value);
     Equal(false, UnitSecondaryCommandCatalog.TryGet("SARGSTL", out _));
     var commander = new EntityDefinition(69, "TRSC", "Human lieutenant", 0, new int[32]);
     Equal(true, UnitSpecialCommandCatalog.TryGet(commander, out var inspire));
     Equal(UnitSpecialCommand.InspireTroops, inspire.Command);
+    Equal(UnitCommandActivation.Immediate, inspire.Activation);
     Equal(121, inspire.InterfaceFrame);
     Equal(true, UnitSpecialCommandCatalog.TryGet("XENO", out var xenowort));
     Equal(UnitSpecialCommand.DeployTurret, xenowort.Command);
@@ -111,9 +142,11 @@ Check("unit command profiles keep common, contextual, and pending slots distinct
     var exploiter = new EntityDefinition(6, "EXPL", "Exploiter", 0, ValuesWith(movementSpeed: 25));
     var profile = UnitCommandProfiles.Describe(exploiter, hasResolvedWeapon: false);
     Equal(true, profile.CanMove);
+    Equal(true, profile.CanStop);
     Equal(true, profile.CanUseWaypoints);
     Equal(false, profile.CanAttack);
     Equal(UnitSpecialCommand.HarvestPetra, profile.ContextualCommand!.Command);
+    Equal(UnitCommandActivation.MapTarget, profile.ContextualCommand.Activation);
     Equal(false, profile.HasSecondaryCommand);
 
     var cyborg = new EntityDefinition(4, "SARG", "Cyborg", 0, ValuesWith(movementSpeed: 20));
@@ -130,6 +163,66 @@ Check("unit command profiles keep common, contextual, and pending slots distinct
     Equal(false, towerProfile.CanMove);
     Equal(false, towerProfile.CanUseWaypoints);
     Equal(true, towerProfile.CanAttack);
+    Equal(true, towerProfile.CanStop);
+
+    var secondExploiter = UnitCommandProfiles.Describe(exploiter, hasResolvedWeapon: false);
+    Equal(UnitSpecialCommand.HarvestPetra,
+        UnitCommandProfiles.CommonContextualCommand([profile, secondExploiter])!.Command);
+    Equal(true, UnitCommandProfiles.CommonContextualCommand([profile, UnitCommandProfiles.Describe(
+        new EntityDefinition(17, "ENGI", "Engineer", 0, ValuesWith(movementSpeed: 20)), hasResolvedWeapon: false)]) is null);
+    Equal(true, UnitCommandProfiles.CommonContextualCommand([]) is null);
+    Equal("NAPALM ATTACK", UnitCommandProfiles.CommonSecondaryCommand([cyborgProfile, cyborgProfile])!.Label);
+    Equal(true, UnitCommandProfiles.CommonSecondaryCommand([cyborgProfile, profile]) is null);
+    var mixedSelection = UnitCommandProfiles.DescribeSelection([cyborgProfile, profile]);
+    Equal(2, mixedSelection.Count);
+    Equal(true, mixedSelection.AnyCanStop);
+    Equal(true, mixedSelection.AnyCanMove);
+    Equal(true, mixedSelection.AnyCanUseWaypoints);
+    Equal(true, mixedSelection.AnyCanAttack);
+    Equal(true, mixedSelection.CommonContextualCommand is null);
+    Equal(true, mixedSelection.CommonSecondaryCommand is null);
+    var emptySelection = UnitCommandProfiles.DescribeSelection([]);
+    Equal(0, emptySelection.Count);
+    Equal(false, emptySelection.AnyCanStop);
+    Equal(false, emptySelection.AnyCanMove);
+    Equal(false, emptySelection.AnyCanUseWaypoints);
+    Equal(false, emptySelection.AnyCanAttack);
+    Equal(800, UnitSelectionCommandProfile.MaximumActors);
+    Equal(new[] { 2, 4 }, UnitCommandProfiles.ApplyActorSelection([1, 2], [4, 2], toggle: false).ToArray());
+    Equal(new[] { 1, 4 }, UnitCommandProfiles.ApplyActorSelection([1, 2], [4, 2], toggle: true).ToArray());
+    Equal(UnitSelectionCommandProfile.MaximumActors,
+        UnitCommandProfiles.ApplyActorSelection([], Enumerable.Range(0, UnitSelectionCommandProfile.MaximumActors + 1), toggle: false).Count);
+
+    var ground = new EntityDefinition(0, "GROUND", "Ground", 0, ValuesWith(movementSpeed: 20));
+    var airValues = ValuesWith(movementSpeed: 20);
+    airValues[10] = 7;
+    var air = new EntityDefinition(1, "AIR", "Air", 0, airValues);
+    var mineValues = ValuesWith(movementSpeed: 0);
+    mineValues[10] = 7;
+    mineValues[14] = 1;
+    var mine = new EntityDefinition(45, "HMINE", "Mine", 0, mineValues);
+    Equal(NativeActorSelectionLayer.Ground, UnitCommandProfiles.NativeSelectionLayer(ground));
+    Equal(NativeActorSelectionLayer.Air, UnitCommandProfiles.NativeSelectionLayer(air));
+    Equal(NativeActorSelectionLayer.Mine, UnitCommandProfiles.NativeSelectionLayer(mine));
+    var altSelection = UnitSelectionLayerFilter.FromModifiers(control: false, alt: true);
+    Equal(false, altSelection.Includes(ground));
+    Equal(true, altSelection.Includes(air));
+    Equal(true, altSelection.Includes(mine));
+    var controlSelection = UnitSelectionLayerFilter.FromModifiers(control: true, alt: false);
+    Equal(true, controlSelection.Includes(ground));
+    Equal(false, controlSelection.Includes(air));
+    Equal(true, controlSelection.Includes(mine));
+    var mineOnlySelection = UnitSelectionLayerFilter.FromModifiers(control: true, alt: true);
+    Equal(false, mineOnlySelection.Includes(ground));
+    Equal(false, mineOnlySelection.Includes(air));
+    Equal(true, mineOnlySelection.Includes(mine));
+    var owners = new Dictionary<int, int> { [1] = 0, [2] = 1, [3] = 0, [4] = 2 };
+    Equal(new[] { 1, 3 }, UnitCommandProfiles.PreferLocalOwnerSelection([4, 3, 2, 1], owners, localOwner: 0).ToArray());
+    Equal(new[] { 2, 4 }, UnitCommandProfiles.PreferLocalOwnerSelection([4, 2], owners, localOwner: 0).ToArray());
+    Equal(new[] { 69, 70, 71, 72, 73, 74, 75, 76 }, NativeUnitSelectionHotkeys.EntityIds(1).ToArray());
+    Equal(new[] { 0, 8 }, NativeUnitSelectionHotkeys.EntityIds(2).ToArray());
+    Equal(new[] { 1, 9 }, NativeUnitSelectionHotkeys.EntityIds(10).ToArray());
+    Equal(0, NativeUnitSelectionHotkeys.EntityIds(11).Count);
 });
 
 Check("trigger conditions parse structurally without assigning variable semantics", () =>
@@ -147,6 +240,8 @@ Check("trigger conditions parse structurally without assigning variable semantic
 
     var combined = ScenarioTriggerConditionParser.Parse("((c>s(0,2,0))&&(S==0))");
     Equal(ScenarioConditionLogical.And, ((ScenarioConditionLogicalNode)combined).Operator);
+    var bareValue = ScenarioTriggerConditionParser.Parse("(1)");
+    Equal(new ScenarioConditionNumber(1), ((ScenarioConditionValueNode)bareValue).Value);
     Equal(false, ScenarioTriggerConditionParser.TryParse("(c&&==0)", out _));
 });
 
@@ -206,6 +301,8 @@ Check("facing turns on the shorter wrapped arc and quantizes at render", () =>
 
     facing.FaceTowards(FixedPointPosition.AtCellCenter(new CellCoordinate(1, 1)), FixedPointPosition.AtCellCenter(new CellCoordinate(1, 2)));
     Equal((byte)64, facing.Target);
+    Equal((byte)13, NativeBearing.FromDelta(768, 256));
+    Equal(new NativeDirectionVector(1944, 642), NativeBearing.Vector(13));
 });
 
 Check("packed playback reserves occupancy before interpolation", () =>
@@ -265,18 +362,21 @@ Check("scenario simulation consumes move intents and owns motion", () =>
 Check("scenario simulation retains explicit attack targets until stopped", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1000 4 1 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 4 0 0 0 0 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 1 1 1 100 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 12];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 3), weaponCatalog: weapons);
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
+    var attackOutcome = simulation.LastAttackOrders.Single().Outcome;
+    var fired = simulation.LastWeaponFires.Count != 0;
+    for (var tick = 0; tick < 20 && simulation.Actor(2)!.Health == 100; tick++) simulation.Step([]);
     Equal(2, simulation.Actor(1)!.AttackTargetInstanceId!.Value);
-    Equal(AttackOrderOutcome.Acquired, simulation.LastAttackOrders.Single().Outcome);
+    Equal(AttackOrderOutcome.Acquired, attackOutcome);
     Equal(true, simulation.IsAttackTargetInRange(simulation.Actor(1)!));
     Equal((byte)64, simulation.Actor(1)!.Facing.Target);
     Equal(90, simulation.Actor(2)!.Health);
-    Equal(1, simulation.LastWeaponFires.Count);
+    Equal(true, fired);
     Equal(1, simulation.LastProjectileImpacts.Count);
     Equal(1, simulation.LastProjectileImpacts[0].SourceActorInstanceId);
     Equal(0, simulation.LastProjectileImpacts[0].WeaponClass);
@@ -295,7 +395,7 @@ Check("weapon bursts use rate between shots then decoded reload", () =>
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     // rate=1, burst limit=2, reload=4. Projectile speed makes each hit resolve
     // within its firing tick, isolating cadence from flight time.
-    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 1 1000 4 2 4 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 1 90 4 0 2 4 0 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 1 1 1 100 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 12];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -319,21 +419,69 @@ Check("weapon bursts use rate between shots then decoded reload", () =>
 
 Check("area-effect weapon applies its authored radial percentage", () =>
 {
-    var catalog = EntityCatalog.Parse("3\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nNEARBY 1 1 25 1 1 -1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    var weapons = WeaponCatalog.Parse("1\n1 BLAST 0 0 1 100 1000 4 1 0 0 1 0\n");
-    var areas = AreaEffectCatalog.Parse("1\n1 3\nNONE\n0 0 0\n0 100 50\n0 0 0\n0 0 0\n0 100 0\n0 0 0\n");
-    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 2 0 0 200 0\n3 2 1 1 200 0\n4 2 2 1 200 0\n";
+    var catalog = EntityCatalog.Parse("4\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nNEARBY 1 1 25 1 1 -1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nFRIENDLY 0 1 25 1 1 -1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BLAST 0 0 1 100 90 4 1 0 0 1 0\n");
+    var areas = AreaEffectCatalog.Parse("1\n1 3\nNONE\n0 100 0\n0 100 50\n0 0 0\n0 0 0\n0 100 0\n0 0 0\n");
+    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 2 0 0 200 0\n3 2 1 1 200 0\n4 2 2 1 200 0\n3 1 3 0 200 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 30]; bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 5), weaponCatalog: weapons, areaEffects: areas);
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
+    for (var tick = 0; tick < 20 && simulation.LastProjectileImpacts.Count == 0; tick++) simulation.Step([]);
     Equal(100, simulation.Actor(2)!.Health);
     Equal(150, simulation.Actor(3)!.Health);
+    Equal(175, simulation.Actor(4)!.Health);
+});
+
+Check("projectiles collide with an intervening hostile instead of remaining target locked", () =>
+{
+    var catalog = EntityCatalog.Parse("3\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nBLOCKER 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 20 25 90 5 0 0 0 0 0\n");
+    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 100 0\n3 1 1 1 100 0\n1 1 2 1 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 15]; bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 3), weaponCatalog: weapons);
+    simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
+    for (var tick = 0; tick < 20 && simulation.LastProjectileImpacts.Count == 0; tick++) simulation.Step([]);
+    Equal(3, simulation.LastProjectileImpacts.Single().TargetActorInstanceId);
+    Equal(75, simulation.Actor(3)!.Health);
+    Equal(100, simulation.Actor(2)!.Health);
+});
+
+Check("area trajectories skip intervening actors and detonate at their launch-time cell", () =>
+{
+    var catalog = EntityCatalog.Parse("3\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nBLOCKER 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BLAST 0 0 100 25 15 10 1 0 0 1 0\n");
+    var areas = AreaEffectCatalog.Parse("1\n1 3\nNONE\n0 0 0\n0 100 0\n0 0 0\n0 0 0\n0 100 0\n0 0 0\n");
+    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 100 0\n4 1 1 1 100 0\n1 1 2 1 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 21]; bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 7, 3), weaponCatalog: weapons, areaEffects: areas);
+    simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
+    Equal(new CellCoordinate(4, 1), simulation.Projectiles.Single().TimedImpactCell!.Value);
+    for (var tick = 0; tick < 30 && simulation.LastProjectileImpacts.Count == 0; tick++) simulation.Step([]);
+    Equal(new CellCoordinate(4, 1), simulation.LastProjectileImpacts.Single().Position.Cell);
+    Equal(75, simulation.Actor(2)!.Health);
+    Equal(100, simulation.Actor(3)!.Health);
+});
+
+Check("world ticks execute the native four projectile substeps", () =>
+{
+    Equal(4, ScenarioSimulation.NativeProjectileSubstepsPerTick);
+    var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 100 10 15 10 0 0 0 0 0\n");
+    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 100 0\n4 1 1 1 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 18]; bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 3), weaponCatalog: weapons);
+    simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
+    var projectile = simulation.Projectiles.Single();
+    Equal(4, projectile.ElapsedTicks);
+    Equal(1, projectile.AnimationTicks);
+    Equal(new FixedPointPosition(FixedPointPosition.AtCellCenter(new CellCoordinate(0, 1)).XRaw + 60,
+        FixedPointPosition.AtCellCenter(new CellCoordinate(0, 1)).ZRaw), projectile.Position);
 });
 
 Check("attack orders honor the recovered team relation matrix", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1000 4 1 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 4 0 0 0 0 0\n");
     const string sameTeam = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n2 0 1 0 100 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 12];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -356,7 +504,7 @@ Check("attack orders honor the recovered team relation matrix", () =>
 Check("attack orders pursue an out-of-range target through normal movement", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1000 2 1 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 2 0 0 0 0 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n7 1 1 1 100 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -376,7 +524,7 @@ Check("attack orders pursue an out-of-range target through normal movement", () 
 Check("attack-move acquires a visible hostile then resumes its destination", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1000 2 1 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 2 0 0 0 0 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n2 1 1 1 100 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -393,7 +541,7 @@ Check("attack-move acquires a visible hostile then resumes its destination", () 
 Check("attack-move excludes a team marked cooperative in the relation matrix", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1000 2 1 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 2 0 0 0 0 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n2 1 1 1 100 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -435,15 +583,20 @@ Check("Exploiter vent deployment accelerates P7 and day night selects observatio
     var bytes = new byte[PathRegionMap.RouteTableSize + 16];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4),
-        petraFlowRules: new PetraFlowRules(2, 1, 4), dayNight: new DayNightCycle(2));
+        petraFlowRules: new PetraFlowRules(100, 1, 4), dayNight: new DayNightCycle(2));
     var exploiter = simulation.Actors.Single();
     Equal(2, simulation.ObservationRange(exploiter));
     simulation.Step([new ScheduledWorldCommand(1, 0, new HarvestVentIntent(exploiter.Seed.InstanceId, 0))]);
-    Equal(true, simulation.LastHarvesterDeployments.Single().Attached);
+    Equal(HarvesterDeploymentOutcome.Preparing, simulation.LastHarvesterDeployments.Single().Outcome);
+    Equal(ScenarioSimulation.NativeHarvesterAttachTicks, simulation.PetraVents[0].AttachTicksRemaining);
     Equal(0, simulation.ResourceForTeam(0));
     simulation.Step([]);
     Equal(DayNightPhase.Night, simulation.DayNight.Phase);
     Equal(9, simulation.ObservationRange(exploiter));
+    for (var tick = 1; tick < ScenarioSimulation.NativeHarvesterAttachTicks; tick++) simulation.Step([]);
+    Equal(true, simulation.PetraVents[0].HarvesterInstanceId == exploiter.Seed.InstanceId);
+    for (var tick = ScenarioSimulation.NativeHarvesterAttachTicks + 1;
+         tick < 100; tick++) simulation.Step([]);
     Equal(5, simulation.ResourceForTeam(0));
     Equal(new[] { 1, 4 }, simulation.LastP7Income.Select(income => income.Amount).ToArray());
 });
@@ -474,16 +627,27 @@ Check("harvester deployment walks to a vent then attaches deterministically", ()
     var exploiter = simulation.Actors.Single();
     simulation.Step([new ScheduledWorldCommand(1, 0, new HarvestVentIntent(exploiter.Seed.InstanceId, 0))]);
     Equal(HarvesterDeploymentOutcome.EnRoute, simulation.LastHarvesterDeployments.Single().Outcome);
-    for (var tick = 0; tick < 100 && simulation.PetraVents[0].HarvesterInstanceId is null; tick++) simulation.Step([]);
+    for (var tick = 0; tick < 250 && simulation.PetraVents[0].HarvesterInstanceId is null; tick++) simulation.Step([]);
     Equal(exploiter.Seed.InstanceId, simulation.PetraVents[0].HarvesterInstanceId!.Value);
+    Equal(new CellCoordinate(3, 3), exploiter.Movement.OccupiedCell);
     Equal(true, exploiter.MoveOrder is null && exploiter.Playback is null);
     Equal(1, exploiter.DeployedEntityId!.Value);
+    Equal("EDPLY", simulation.EffectiveDefinition(exploiter).Code);
+    Equal(0, exploiter.HarvestVentId!.Value);
+    simulation.Step([new ScheduledWorldCommand(2, 0, new RetractHarvesterIntent(exploiter.Seed.InstanceId))]);
+    Equal(HarvesterDeploymentOutcome.Retracted, simulation.LastHarvesterDeployments.Single().Outcome);
+    Equal(false, simulation.PetraVents[0].HarvesterInstanceId.HasValue);
+    Equal(false, exploiter.DeployedEntityId.HasValue);
+    Equal("EXPL", simulation.EffectiveDefinition(exploiter).Code);
+    Equal(new CellCoordinate(3, 3), exploiter.Movement.OccupiedCell);
+    simulation.Step([new ScheduledWorldCommand(3, 0, new MoveIntent(exploiter.Seed.InstanceId, new CellCoordinate(2, 3)))]);
+    Equal(true, simulation.LastMoveOutcomes.Single().StepCount > 0);
 });
 
 Check("tower builders deploy into their paired armed static forms", () =>
 {
     var catalog = EntityCatalog.Parse("5\nTURR 0 10 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nT 0 5 0 1 1 1 -1 -1 1 1 6 60 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nXDEPLOY 1 5 0 1 1 1 -1 -1 1 1 6 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nLAB 0 0 0 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 100 4 1 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 100 4 0 0 0 0 0\n");
     var dependencies = DependencyCatalog.Parse("1\n71 0 0 2 1 0 1 -1\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n100\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n2 0 3 0 100 0\n3 0 4 1 100 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16];
@@ -511,7 +675,7 @@ Check("tower builders deploy into their paired armed static forms", () =>
     Equal(0, simulation.LastMoveOutcomes.Single().StepCount);
 });
 
-Check("Cyborg stealing stance transitions only into its recovered static form", () =>
+Check("Cyborg stealing stance deploys and retracts through recovered forms", () =>
 {
     var catalog = EntityCatalog.Parse("2\nSARG 0 10 45 10 10 13 14 14 125 150 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 12 0\nSARGSTL 0 10 0 10 10 -1 -1 -1 125 150 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 78 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n";
@@ -527,36 +691,103 @@ Check("Cyborg stealing stance transitions only into its recovered static form", 
     Equal(800, thief.Health);
     simulation.Step([new ScheduledWorldCommand(2, 0, new MoveIntent(1, new CellCoordinate(2, 1)))]);
     Equal(0, simulation.LastMoveOutcomes.Single().StepCount);
+    simulation.Step([new ScheduledWorldCommand(3, 0, new RetractStealIntent(1))]);
+    Equal(StealDeploymentOutcome.Retracted, simulation.LastStealDeployments.Single().Outcome);
+    Equal(false, thief.DeployedEntityId.HasValue);
+    Equal("SARG", simulation.EffectiveDefinition(thief).Code);
+    simulation.Step([new ScheduledWorldCommand(4, 0, new MoveIntent(1, new CellCoordinate(2, 1)))]);
+    Equal(true, simulation.LastMoveOutcomes.Single().StepCount > 0);
+});
+
+Check("deployed SARGE intercepts half of nearby hostile miner income without visibility", () =>
+{
+    var catalog = EntityCatalog.Parse("4\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nSARG 0 10 45 1 1 -1 -1 -1 1 1 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 3 0\nSARGSTL 0 10 0 1 1 -1 -1 -1 1 1 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 2 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n11 1 2 0 100 0\n1 1 0 1 100 0\n1 1 40 0 100\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 16, 4),
+        petraFlowRules: new PetraFlowRules(1, 0, 10), petraStealRules: new PetraStealRules(12, 1, 2));
+
+    simulation.Step([
+        new ScheduledWorldCommand(1, 0, new DeployStealIntent(1)),
+        new ScheduledWorldCommand(1, 1, new HarvestVentIntent(2, 0)),
+    ]);
+    for (var tick = 0; tick < ScenarioSimulation.NativeHarvesterAttachTicks; tick++) simulation.Step([]);
+
+    Equal(5, simulation.ResourceForTeam(0));
+    Equal(5, simulation.ResourceForTeam(1));
+    var theft = simulation.LastP7Thefts.Single();
+    Equal(1, theft.ThiefInstanceId);
+    Equal(2, theft.VictimHarvesterInstanceId);
+    Equal(5, theft.Amount);
+    Equal(new[] { 5, 5 }, simulation.LastP7Income.OrderBy(entry => entry.TeamId).Select(entry => entry.Amount).ToArray());
 });
 
 Check("engineer mine deployment resolves the faction-matched HMINE form", () =>
 {
-    var catalog = EntityCatalog.Parse("2\nENGI 0 15 30 6 4 -1 -1 -1 1 1 5 800 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nHMINE 0 40 0 6 4 38 38 38 1 1 7 800 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var catalog = EntityCatalog.Parse("3\nENGI 0 15 30 6 4 -1 -1 -1 1 1 5 800 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 0\nUNUSED 0 0 0 0 0 -1 -1 -1 1 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nHMINE 0 40 0 6 4 38 38 38 1 1 7 800 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4));
-    simulation.Step([new ScheduledWorldCommand(1, 0, new DeployMineIntent(1, new CellCoordinate(2, 1)))]);
+    simulation.Step([new ScheduledWorldCommand(1, 0, new DeployMineIntent(1))]);
     var deployment = simulation.LastMineDeployments.Single();
-    Equal(MineDeploymentOutcome.Deployed, deployment.Outcome);
-    Equal(1, deployment.EntityId);
-    Equal(true, simulation.GroundOccupancy.TryGetOwner(new CellCoordinate(2, 1), out var mineId));
+    Equal(MineDeploymentOutcome.Preparing, deployment.Outcome);
+    Equal(2, deployment.EntityId);
+    Equal(1, deployment.EntityInstanceId);
+    Equal(new CellCoordinate(1, 1), deployment.Target);
+    Equal(ScenarioSimulation.NativeImmediateSpecialTicks, simulation.Actor(1)!.MineDeployTicksRemaining);
+    Equal(false, simulation.MineOccupancy.IsOccupied(new CellCoordinate(1, 1)));
+    Equal(true, simulation.AlternateOccupancy.TryGetOwner(new CellCoordinate(1, 1), out _));
+    for (var tick = 0; tick < ScenarioSimulation.NativeImmediateSpecialTicks; tick++) simulation.Step([]);
+    Equal(MineDeploymentOutcome.Deployed, simulation.LastMineDeployments.Single().Outcome);
+    Equal(true, simulation.MineOccupancy.TryGetOwner(new CellCoordinate(1, 1), out var mineId));
     Equal(deployment.EntityInstanceId, mineId);
-    Equal("HMINE", simulation.Actor(mineId)!.Definition.Code);
+    Equal(false, simulation.AlternateOccupancy.IsOccupied(new CellCoordinate(1, 1)));
+    Equal("HMINE", simulation.EffectiveDefinition(simulation.Actor(mineId)!).Code);
+    Equal(0, simulation.EffectiveDefinition(simulation.Actor(mineId)!).MovementSpeed);
 });
 
-Check("a deployed mine uses its decoded weapon once against a nearby hostile", () =>
+Check("a deployed mine follows native three-trigger integrity and weapon cooldown", () =>
 {
-    var catalog = EntityCatalog.Parse("3\nENGI 0 15 30 6 4 -1 -1 -1 1 1 5 800 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nHMINE 0 40 0 6 4 38 38 38 1 1 7 800 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    var weapons = WeaponCatalog.Parse("1\n38 weapons 6 38 1 1000 1000 1 0 -1 -1 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n3 1 2 1 100 0\n";
+    var catalog = EntityCatalog.Parse("4\nENGI 0 15 30 6 4 -1 -1 -1 1 1 5 800 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 0\nUNUSED 0 0 0 0 0 -1 -1 -1 1 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nHMINE 0 40 0 6 4 38 38 38 1 1 7 800 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 10000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n38 weapons 6 38 2 100 90 1 2 -1 -1 0 0\n");
+    var areas = AreaEffectCatalog.Parse("1\n2 3\nNONE\n0 0 0\n0 100 0\n0 0 0\n0 0 0\n0 100 0\n0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 800 0\n1 1 3 1 10000 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 25];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 5), weaponCatalog: weapons);
-    simulation.Step([new ScheduledWorldCommand(1, 0, new DeployMineIntent(1, new CellCoordinate(2, 1)))]);
-    Equal(true, simulation.Actor(3)!.IsDestroyed);
-    Equal(true, simulation.Actor(2)!.IsDestroyed);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 5), weaponCatalog: weapons, areaEffects: areas);
+    simulation.Step([new ScheduledWorldCommand(1, 0, new DeployMineIntent(1))]);
+    for (var tick = 0; tick < ScenarioSimulation.NativeImmediateSpecialTicks; tick++) simulation.Step([]);
     Equal(38, simulation.LastWeaponFires.Single().WeaponId);
+    Equal(475, simulation.Actor(1)!.Health);
+    Equal(2, simulation.MineTriggersRemainingFor(simulation.Actor(1)!));
+    Equal(2, simulation.Actor(1)!.CooldownTicks);
+    simulation.Step([]);
+    Equal(0, simulation.LastWeaponFires.Count);
+    simulation.Step([]);
+    Equal(150, simulation.Actor(1)!.Health);
+    Equal(1, simulation.MineTriggersRemainingFor(simulation.Actor(1)!));
+    simulation.Step([]);
+    Equal(0, simulation.LastWeaponFires.Count);
+    simulation.Step([]);
+    Equal(true, simulation.Actor(1)!.IsDestroyed);
+    Equal(0, simulation.MineTriggersRemainingFor(simulation.Actor(1)!));
+    Equal(false, simulation.Actor(2)!.IsDestroyed);
+});
+
+Check("mine acquisition uses native target priority instead of nearest instance ID", () =>
+{
+    var catalog = EntityCatalog.Parse("5\nENGI 0 15 30 6 4 -1 -1 -1 1 1 5 800 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 0\nUNUSED 0 0 0 0 0 -1 -1 -1 1 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nHMINE 0 40 0 6 4 38 38 38 1 1 7 800 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nUNARMED 1 1 25 1 1 -1 -1 -1 1 1 0 1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nARMED 1 1 25 1 1 39 39 39 1 1 0 1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("2\n38 MINE 6 38 20 100 1 1 2 -1 -1 0 0\n39 GUN 0 0 20 10 1 1 0 -1 -1 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 2 0 0 800 0\n2 3 3 1 1000 0\n2 1 4 1 1000 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 25];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog,
+        PathRegionMap.Parse(bytes, 5, 5), weaponCatalog: weapons);
+    simulation.Step([new ScheduledWorldCommand(1, 0, new DeployMineIntent(1))]);
+    for (var tick = 0; tick < ScenarioSimulation.NativeImmediateSpecialTicks; tick++) simulation.Step([]);
+    Equal(3, simulation.Projectiles.Single().TargetActorInstanceId);
 });
 
 Check("scenario simulation chains movement beyond one packed segment", () =>
@@ -854,9 +1085,149 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(100, effects.Templates[1].DamagePattern[2][2]);
         Equal(7, effects.Templates[10].PatternSize);
         Equal(new[] { "NAPALM" }, effects.Templates[10].EffectNames.ToArray());
-        Equal(100, effects.Templates[10].UnknownPattern[1][1]);
+        Equal(100, effects.Templates[10].AimWeights[1][1]);
         Equal(1, weapons.Weapons[10].AreaEffectTemplateId);
-        Equal(4, weapons.Weapons[50].AreaEffectTemplateId);
+        Equal(10, weapons.Weapons[50].AreaEffectTemplateId);
+        Equal(true, weapons.Weapons.Values.Where(weapon => weapon.HasAreaEffect)
+            .All(weapon => effects.Templates.ContainsKey(weapon.AreaEffectTemplateId)));
+    });
+
+    Check("native ground-special fields drive researched Napalm area fire", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var catalog = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        var weapons = WeaponCatalog.Load(install.DataFile("gamestat", "weapstat.txt"));
+        var effects = AreaEffectCatalog.Load(install.DataFile("gamestat", "boomstat.txt"));
+        var dependencies = DependencyCatalog.Load(install.DataFile("gamestat", "depend.txt"));
+        Equal(true, catalog[4].HasGroundSpecialAttack);
+        Equal(50, catalog[4].GroundSpecialWeaponId);
+        Equal(true, catalog[12].HasGroundSpecialAttack);
+        Equal(51, catalog[12].GroundSpecialWeaponId);
+
+        const string scenarioText = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 2 4 0 100 0\n3 2 0 1 100 0\n4 2 1 1 100 0\n";
+        var pathBytes = new byte[PathRegionMap.RouteTableSize + 8 * 6];
+        pathBytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        var simulation = ScenarioSimulation.Create(
+            ScenarioDefinition.Parse(scenarioText), catalog, PathRegionMap.Parse(pathBytes, 8, 6),
+            weaponCatalog: weapons, dependencyCatalog: dependencies, areaEffects: effects);
+
+        simulation.Step([new ScheduledWorldCommand(1, 0, new GroundSpecialAttackIntent(1, new CellCoordinate(3, 2)))]);
+        Equal(GroundSpecialAttackOutcome.ResearchRequired, simulation.LastGroundSpecialAttacks.Single().Outcome);
+
+        var economy = simulation.EconomyForTeam(0) ?? throw new InvalidOperationException("Team 0 economy missing.");
+        economy.AddP7(10_000);
+        Equal(true, economy.SeedCompletedBuilding(dependencies, 2));
+        Equal(true, economy.SeedCompletedBuilding(dependencies, 4));
+        Equal(true, economy.SeedCompletedBuilding(dependencies, 6));
+        Equal(PurchaseEligibility.Available, economy.TryReserve(dependencies, 79));
+        Equal(true, economy.CompleteResearch(dependencies, 79));
+        Equal(PurchaseEligibility.Available, economy.TryReserve(dependencies, 80));
+        Equal(true, economy.CompleteResearch(dependencies, 80));
+
+        simulation.Step([new ScheduledWorldCommand(2, 0, new GroundSpecialAttackIntent(1, new CellCoordinate(3, 2)))]);
+        Equal(GroundSpecialAttackOutcome.Accepted, simulation.LastGroundSpecialAttacks.Single().Outcome);
+        var fired = simulation.LastWeaponFires.Any(fire => fire.WeaponId == 50);
+        var peakHeight = simulation.Projectiles.Select(projectile => projectile.HeightRaw).DefaultIfEmpty().Max();
+        for (var tick = 0; tick < 100 && simulation.LastProjectileImpacts.Count == 0; tick++)
+        {
+            simulation.Step([]);
+            fired |= simulation.LastWeaponFires.Any(fire => fire.WeaponId == 50);
+            peakHeight = Math.Max(peakHeight, simulation.Projectiles.Select(projectile => projectile.HeightRaw).DefaultIfEmpty().Max());
+        }
+        Equal(true, fired);
+        Equal(true, peakHeight > 0);
+        var impact = simulation.LastProjectileImpacts.Single();
+        Equal(-1, impact.TargetActorInstanceId);
+        Equal(50, impact.WeaponId);
+        Equal(FixedPointPosition.AtCellCenter(new CellCoordinate(3, 2)), impact.Position);
+        Equal(true, simulation.Actor(2)!.Health < simulation.Actor(2)!.MaximumHealth);
+    });
+
+    Check("commander packet modes deliver reinforcements and abduct hostile units", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var catalog = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        var weapons = WeaponCatalog.Load(install.DataFile("gamestat", "weapstat.txt"));
+        var effects = AreaEffectCatalog.Load(install.DataFile("gamestat", "boomstat.txt"));
+        var pathBytes = new byte[PathRegionMap.RouteTableSize + 12 * 8];
+        pathBytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        var path = PathRegionMap.Parse(pathBytes, 12, 8);
+
+        const string humanScenario = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 2 71 0 100 0\n";
+        var human = ScenarioSimulation.Create(ScenarioDefinition.Parse(humanScenario), catalog, path,
+            weaponCatalog: weapons, areaEffects: effects);
+        Equal("DROP SHIP", UnitCommandProfiles.Describe(catalog[71], true).SecondaryCommand!.Label);
+        human.Step([new ScheduledWorldCommand(1, 0, new GroundSpecialAttackIntent(1, new CellCoordinate(5, 2)))]);
+        for (var tick = 0; tick < 100 && !human.LastBattlefieldTransports.Any(item => item.Kind == BattlefieldTransportEventKind.Started); tick++) human.Step([]);
+        var humanStarted = human.LastBattlefieldTransports.Single(item => item.Kind == BattlefieldTransportEventKind.Started);
+        Equal(92, humanStarted.TransportEntityId);
+        Equal(1, human.Actors.Count);
+        var dropship = human.BattlefieldTransports.Single();
+        Equal(BattlefieldTransportPhase.Descending, dropship.Phase);
+        Equal(ScenarioSimulation.NativeDropShipBaseHeightRaw + 3 * ScenarioSimulation.NativeTransportFlightTicks * ScenarioSimulation.NativeTransportFlightTicks, dropship.HeightRaw);
+        Equal(FixedPointPosition.One, Math.Abs(dropship.Position.XRaw - FixedPointPosition.AtCellCenter(dropship.Target).XRaw));
+        Equal(FixedPointPosition.One, Math.Abs(dropship.Position.ZRaw - FixedPointPosition.AtCellCenter(dropship.Target).ZRaw));
+        var humanTransportEvents = new List<BattlefieldTransportEvent>();
+        for (var tick = 0; tick < 160 && human.BattlefieldTransports.Count != 0; tick++)
+        {
+            human.Step([]);
+            humanTransportEvents.AddRange(human.LastBattlefieldTransports);
+        }
+        var deliveries = humanTransportEvents.Where(item => item.Kind == BattlefieldTransportEventKind.PayloadResolved).ToArray();
+        Equal(new[] { 0, 0, 2 }, deliveries.SelectMany(item => item.ReinforcementInstanceIds).Select(id => human.Actor(id)!.Seed.EntityId).ToArray());
+        Equal(0, deliveries.SelectMany(item => item.AbductedInstanceIds).Count());
+        Equal(true, humanTransportEvents.Any(item => item.Kind == BattlefieldTransportEventKind.Departed));
+        Equal(0, human.BattlefieldTransports.Count);
+
+        const string grayScenario = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 2 74 1 100 0\n8 2 0 0 100 0\n";
+        var gray = ScenarioSimulation.Create(ScenarioDefinition.Parse(grayScenario), catalog, path,
+            weaponCatalog: weapons, areaEffects: effects);
+        Equal("SAUCER", UnitCommandProfiles.Describe(catalog[74], true).SecondaryCommand!.Label);
+        gray.Step([new ScheduledWorldCommand(1, 1, new GroundSpecialAttackIntent(1, new CellCoordinate(5, 2)))]);
+        for (var tick = 0; tick < 100 && !gray.LastBattlefieldTransports.Any(item => item.Kind == BattlefieldTransportEventKind.Started); tick++) gray.Step([]);
+        var grayStarted = gray.LastBattlefieldTransports.Single(item => item.Kind == BattlefieldTransportEventKind.Started);
+        Equal(93, grayStarted.TransportEntityId);
+        var saucer = gray.BattlefieldTransports.Single();
+        Equal(BattlefieldTransportPhase.Descending, saucer.Phase);
+        Equal((byte)216, catalog[93].InitialFacing);
+        Equal((byte)216, saucer.Facing.Current);
+        Equal(ScenarioSimulation.NativeSaucerBaseHeightRaw + 3 * ScenarioSimulation.NativeTransportFlightTicks * ScenarioSimulation.NativeTransportFlightTicks, saucer.HeightRaw);
+        Equal(false, gray.Actor(2)!.IsDestroyed);
+        var grayTransportEvents = new List<BattlefieldTransportEvent>();
+        for (var tick = 0; tick < 80 && !saucer.IsPursuing; tick++)
+        {
+            gray.Step([]);
+            grayTransportEvents.AddRange(gray.LastBattlefieldTransports);
+        }
+        Equal(true, saucer.IsPursuing);
+        Equal(true, saucer.IsTurning);
+        Equal((byte)0, saucer.Facing.Target);
+        Equal(false, gray.Actor(2)!.IsDestroyed);
+        var pursuitStart = saucer.Position;
+        var pursuitExecutions = saucer.HorizontalExecutionsRemaining;
+        Equal(true, pursuitExecutions > 0);
+        for (var turn = 0; turn < 4; turn++)
+        {
+            gray.Step([]);
+            grayTransportEvents.AddRange(gray.LastBattlefieldTransports);
+            Equal(pursuitStart, saucer.Position);
+            Equal(pursuitExecutions, saucer.HorizontalExecutionsRemaining);
+        }
+        Equal(false, saucer.IsTurning);
+        Equal((byte)0, saucer.Facing.Current);
+        gray.Step([]);
+        grayTransportEvents.AddRange(gray.LastBattlefieldTransports);
+        Equal(true, saucer.Position != pursuitStart);
+        Equal(pursuitExecutions - 1, saucer.HorizontalExecutionsRemaining);
+        for (var tick = 0; tick < 160 && gray.BattlefieldTransports.Count != 0; tick++)
+        {
+            gray.Step([]);
+            grayTransportEvents.AddRange(gray.LastBattlefieldTransports);
+        }
+        Equal(new[] { 2 }, grayTransportEvents.Where(item => item.Kind == BattlefieldTransportEventKind.PayloadResolved).SelectMany(item => item.AbductedInstanceIds).ToArray());
+        Equal(true, gray.Actor(2)!.IsDestroyed);
+        Equal(0, gray.LastDestroyedActors.Count);
+        Equal(true, grayTransportEvents.Any(item => item.Kind == BattlefieldTransportEventKind.Departed));
     });
 
     Check("installed TRO mission scripts preserve trigger structure", () =>
@@ -864,14 +1235,24 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var install = GameInstallation.Open(dataPath);
         var files = Directory.GetFiles(install.DataFile("scenario"), "*.tro", SearchOption.AllDirectories);
         var triggerCount = 0;
+        var opaqueConditions = new List<string>();
         foreach (var file in files)
-            triggerCount += ScenarioTriggers.Load(file).Count;
+        {
+            var triggers = ScenarioTriggers.Load(file);
+            triggerCount += triggers.Count;
+            if (triggers.Any(trigger => trigger.ParsedCondition is null))
+                throw new InvalidDataException($"{file} contains a trigger without a parsed condition.");
+            opaqueConditions.AddRange(triggers
+                .Where(trigger => trigger.ParsedCondition is ScenarioConditionOpaqueNode)
+                .Select(trigger => trigger.Condition));
+        }
         if (files.Length == 0 || triggerCount == 0)
             throw new InvalidDataException("Installed scenario corpus has no readable mission triggers.");
 
         var human01 = ScenarioTriggers.Load(install.DataFile("scenario", "human", "human01.tro"));
         Equal("norm", human01[0].Mode);
         Equal("(c>1200)", human01[0].Condition);
+        Equal(ScenarioConditionComparison.Greater, ((ScenarioConditionComparisonNode)human01[0].ParsedCondition).Operator);
         Equal("bail", human01[0].Commands.Single().Verb);
         Equal("newtype", human01.Single(trigger => trigger.Id == 1).Commands[0].Verb);
         var verbs = files.SelectMany(ScenarioTriggers.Load)
@@ -882,6 +1263,8 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
             .ToArray();
         Equal("abduct,ai,aimsg,ally,artifact,bail,dfiddle,exomoney,msg,newrate,newrate2,newtype,nopickup,noundeploy,reinforce,reinforce2,setarray,setlifes,setmoney,vision,waypoint",
             string.Join(',', verbs));
+        Equal("((b(1,0)==0)&&(b(1,1)==0)&&(b(1,2)==0)&&(b(1,3)&&==0)&&(b(1,4)==0)&&(b(2,0)==0)&&(b(2,1)==0)&&(b(2,2)==0)&&(b(2,3)==0)&&(b(2,4)==0)&&(s(4,3)==12))",
+            string.Join(',', opaqueConditions));
         Console.WriteLine($"  trigger corpus: {files.Length} scripts / {triggerCount} triggers");
     });
 
@@ -921,7 +1304,8 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var install = GameInstallation.Open(dataPath);
         var matrix = DamageMatrix.Load(install.DataFile("gamestat", "mbullet.txt"));
         var catalog = EntityCatalog.Parse("3\nBEON 0 255 25 5 3 -1 -1 -1 1 1 2 400 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 0 255 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nATTACKER 1 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-        var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1000 4 1 0 0 0 0\n");
+        ((int[])catalog[0].Values)[24] = 1;
+        var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 100 10 90 4 0 0 0 0 0\n");
         const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 100 0\n1 0 1 0 100 0\n2 0 2 1 100 0\n";
         var pathBytes = new byte[PathRegionMap.RouteTableSize + 4 * 2];
         pathBytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -940,16 +1324,26 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var missingBeforeHeal = target.MaximumHealth - target.Health;
 
         simulation.Step([new ScheduledWorldCommand(2, 0, new StopIntent(3))]);
-        simulation.Step([new ScheduledWorldCommand(2, 0, new HealIntent(1, 2))]);
+        simulation.Step([new ScheduledWorldCommand(2, 0, new HealAreaIntent(1))]);
         var heal = simulation.LastHeals.Single();
         Equal(HealOutcome.Healed, heal.Outcome);
         Equal(Math.Min(missingBeforeHeal, 36 * matrix[7, target.Definition.ArmorClass] / 256), heal.Amount);
         Equal(target.MaximumHealth - missingBeforeHeal + heal.Amount, target.Health);
+        Equal(0, simulation.Actor(1)!.AbilityCharge);
 
-        simulation.Step([new ScheduledWorldCommand(3, 0, new HealIntent(1, 2))]);
-        Equal(HealOutcome.TargetAtFullHealth, simulation.LastHeals.Single().Outcome);
-        simulation.Step([new ScheduledWorldCommand(4, 0, new HealIntent(1, 3))]);
-        Equal(HealOutcome.NonCooperative, simulation.LastHeals.Single().Outcome);
+        simulation.Step([new ScheduledWorldCommand(3, 0, new HealAreaIntent(1))]);
+        Equal(HealOutcome.InsufficientCharge, simulation.LastHeals.Single().Outcome);
+        var rechargeTicks = 0;
+        while (simulation.Actor(1)!.AbilityCharge < ScenarioSimulation.NativeHealMinimumCharge && rechargeTicks < 200)
+        {
+            simulation.Step([]);
+            rechargeTicks++;
+        }
+        Equal(true, rechargeTicks is >= 97 and <= 128);
+        Equal(ScenarioSimulation.NativeHealMinimumCharge, simulation.Actor(1)!.AbilityCharge);
+        simulation.Step([new ScheduledWorldCommand(4, 0, new HealAreaIntent(1))]);
+        Equal(HealOutcome.NoEligibleTargets, simulation.LastHeals.Single().Outcome);
+        Equal(ScenarioSimulation.NativeHealMinimumCharge, simulation.Actor(1)!.AbilityCharge);
     });
 
     Check("original weapon catalog loads", () =>
@@ -963,9 +1357,9 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(100, humanWeapon.Damage);
         Equal(4, humanWeapon.Range);
         Equal(0, humanWeapon.AreaEffectTemplateId);
-        Equal(0, humanWeapon.UnknownField11);
+        Equal(0, humanWeapon.ProjectileMode);
         Equal(1, weapons.Weapons[10].AreaEffectTemplateId);
-        Equal(0, weapons.Weapons[10].UnknownField11);
+        Equal(1, weapons.Weapons[10].ProjectileMode);
         var effects = WeaponEffectCatalog.Build(weapons, install.DataFile("animate"));
         var barragerWeapon = weapons.Weapons.Values.First(weapon => weapon.Sprite.Equals("BARR", StringComparison.OrdinalIgnoreCase));
         Equal(true, effects.Bullet(barragerWeapon.Id) is not null);
@@ -974,11 +1368,22 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var napalm = weapons.Weapons[50];
         Equal("BARR", napalm.Sprite);
         Equal(6, napalm.WeaponClass);
-        Equal(4, napalm.AreaEffectTemplateId);
+        Equal(10, napalm.AreaEffectTemplateId);
+        Equal(4, napalm.ProjectileMode);
         var psyEffect = weapons.Weapons[51];
         Equal("BARR", psyEffect.Sprite);
-        Equal(12, psyEffect.Shots);
-        Equal(4, psyEffect.AreaEffectTemplateId);
+        Equal(12, psyEffect.AreaEffectTemplateId);
+        Equal(4, psyEffect.ProjectileMode);
+        Equal(5, weapons.Weapons[57].ProjectileMode);
+        Equal(6, weapons.Weapons[58].ProjectileMode);
+        Equal(7, weapons.Weapons[59].ProjectileMode);
+        Equal(8, weapons.Weapons[60].ProjectileMode);
+        Equal(9, weapons.Weapons[63].ProjectileMode);
+        Equal(10, weapons.Weapons[64].ProjectileMode);
+        var spak = weapons.Weapons[37];
+        Equal(5, spak.AreaEffectTemplateId);
+        Equal(3, spak.BurstShotLimit);
+        Equal(30, spak.BurstReloadTicks);
     });
 
     Check("original entity counterparts are faction links rather than deployment targets", () =>
@@ -988,9 +1393,128 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal("PSYC", entities[entities.Entities.Single(entity => entity.Code == "SARG").FactionCounterpartEntityId].Code);
         Equal("ZISP", entities[entities.Entities.Single(entity => entity.Code == "BEON").FactionCounterpartEntityId].Code);
         Equal("PSYCSTL", entities[entities.Entities.Single(entity => entity.Code == "SARGSTL").FactionCounterpartEntityId].Code);
+        Equal(1, entities[49].AbilityChargeRecovery);
+        Equal(1, entities[50].AbilityChargeRecovery);
     });
 
-    Check("Cyborg and Psy-raider firing assets do not prove special-action animation selection", () =>
+    Check("native immediate-special gate maps to gamestat value 27", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var entities = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        Equal(2, entities[1].ImmediateSpecialCode);   // TURR
+        Equal(3, entities[43].ImmediateSpecialCode);  // ENGI
+        Equal(5, entities[4].ImmediateSpecialCode);   // SARG
+        Equal(0, entities[6].ImmediateSpecialCode);   // EXPL uses another deploy path
+        Equal(0, entities[49].ImmediateSpecialCode);  // BEON uses another heal path
+        Equal(196, entities[69].ImmediateSpecialCode); // Human lieutenant
+        Equal(true, entities[69].HasImmediateAreaEffect);
+        Equal(6, entities[69].ImmediateAreaTargetLimit);
+        Equal(12, entities[72].ImmediateAreaTargetLimit);
+        Equal(0, entities[41].ImmediateSpecialCode);  // deployed tower is one-way
+        Equal(0, entities[45].ImmediateSpecialCode);  // deployed mine is one-way
+        Equal(7, entities[47].ImmediateSpecialCode);  // EDPLY retracts
+        Equal(5, entities[77].ImmediateSpecialCode);  // SARGSTL retracts
+    });
+
+    Check("commander Inspire waits 50 ticks then applies the recovered aim countdown", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var entities = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        var weapons = WeaponCatalog.Load(install.DataFile("gamestat", "weapstat.txt"));
+        const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n10 10 69 0 100 0\n10 5 0 0 100 0\n11 5 0 1 100 0\n";
+        var bytes = new byte[PathRegionMap.RouteTableSize + 32 * 32];
+        bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        var scenario = ScenarioDefinition.Parse(source);
+        Equal(69, scenario.Placements[0].EntityId);
+        var simulation = ScenarioSimulation.Create(scenario, entities,
+            PathRegionMap.Parse(bytes, 32, 32), weaponCatalog: weapons);
+
+        Equal(69, simulation.Actor(1)!.Definition.Id);
+        Equal(196, simulation.Actor(1)!.Definition.ImmediateSpecialCode);
+        Equal(true, simulation.Actor(1)!.Definition.HasImmediateAreaEffect);
+        simulation.Step([new ScheduledWorldCommand(1, 0, new InspireTroopsIntent(1))]);
+        Equal(InspireOutcome.Preparing, simulation.LastInspires.Single().Outcome);
+        Equal(ScenarioSimulation.NativeImmediateSpecialTicks, simulation.Actor(1)!.InspireCastTicksRemaining);
+        Equal(0, simulation.Actor(2)!.InspirationTicksRemaining);
+        for (var tick = 1; tick < ScenarioSimulation.NativeImmediateSpecialTicks; tick++) simulation.Step([]);
+        Equal(1, simulation.Actor(1)!.InspireCastTicksRemaining);
+        Equal(0, simulation.Actor(2)!.InspirationTicksRemaining);
+
+        simulation.Step([]);
+        var applied = simulation.LastInspires.Where(effect => effect.Outcome == InspireOutcome.Applied).ToArray();
+        Equal(true, applied.Any(effect => effect.TargetActorInstanceId == 2));
+        Equal(false, applied.Any(effect => effect.TargetActorInstanceId == 3));
+        Equal(0, simulation.Actor(1)!.InspireCastTicksRemaining);
+        Equal(true, simulation.Actor(2)!.InspirationTicksRemaining is >= 20 and <= 35);
+        Equal(1, simulation.Actor(2)!.InspirationSourceActorInstanceId!.Value);
+        Equal(0, simulation.Actor(3)!.InspirationTicksRemaining);
+
+        var beforeCadence = simulation.Actor(2)!.InspirationTicksRemaining;
+        for (var tick = 0; tick < ScenarioSimulation.NativeInspireCountdownCadence; tick++) simulation.Step([]);
+        Equal(beforeCadence - 1, simulation.Actor(2)!.InspirationTicksRemaining);
+    });
+
+    Check("boomstat aim weights scatter ordinary area shots while Inspire locks center", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var entities = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        var weapons = WeaponCatalog.Load(install.DataFile("gamestat", "weapstat.txt"));
+        var areaSource = entities.Entities.First(entity => entity.MovementSpeed > 0 && !entity.HasImmediateAreaEffect &&
+            entity.WeaponSlots[0] >= 0 && weapons.Weapons[entity.WeaponSlots[0]].AreaEffectTemplateId == 1);
+        var forcedTopLeft = AreaEffectCatalog.Parse("1\n1 3\nNONE\n0 0 0\n0 100 0\n0 0 0\n100 0 0\n0 0 0\n0 0 0\n");
+        const string header = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
+        var bytes = new byte[PathRegionMap.RouteTableSize + 32 * 32];
+        bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        var path = PathRegionMap.Parse(bytes, 32, 32);
+
+        var ordinaryScenario = ScenarioDefinition.Parse(header +
+            $"10 5 {areaSource.Id} 0 100 0\n15 5 0 1 100 0\n");
+        var ordinary = ScenarioSimulation.Create(ordinaryScenario, entities, path,
+            weaponCatalog: weapons, areaEffects: forcedTopLeft);
+        ordinary.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
+        for (var tick = 0; tick < 32 && ordinary.Projectiles.Count == 0; tick++) ordinary.Step([]);
+        Equal(new CellCoordinate(14, 4), ordinary.Projectiles.Single().TimedImpactCell!.Value);
+
+        var inspiredScenario = ScenarioDefinition.Parse(header +
+            $"10 10 69 0 100 0\n10 5 {areaSource.Id} 0 100 0\n15 5 0 1 100 0\n");
+        var inspired = ScenarioSimulation.Create(inspiredScenario, entities, path,
+            weaponCatalog: weapons, areaEffects: forcedTopLeft);
+        inspired.Step([new ScheduledWorldCommand(1, 0, new InspireTroopsIntent(1))]);
+        for (var tick = 0; tick < ScenarioSimulation.NativeImmediateSpecialTicks; tick++) inspired.Step([]);
+        Equal(true, inspired.Actor(2)!.InspirationTicksRemaining > 0);
+        inspired.Step([new ScheduledWorldCommand(2, 0, new AttackIntent(2, 3))]);
+        for (var tick = 0; tick < 32 && inspired.Projectiles.Count == 0; tick++) inspired.Step([]);
+        Equal(new CellCoordinate(15, 5), inspired.Projectiles.Single().TimedImpactCell!.Value);
+    });
+
+    Check("original mine selection layer is limited to the paired HMINE definitions", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var entities = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        Equal(new[] { 45, 46 }, entities.Entities
+            .Where(entity => entity.UsesNativeMineLayer)
+            .Select(entity => entity.Id)
+            .ToArray());
+        Equal(true, entities.Entities.Where(entity => entity.Id is 45 or 46)
+            .All(entity => UnitCommandProfiles.NativeSelectionLayer(entity) == NativeActorSelectionLayer.Mine));
+    });
+
+    Check("native viewport hotkeys resolve the installed Human and Gray unit pairs", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var entities = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        var expected = new[]
+        {
+            "TRSC,TRSC,TRSC,TRSC,GRAY,GRAY,GRAY,GRAY",
+            "TRSC,GRAY", "REAP,SCYT", "BEON,ZISP", "SCGM,ORTU",
+            "BARR,ATRIL", "ENGI,SLOM", "SARG,PSYC", "EXPL,SLUG", "TURR,XENO",
+        };
+        for (var functionKey = 1; functionKey <= expected.Length; functionKey++)
+            Equal(expected[functionKey - 1], string.Join(',', NativeUnitSelectionHotkeys.EntityIds(functionKey)
+                .Select(entityId => entities[entityId].Code)));
+    });
+
+    Check("Cyborg and Psy-raider firing assets expose native common-fire variants", () =>
     {
         var install = GameInstallation.Open(dataPath);
         var sarg = AnimationDefinition.Load(install.DataFile("animate", "sarg.fin"));
@@ -1024,6 +1548,18 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(63, moveOnly.Frame!.Value);
         Equal(122, interfaceDefinition.Controls[138].Frame!.Value);
         Equal(new InterfaceRectangle(520, 404, 15, 1), interfaceDefinition.Controls[79].Bounds);
+        Equal(new InterfaceRectangle(10, 425, 72, 1), interfaceDefinition.Controls[204].Bounds);
+        Equal(new InterfaceRectangle(10, 440, 72, 1), interfaceDefinition.Controls[203].Bounds);
+        Equal(new InterfaceRectangle(50, 462, 61, 1), interfaceDefinition.Controls[148].Bounds);
+        Equal(new InterfaceRectangle(524, 456, 72, 17), interfaceDefinition.Controls[75].Bounds);
+        Equal(104, interfaceDefinition.Controls[75].Frame!.Value);
+        Equal(new InterfaceRectangle(480, 463, 3, 1), interfaceDefinition.Controls[200].Bounds);
+        var mainButtons = Sprite.Load(install.DataFile("intrface", "mainbut.spr"));
+        Equal(true, Enumerable.Range(104, 10).All(index => mainButtons.Frames[index].Width == 12 && mainButtons.Frames[index].Height == 17));
+        Equal("Set waypoints.", interfaceDefinition.LabelFor(180)!);
+        Equal("Select target.", interfaceDefinition.LabelFor(181)!);
+        Equal("Too many units", interfaceDefinition.LabelFor(182)!);
+        Equal("Issuing refund", interfaceDefinition.LabelFor(183)!);
         Equal(true, interfaceDefinition.Groups[40].Values.Contains(33));
         Equal(true, interfaceDefinition.Groups[40].Values.Contains(150));
         // Group 40's common controls are the source authority for the App
@@ -1195,8 +1731,10 @@ Check("original tech tree gates executable-footprint building drops", () =>
         // DPY category, rather than the ordinary command acknowledgement.
         Equal(new[] { 104 }, sounds.For(6, "DPY").ToArray());
         Equal(new[] { 98 }, sounds.For(14, "DPY").ToArray());
-        // Secondary-effect weapon sounds corroborate the non-slot candidate
-        // bindings without claiming an unrecovered command executor.
+        // State 18 uses weapon owners 50/51; their GUN lists select the
+        // dedicated second-fire samples.
+        Equal(new[] { 173 }, sounds.For(50, "GUN").ToArray());
+        Equal(new[] { 174 }, sounds.For(51, "GUN").ToArray());
         Equal("SOUND/CY2NDFI.WAV", sounds.Sounds[173].RelativePath);
         Equal("SOUND/PSY2NDFI.WAV", sounds.Sounds[174].RelativePath);
         // Both shipped healer records route their contextual action through
@@ -1637,6 +2175,10 @@ Check("faction-selected War rosters complete a local movement order", () =>
         Equal("ZISPFIREA0", animations.PreferredFire(50, 0)!.Candidate.AnimationName);
         var cyborg = entities.Entities.Single(entity => entity.Code == "SARG");
         Equal("SARGFIREA0", animations.PreferredFire(cyborg.Id, 0)!.Candidate.AnimationName);
+        Equal("SARGFIREB0", animations.PreferredFire(cyborg.Id, 0, 1)!.Candidate.AnimationName);
+        Equal("SARGFIREA0", animations.PreferredFire(cyborg.Id, 0, 2)!.Candidate.AnimationName);
+        var psyRaider = entities.Entities.Single(entity => entity.Code == "PSYC");
+        Equal("PSYCFIRE0", animations.PreferredFire(psyRaider.Id, 0, 99)!.Candidate.AnimationName);
         Equal("BARRSTAND0", animations.Preferred(3)!.AnimationName);
         var trooperFire = animations.PreferredFire(0, 0) ?? throw new InvalidOperationException("TRSC FIRE family missing.");
         Equal("TRSCFIREA0", trooperFire.Candidate.AnimationName);
@@ -1652,6 +2194,10 @@ Check("faction-selected War rosters complete a local movement order", () =>
         Equal("TURRDEPLOY0", turretDeploy.Candidate.AnimationName);
         var xenoDeploy = animations.PreferredDeploy(9, 0) ?? throw new InvalidOperationException("XENO DEPLOY family missing.");
         Equal("XENODEPLOY0", xenoDeploy.Candidate.AnimationName);
+        var exploiterRetract = animations.PreferredRetract(6, 0) ?? throw new InvalidOperationException("EXPL RETRACT family missing.");
+        Equal(true, exploiterRetract.Candidate.AnimationName.StartsWith("EXPLRETRACT", StringComparison.OrdinalIgnoreCase));
+        var slugRetract = animations.PreferredRetract(14, 0) ?? throw new InvalidOperationException("SLUG RETRACT family missing.");
+        Equal(true, slugRetract.Candidate.AnimationName.StartsWith("SLUGRETRACT", StringComparison.OrdinalIgnoreCase));
     });
 
     Check("menu bitmap font uses shipped metrics", () =>

@@ -1,64 +1,140 @@
 # Special-command dispatch boundary
 
-Status: partial executable trace of the installed `dc.exe`; this document
-records what is known without assigning generic packet types to a UI ability.
+Status: statically recovered from the installed `dc.exe` and implemented in
+the deterministic engine for ground attacks and commander transports.
 
-## Generic dispatcher
+## UI dispatch and packet
 
-`dc.exe` `0x43d818` reads the first byte of a queued packet, bounds it through
-`0x15`, and dispatches it through the 22-entry jump table at `0x43d7bc`.
-This proves that the original world command stream uses compact typed packets.
-It does **not** identify which packet, if any, is emitted by the contextual
-Napalm/Disease UI buttons.
+The predicate at `0x4365d0` recognizes controls 144 (**Napalm Attack**), 145
+(**Disease Attack**), 146 (**Ground Attack**), 197 (**Drop Ship**), 143 (the
+generic/mixed sentinel), and 198 (**Saucer**). Each calls `0x408ed0` with mode
+2, which stores target mode 2 at UI state `+0x7c6`.
 
-The helper area at `0x40c13a`–`0x40c406` constructs packets whose leading type
-bytes include 9, 10, 12, 13, and 15 before submitting them through queue helper
-`0x421648`. Existing production research has direct evidence for the type-10
-emitter at `0x40c168`, but that evidence must not be generalized to the two
-special abilities.
+On the next world click, `0x409896` converts the pointer to an exact 8.8 cell
+centre, calls packet constructor `0x409124`, and clears the mode. The compact
+packet sent through `0x421770` is:
 
-## Dispatcher handler boundary
+| Field | Size | Meaning |
+| --- | ---: | --- |
+| opcode | 1 byte | `0x1b` |
+| team | 1 byte | issuing team from world `+0x7d1c` |
+| X | signed 16-bit | ground target X |
+| Z | signed 16-bit | ground target Z |
 
-The recovered table is useful as a *boundary map*, rather than as a command
-name table. Its index is the packet type and its entries are executable
-handlers:
+This is a coordinate attack, not an actor-target command.
 
-| Type | Handler |
-| ---: | ---: |
-| 0–4 | `0x43d840`, `0x43d91f`, `0x43e18b`, `0x43d96c`, `0x43d85e` |
-| 5–9 | `0x43daf7`, `0x43dacc`, `0x43d9aa`, `0x43d9d0`, `0x43da8d` |
-| 10–14 | `0x43e08d`, `0x43d877`, `0x43d900`, `0x43dda3`, `0x43dc3e` |
-| 15–19 | `0x43e349`, `0x43e0fe`, `0x43e3c7`, `0x43e463`, `0x43e1b1` |
-| 20–21 | `0x43da31`, `0x43da6f` |
+## Handler and actor state
 
-Type 10's handler scans the active-unit array using its two serialized identity
-bytes and then calls `0x43d764`; this is the downstream boundary recorded for
-the separately evidenced troop-production route. The nearby constructors
-cannot be named from packet shape alone: they share the queue helper and the
-dispatcher supports many unrelated state, unit, and team operations.
+The opcode-`0x1b` handler at `0x41d06c` reads team/X/Z, scans the 0x320 actor
+array for actors selected by that team, and requires entity runtime byte
+`+0x10c`. Matching actors receive state `0x12` (18) and store X/Z at actor
+`+0xa6/+0xa8`.
 
-In particular, neither frame 72 nor frame 73 occurs as a direct immediate in
-the executable command code. Those frame values come from the external UI
-definition loaded at runtime, so a static constant search cannot recover their
-callback. A runtime breakpoint/capture at `0x421648` while pressing each
-researched special button is the smallest next experiment.
+The `gamestat` loader at `0x43bab4` maps source values 28 and 29 to runtime
+`+0x108` and `+0x110`, then derives `+0x10c = (+0x108 != 0)`. Consequently:
 
-## Why the ability remains disabled
+- value 28 is the native ground-special capability/gate source;
+- value 29 is the exact special weapon ID;
+- SARG (entity 4) resolves weapon 50;
+- PSYC (entity 12) resolves weapon 51.
 
-- The original `intrface/maine` and `bdf.txt` establish the ownership, icon,
-  research gates, and labels of the Cyborg cruise-missile/Napalm and
-  Psy-raider virus actions.
-- `weapstat.txt` and `sound2.dat` give data-supported candidate effect records
-  50 (`CY2NDFI.WAV`) and 51 (`PSY2NDFI.WAV`).
-- No direct call edge currently ties either source UI event to a packet
-  constructor, candidate weapon, ground/actor target, or cooldown state.
+The HUD resolver at `0x436604` masks value 28 to six bits and indexes the
+control table at `0x436580`:
 
-Therefore the compiled port may display tech readiness and candidate data, but
-must not emit a guessed `WorldCommand` or make either ability executable.
+| Low-six-bit value | Control | Meaning |
+| ---: | ---: | --- |
+| 1 | 144 | Napalm Attack |
+| 2 | 145 | Disease Attack |
+| 3 | 146 | Ground Attack |
+| 4 | 197 | Drop Ship |
+| 5 | 143 | generic/mixed sentinel |
+| 6 | 198 | Saucer |
 
-## Next evidence required
+This direct mapping supersedes the earlier candidate-only inference. BARR (3)
+and ATRIL (11) own Ground Attack with weapon 0. Human commander IDs 70/71/72
+own Drop Ship with weapons 57/58/59, while Gray commander IDs 74/75/76 own
+Saucer with weapons 60/63/64. Lieutenant IDs 69/73 do not own either transport
+command.
 
-Trace a click on button 72 or 73 through the original UI callback to the
-packet constructor, then follow that packet through `0x43d818`. The result must
-identify command type, payload layout, validation/gating, target representation,
-and effect creation before a deterministic engine intent is added.
+## State-18 execution
+
+State 18 dispatches through table `0x4792b8` to `0x417ec8`. It reads the
+value-29 weapon, compares squared 8.8 distance to `weapon.range² << 16`, and
+uses the normal movement path when out of range. The queued-state executor at
+`0x418028` additionally requires the SARG or PSYC team ability state to equal
+2 (the completed Napalm/Virus research chain).
+
+When ready, the executor temporarily substitutes weapon 50/51 into the
+actor's active weapon slot, calls common ground-fire routine `0x412d00` with
+the stored coordinate, and restores the ordinary weapon. The shared routine
+therefore owns projectile creation plus the ordinary weapon rate, burst, and
+reload fields. Weapon owner 50/51 resolves its GUN sound through `slist.dat` to
+sound 173 `CY2NDFI.WAV` or 174 `PSY2NDFI.WAV`.
+
+## Projectile modes and transport payloads
+
+The weapon loader at `0x43b784..0x43b7dd` stores the penultimate numeric
+source column at weapon byte `+0x44`; common fire reads that byte at `0x413130`
+and the projectile constructor stores it at projectile byte `+0x1e`. It is the
+`ProjectileMode`. The final source column is stored at weapon `+0x28` and is
+retained as `PostFireReset`.
+
+Impact resolver `0x441bec` treats mode 4 as the Napalm/Disease special-effect
+path. Modes 5/6/7 construct cumulative Human reinforcement payloads before
+calling `0x418f4c`: two entity-0 Security Troops; then one entity-2 Reaper;
+then one entity-3 Thunderbolt. The helper creates entity 92 `DROP` as the
+Human transport presentation.
+
+Modes 8/9/10 use radii 4/6/8. Helper `0x416f54` scans at most nine hostile,
+armed, non-commander actors; the resolver groups them in threes and calls
+`0x418f4c` once per group, producing entity 93 `SAUC`. Thus a single packet
+may create multiple Saucer deliveries.
+
+## Port boundary
+
+`GroundSpecialAttackIntent` retains the exact cell target. The simulation
+validates the source capability, source weapon, completed research item
+(Human 80 or Gray 54), map bounds, and installed weapon record. It turns and
+moves the actor until the strict native range test passes, fires one
+ground-target projectile through shared cooldown state, and applies the
+authored `boomstat` area template at the target cell even if no actor occupies
+that cell.
+
+The compiled HUD enables frame 72/73 only after its faction's research is
+complete and exposes Ground Attack, Drop Ship frame 125, and Saucer frame 126
+for their recovered owners. Transport packet impacts use the recovered Human
+payloads and Gray radius/eligibility/grouping rules and now create an
+engine-owned entity-92/93 lifecycle rather than resolving immediately. Helper
+`0x4182e8` and update `0x4183b8` establish 50-tick vertical segments with
+`height = base + 3*t*t`: base `0x258` for Drop Ship and `0x4b0` for Saucer.
+Creation at `0x41906f..0x4190e5` independently offsets X and Z by exactly one
+cell in either direction. State-21 handler `0x418a48` processes one payload
+entry per actor update, queues ascent when finished, and removes the transport
+after its ascent. The deterministic engine and renderer implement those
+phases, heights, offsets, delivery cadence, and cleanup. When a victim is more
+than `0x100` Manhattan raw units away, the port now mirrors the state-21 call
+to `0x412388`. Native bearing helpers `0x4413a0`/`0x4121a0` reduce an integer
+X/Z ratio through the arctangent table to a full 8-bit bearing. Command 4 first
+turns the entity from its value-22 initial facing 216 by authored turn speed 10
+along the shortest wrapped arc. Command 5 then uses `0x441504`'s 256-bearing
+sine vector, projected distance divided by movement speed 50, and signed 8.8
+updates until state 21 resumes at the exact victim position. The Gray `0xff`
+payload header consumes one update before victim processing, as native. Only
+parity with the executable's shared random-table sequence remains open here.
+
+## Firing animation variants
+
+There is no special-only FIREB selection. Loader `0x43b970` builds the entity
+fire pointer array: plain `FIRE` occupies slot zero, `FIREA` replaces slot zero
+when present, then `FIREB` and `FIREC` append. At `0x412e13`, the common fire
+routine consumes a random value modulo entity runtime `+0xe4` and selects the
+corresponding pointer from `+0xa0`. Because state 18 calls this same routine
+after its temporary weapon substitution, SARG ordinary and Napalm shots both
+choose between FIREA/FIREB; PSYC has one plain FIRE family.
+
+The port now retains a deterministic variant roll in each `WeaponFireEvent`
+and resolves it through the same loader ordering. Exact synchronization with
+the original shared 256-entry random stream remains open.
+
+Still open: exact projectile scatter/lifetime integration inside `0x441710`
+and whether the original area resolver permits any friendly-fire exceptions.

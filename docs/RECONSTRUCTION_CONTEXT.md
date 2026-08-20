@@ -18,8 +18,11 @@
 - SCN entity-40 vent records now become deterministic Petra-7 runtime objects;
   their fifth field is retained as the established independent cycle interval.
   The compiled Deploy command accepts Human `EXPL` and Gray `SLUG`, routes one
-  to a free adjacent cell when necessary, then atomically attaches it to the
-  vent. A mobile/stop/attack order detaches it; one harvester may own a vent.
+  onto the vent's exact cell, waits the executable-recovered 50-tick attachment
+  handshake, then atomically attaches it. The deployed record's zero movement
+  speed is now authoritative, so Stop/move cannot silently detach it. Pressing
+  its contextual control or Enter executes the proven EDPLY/SDPL reverse
+  transition and restores mobility; one harvester may own or prepare on a vent.
   While attached, the renderer selects the data-resolved `EDPLY` (Human) or
   `SDPL` (Gray) mining-tower form while retaining the original mobile actor
   identity for economy and command ownership. The simulation owns the resulting
@@ -33,39 +36,70 @@
   native P7 gain constants and exact phase duration remain unrecovered:
   current 15-tick pulses, +1 passive P7, +4 deployed-vent P7, and 900-tick
   half-days are explicit provisional rules rather than claimed executable fact.
+- Human 10 and Alien 11 campaign text establishes that a deployed S.A.R.G.E.
+  or Gorrem near an enemy mining unit intercepts 50% of its resource income,
+  has long range, and does not require sight. The deterministic engine now
+  applies that split on the attached-harvester pulse. Its 12-cell Chebyshev
+  range and nearest/lowest-instance-ID non-stacking arbitration are explicit
+  provisional policies pending the exact executable distance routine.
 - `intrface/maine` explicitly declares its read-only “days counter” as text
   control 234 at `(613,433)`. The compiled HUD renders the deterministic count
   of completed full day/night pairs at that native location; phase text remains
   a port diagnostic until the original dial-update routine is traced.
 - The native-scale gameplay HUD presents the live local P7 balance and phase,
   reports each Deploy outcome, and labels a selected harvester as either
-  `EN ROUTE` or `ATTACHED` to its vent. Build, production, and research buttons
+  `EN ROUTE`, `DEPLOYING`, or `ATTACHED` to its vent. Build, production, and research buttons
   use the engine's same P7/prerequisite eligibility result for their enabled
   state; the UI remains an intent adapter and does not mutate economy state.
   `slist.dat` explicitly supplies `DPY` deploy sounds for Human Exploiter (6)
   and Gray Slug (14); the app plays those only on the authoritative `Attached`
   deployment event, not on an unconfirmed right-click request.
+- The selected-unit identity is placed in `maine` text control 79 at
+  `(520,404)`, corroborated by the original selected-Trooper capture. Its
+  authored width is 15 characters. Executable dispatcher `0x4322d8` proves
+  that waypoint/target/refund status replaces the idle identity in this same
+  control; the compiled HUD follows that shared role. The earlier always-visible name/stat lines
+  in controls 204/203 were port guesswork and are now restricted to F12
+  diagnostics while their original executable writers remain unresolved. See
+  `docs/reverse-engineering/gameplay-hud.md` for the evidence and reproduction
+  commands. Executable code does prove control 75 is the P7 counter, so its
+  cyan value is not presented as selected-unit health.
 - `maine` command group 40 also explicitly labels its shared deploy slot as
   **Deploy Mine** (frame 69). `gamestat.txt` pairs Human `ENGI` (43) and Gray
   `SLOM` (44) with faction-specific static `HMINE` forms (45/46), and
   `slist.dat` supplies their dedicated `DPY` sounds. The port now maps that
-  control for an Engineer/Sloom-only selection and creates the matching mine
-  as a deterministic occupied ground actor on a clear target cell. Mine
+  control for an Engineer/Sloom-only selection. Executable transition routine
+  `0x417b0c` proves IDs 43/44 change in place to ID +2 (HMINE 45/46), retaining
+  the same actor and cell while moving from the prior movement grid into world
+  mine grid `+0x1004`. The port follows that model with a dedicated third
+  `MineOccupancy`; it no longer spawns an extra mine at a chosen cell. Mine
   records resolve the explicitly named `weapstat.txt` weapon 38 (class 6,
-  range 1), so an armed mine now performs a deterministic nearest-hostile scan
-  at or within that decoded range, fires through the normal projectile/matrix
-  damage pipeline, then self-destructs. The native scan cadence, arming delay,
-  and multi-shot interpretation are still unresolved; this is a clearly
-  bounded port policy rather than a claim of frame-perfect mine behavior.
+  rate 150, damage 1300, range 1, boom template 2). Common fire `0x41310f`
+  recognizes IDs 45/46 and subtracts 300 live health per shot with a floor of
+  one before following the ordinary projectile/cooldown path. From the shipped
+  800 health this yields three triggers; the third mine-area splash removes the
+  one-health source through ordinary damage. The port now waits the recovered
+  state-13 50 ticks before transforming, reports trigger/rearm state in the
+  debug HUD, and implements that native integrity lifecycle. Idle selector
+  `0x435570` additionally proves fixed offset-table order, ground/alternate/mine
+  layer order, a nonzero damage-matrix gate, armed-over-unarmed priority, and
+  area-cluster scoring (+10 hostile, -15 cooperative). The port applies those
+  rules to the mine's triggerable same/cardinal cells. Only the persistence of
+  a state-1 lock on a farther actor that the static mine cannot pursue remains
+  outside the direct trigger adapter.
 - The shared group-40 slot is now contextual in the HUD rather than always
   labelled `DEPLOY`: it shows its original frame/label for resource deploy
   (74), Deploy Mine (69), Heal Units (122), Deploy Turret (68), Inspire
   Troops (121), and Steal Money (75) when the selected unit identity is
   unambiguous. Engineer/Sloom, harvester, tower-builder, and healer entries
-  are enabled because their engine paths exist. The remaining recovered
-  controls stay visibly disabled and explain their missing target/state rule
-  on click; this preserves native UI evidence without inventing inspiration
-  or theft mechanics.
+  are enabled because their engine paths exist. Commander Inspire is also
+  enabled: state-13 completion `0x417caa` calls area helper `0x417168` after
+  50 ticks, applying a 20–35 counter to same-team armed occupants up to the
+  commander's rank limit (6/8/10/12 occupancy hits). Actor update decrements
+  that counter once per 16 world ticks and common fire uses it as an
+  exact-center aim lock. The port exposes cast and inspired countdown state in
+  unit UI and now uses `boomstat.txt`'s decoded trailing 3x3 weights for
+  non-inspired area-shot scatter.
   The identity/frame mapping now lives in Engine `UnitSpecialCommandCatalog`,
   with a regression check for the paired Human/Gray codes. This makes the HUD
   a projection of recovered unit data instead of a second, drifting set of
@@ -76,32 +110,64 @@
   contains class-7 healing-ray resistance. The native collision routine at
   `dc.exe` `0x413e21` now recovers the amount exactly: it restores
   `floor(36 * mbullet[7, targetArmorClass] / 256)`, capped at missing health.
-  The port enables cooperative unit healing with that formula and the native
-  sound/cursor. Target range currently uses the healer's decoded sight radius;
-  native range, cadence, and structure-target rules remain untraced.
+  The separate executor at `0x413c20` scans both ordinary occupancy layers in
+  expanding squares through exact Chebyshev radius 7, admits only actors whose
+  team byte equals the healer's, and triggers state 13 with a 50-tick timer if
+  anything was restored. The contextual button now executes that immediate
+  same-team area heal with the native sound and shared firing animation; it no
+  longer enters the disproven single-target cursor mode. Native charge
+  charge is actor byte `+0x0a`: initialized to 64, requires at least 4, clears
+  to zero after the first successful target, and recovers by source value 25
+  every 32 world ticks (1 for both healers) up to 255. The HUD exposes this
+  authoritative value; only the native button-disable predicate remains open.
 - `maine` declares the sixth group-40 position `(518,317)` for contextual
   specials. Its companion `bdf.txt` maps button 72 to the Cyborg cruise-missile
   action and 73 to the Psy-raider virus action; the compiled HUD therefore
   shows **Napalm Attack** for `SARG` and **Disease Attack** for `PSYC`, rather
-  than the earlier generic frame-2 Second Attack guess. Both remain disabled:
-  their weapon/effect, research gate, target rule, and cooldown are not yet
-  established. `sarg.fin` `FIREA`/`FIREB` and `psyc.fin` `FIRE` are available
-  presentation evidence only. The generic Second Attack/Ground Attack entries
-  have no verified unit owner. The engine-owned `UnitSecondaryCommandCatalog`
-  preserves these distinctions for later tracing.
+  than the earlier generic frame-2 Second Attack guess. Their native path is
+  now recovered: controls 144/145 arm target mode 2, constructor `0x409124`
+  emits coordinate packet `0x1b`, and actor state 18 reads `gamestat` value 29
+  as weapon 50/51. The compiled HUD enables the command after item 80/54,
+  targets an exact ground cell, and uses ordinary weapon cadence plus the
+  authored area template. The generic Second Attack/Ground Attack entries
+  still have no verified unit owner.
 - The command identities are intentionally not just filename guesses. The
   regular Human `SARG` and Gray `PSYC` FIN files contain their `DEPLOY`
   transitions directly into `SARGSTL`/`PSYCSTL` static forms, so **Steal
   Money** belongs to the regular units, not the resulting forms. Conversely,
   `gamestat` gives Human/Gray commander ranks a distinct entity-ID range
   69–76 while reusing `TRSC`/`GRAY` art codes; that exact range owns the
-  recovered **Inspire Troops** slot. Neither action is enabled until its
-  target, transfer/bonus, duration, and cadence are traced.
+  recovered **Inspire Troops** slot. Steal Money is enabled using the campaign
+  50% interception contract above. Inspire is enabled from executable evidence:
+  it finishes a 50-tick state-13 cast, scans same-team armed occupants, and
+  installs the recovered randomized exact-aim countdown.
   [`reverse-engineering/unit-special-commands.md`](reverse-engineering/unit-special-commands.md)
   is the detailed per-command evidence and implementation ledger.
   When the asset-name debug overlay is enabled, each live actor now also shows
   its recovered contextual action label, making owner/form mapping directly
   inspectable on a gameplay map.
+- Executable click dispatch at `0x43363c` sends controls 37 and 138–142 through
+  `0x409418` as packet opcode `0x1a`. That packet carries the issuing team but
+  no button, coordinate, or target. Handler `0x41cf8c` selects actors whose
+  runtime `+0x104` is nonzero; loader `0x43bab4` maps that field exactly to
+  `gamestat.txt` value 27. Actor handler `0x416784` then maintains entity-
+  specific state 13 on a 50-tick timer. This proves a shared immediate-special
+  state path and warns against assigning command ownership from labels alone.
+  In particular, BEON/ZISP and EXPL/SLUG have value 27 zero, so their working
+  heal/vent adapters are not opcode-`0x1a` reconstructions. The vent path is
+  now separately established by target dispatch at `0x414970`: clicking
+  entity 40 calls `0x413490`, which reads the ground-grid occupant at the
+  vent's exact cell, accepts EXPL/SLUG 6/14, stores a `0x32` timer, and finally
+  changes that same actor to EDPLY/SDPL 47/48.
+  Keyboard dispatcher `0x40a546` also routes line-feed/Enter to `0x409418`.
+  The compiled input adapter now exposes Enter for the authoritative tower,
+  mine, and stealing in-place transitions, plus EDPLY/SDPL and deployed-stealer
+  retraction when the active form retains a nonzero immediate-special code.
+  Clicking the contextual mine button
+  dispatches that same immediate intent rather than entering a map-target mode.
+  The distinction is data-backed: deployed `T`/`XDEPLOY` and HMINE records have
+  value 27 equal to zero and remain one-way, while EDPLY/SDPL carry 7 and
+  SARGSTL/PSYCSTL carry 5.
 - Tower deployment is now engine-backed rather than grouped with the still
   unresolved abilities. `gamestat` supplies Human builder `TURR` and Gray
   builder `XENO` as mobile forms, plus their same-faction deployed forms `T`
@@ -179,8 +245,8 @@
   Gray item 54 targets entity 12 and is UI ID 78 (**Virus Sac** / virus-ability
   icon 45). Both carry packed weapon-category/level-2 fields but are authored
   abilities, not `WPN+2`. The decoder records their capability completion
-  without selecting weapon slot 2; each contextual command reports missing
-  research separately and remains disabled until its native executor is traced.
+  without selecting ordinary weapon slot 2. Completion now enables the
+  recovered state-18 ground attack while leaving normal weapon upgrades intact.
 - The gameplay research HUD now follows the original `maine` per-UI-ID grid
   rather than showing a sorted four-item subset. Each shared physical slot
   presents its first unfinished dependency (then the next level/ability once
@@ -208,19 +274,26 @@
   `<CODE>STAND…` animation names found across the FIN corpus. Filenames remain
   packaging evidence only; ambiguous candidates are retained and the preferred
   candidate favors an exact code filename. Gameplay draws these actors using
-  FIN logical origins and ordinary world Z/X ordering. F3 exposes the resolved
-  entity ID, code, and FIN for visual auditing.
+  FIN logical origins and ordinary world Z/X ordering. F12 exposes the resolved
+  entity ID, code, and FIN for visual auditing; Shift+F12 toggles PTH regions.
 - The gameplay camera is presentation state, pans by 16 screen pixels, clamps
   to decoded MAP dimensions, and only invalidates its terrain viewport cache.
-  Arrow keys are intercepted before WinForms control navigation. Left-dragging
-  past four pixels captures the D3D surface and pans without generating a
-  selection click on release.
-  Current left-click selection uses composed FIN alpha as an isolated UI hit
-  test and draws a provisional cyan marker. Selection remains presentation
-  state, not a simulation mutation. Shift-drag is the port's explicit adapter
-  for box selection so ordinary left-drag panning remains available; inside
-  that adapter the executable-confirmed gesture promotion is preserved: more
-  than 45 Manhattan pixels or 1,500 ms.
+  Arrow keys are intercepted before WinForms control navigation. Normal left
+  drag is the native selection gesture; middle drag remains a port camera-pan
+  convenience alongside edge, minimap, and keyboard navigation. The native
+  gesture becomes a box after more than 45 Manhattan pixels or 1,500 ms,
+  replaces selection normally, Shift-toggles, and caps storage at 800 actors.
+  Rendering, alpha-exact click selection, and visible-body box selection share
+  the same active FIN-frame projection. The three native selection grids are
+  executable-mapped as ground, air, and mines: Alt excludes ground, Ctrl
+  excludes air, and the HMINE-only mine layer remains included by either.
+  A post-scan native owner predicate prefers local actors when a box contains
+  both, but retains a remote-only selection for HUD inspection. Command paths
+  still consume only locally controllable actors. Selection remains
+  presentation/input state, not a simulation mutation.
+  Native F1-F10 viewport-wide type selection is also mapped for the ten paired
+  Human/Gray identity groups, including all eight commander-rank records on
+  F1. Shift toggles these sets and Ctrl/Alt reuse the native layer filters.
 - The compiled surface now renders the recovered `animate/curs.fin` cursor in
   place of the generic OS cursor, preserving each composed FIN hotspot offset. It
   selects data-named `DEFAULT`, `UNITSELECT`, `DRAWBOX`, `MOVE`, `ATTACK`, and
@@ -298,8 +371,10 @@
   The installed Cyborg `SARG` asset has both A and B families; the map’s
   ordinary fire path therefore stays on `SARGFIREA*` rather than relying on
   filesystem/source order to choose a sequence. This is a presentation policy
-  derived from asset family ordering, not evidence that it implements the
-  disabled Napalm Attack command.
+  derived from the executable loader at `0x43b970`: FIREA occupies variant slot
+  zero and FIREB/FIREC append. Common fire randomly selects modulo that count,
+  including state 18, so SARG ordinary and Napalm shots both alternate across
+  the A/B families rather than assigning FIREB exclusively to Napalm.
 - Local unit control is now engine-driven for campaign team 0: selection only
   submits future-tick `MoveIntent` commands, `ScenarioSimulation` owns their
   persistent target/order state, segments paths beyond the 32-step buffer, and
@@ -317,8 +392,12 @@
   provisional income rule is documented below.
 - `maine` also declares **Last Msg** `(4,460,20×19)` / **Next Msg**
   `(24,460,20×19)` buttons using `mainbut` frames 40 and 57. The compiled HUD
-  now renders those source controls and retains the last 32 distinct gameplay
-  status messages for browsing. This is deliberately a port message-history
+  now renders those source controls and retains the last 16 distinct gameplay
+  status messages for browsing in the authored 61-character control 148 at
+  `(50,462)`. Native message state initializes 16 slots and its click dispatcher
+  proves button 147 moves backward while 149 moves forward. Adjacent control
+  200 is left blank until its writer is recovered. P7 is rendered separately through native `scount`
+  control 75 / `mainbut` frame 104 at `(524,456)`. This is deliberately a port message-history
   adapter: the executable's message-buffer storage and mission-dialogue link
   are still untraced.
 - The recovered Game Options **Objectives** control at `(518,317)` now opens
@@ -345,40 +424,49 @@
   shot increments actor byte `+0x34`; if decoded weapon field `+0x20` is
   positive and that counter reaches it, the counter resets and the following
   delay uses field `+0x24` (reload). Otherwise it uses field `+0x08`
-  (rate-of-fire). `WeaponDefinition.Shots` and `Reload` now drive that exact
-  branch in the authoritative simulation. Multi-muzzle emission, scatter, and
-  exact zero-delay behavior remain separate unresolved firing details.
+  (rate-of-fire). The shipped header names those source columns `reload` and
+  `magic_chewing`; `WeaponDefinition.BurstShotLimit` and `BurstReloadTicks`
+  expose their executable-proven meanings. Multi-muzzle emission and exact
+  zero-delay behavior remain separate unresolved firing details.
   The selected-unit target readout exposes this engine state as `READY` or
   `RELOAD <ticks> B<current>/<limit>` while a target is in range. This is a
   port diagnostic, not a claim that the original HUD showed these fields.
-- Resolved `BULLET` FIN effects now advance one frame per authoritative
-  projectile simulation step, using the projectile's tracked elapsed lifetime
-  rather than a renderer clock. The native projectile duration itself remains
-  provisional; this change only removes the former frozen-first-frame visual.
+- Resolved `BULLET` FIN effects advance from authoritative projectile age.
+  Main world update `0x419C0E` calls projectile dispatcher `0x44293C` once per
+  tick, and that dispatcher performs exactly four `0x4423F8` projectile
+  substeps; the compiled simulation now preserves that 4:1 cadence.
 - Weapon prefixes now resolve their separate `EXPLODE`/`EXPL` FIN families as
   optional impact effects. On an authoritative projectile-impact event, the
-  renderer plays that family at the target's live fixed-point position; absent
+  renderer plays that family at the authoritative impact position; absent
   assets still use the ordinary HIT/death paths. Effect selection is data
   driven and does not treat the Exploiter's `EXPL` identity as an explosion.
-  Current impact placement uses the target's live position because the
-  provisional linear projectile step can overshoot a close target; recovering
-  the native collision/lifetime boundary is required before promoting a
-  projectile endpoint to the effect position.
-- `weapstat.txt` has eleven numeric columns after its sprite token. Its own
-  header names column nine `magic_chewing`, so `WeaponDefinition.MagicChewing`
-  preserves that source identity without claiming a runtime effect. Earlier
-  port code silently discarded the final two. Column ten is now recovered as
-  `AreaEffectTemplateId`: every nonzero value is a valid `boomstat.txt` record,
-  such as artillery weapon 10 → Arty template 1 and weapon 50 → template 4.
-  `AreaEffectCatalog` preserves each template's named effect layers, authored
-  radial percentage square, and structurally separate trailing 3×3 square.
-  The latter's purpose, plus the native area-damage application path, remain
-  untraced; column eleven remains `UnknownField11`. This is a data boundary,
-  not an activation of area damage.
+  Ordinary shots probe occupancy after each substep and may hit an intervening
+  hostile. Nonzero boom-template shots retain their launch-time aimed cell and
+  detonate there after their trajectory count instead of following a moving
+  actor.
+- `weapstat.txt`'s old `shots`, `reload`, and `magic_chewing` labels are not
+  their runtime meanings. Loader `0x43b7a4` stores them at weapon `+0x1c`,
+  `+0x20`, and `+0x24`; fire code uses those fields as boom-template ID,
+  burst-shot limit, and final-burst reload delay. Thus artillery weapon 10
+  resolves Arty template 1, mine weapon 38 resolves template 2, Napalm weapon
+  50 resolves template 10, and Disease weapon 51 resolves template 12.
+  `AreaEffectCatalog` preserves each template's named effect layers and radial
+  damage square. Loader `0x43b596` converts the trailing 3×3 percentages to
+  8.8 weights, and common fire `0x412f19` uses them row-major for aim scatter;
+  active Inspire forces the center instead. The penultimate numeric source
+  column is `ProjectileMode`: the loader stores it at weapon byte `+0x44`, common
+  fire `0x413130` passes it to constructor `0x441710`, and the constructor
+  stores it at projectile byte `+0x1E`. The final source column maps to weapon
+  `+0x28` and remains named `PostFireReset` at the current evidence boundary.
 - The selected-unit stat line now reports data-derived live HP, movement speed,
   effective weapon damage/range, current/opposite-phase sight, and completed
   weapon/armor research levels. Armor level is display-only until the native
   multiplier path can be named.
+  World-space health and target indicators use each active FIN frame's opaque
+  visual bounds, matching selection hit-testing rather than its potentially
+  offset transparent canvas. They render after the unit composite so the unit
+  cannot obscure its own live status. Their exact styling remains a port
+  diagnostic until the native overlay renderer is recovered.
   The bottom HUD exposes the selected entity's `gamestat` health, movement,
   day-sight, and active waypoint count. The authoritative `ActiveMoveOrder`
   now preserves the native eight-waypoint cap and rejects consecutive duplicate
@@ -659,3 +747,56 @@ and networking ahead of the local playable slice.
 
 Detailed evidence remains in `../dc-port-26/docs/`; copy conclusions into this
 document only when the compiled implementation actually depends on them.
+
+## Projectile and splash checkpoint
+
+- `dc.exe` weapon loader `0x43B935` derives projectile maximum age as
+  `((((range << 8) + 0x400) * 2) + 1) / (speed * 2) + 1`; runtime weapon
+  `+0x18` is therefore not the source `magic_chewing` field.
+- Projectile update `0x4423F8` advances 8.8 X/Z/height before probing the new
+  cell. It rejects the source actor and nonzero team relations, so a shot is not
+  locked to its original actor target: an intervening hostile may take the hit,
+  while a miss expires after the derived maximum age.
+- Area resolution `0x441FC5` does not use the alliance matrix. It applies the
+  authored boomstat pattern to every occupied actor and scales only the source
+  actor's exact team by `0x40/0x100` (25%); every different team receives the
+  full pattern value.
+- Main world update calls `0x44293C` once at `0x419C0E`; that dispatcher runs
+  four projectile physics updates and then one surviving-projectile FIN update.
+  The compiled engine now uses the same four-substep/one-animation-step cadence
+  inside each 66 ms world tick.
+- Common fire derives a finite dominant-axis trajectory count only for nonzero
+  boom-template weapons. Ordinary shots receive `-1` and probe occupancy;
+  finite area shots skip interception and detonate at their launch-time aimed
+  cell. Modes 1/4 use the recovered 17-entry table at `0x47A8BC` to write
+  absolute signed 8.8 height every substep. The gameplay renderer projects that
+  authoritative height above the map, and the asset-name overlay reports
+  weapon ID, projectile mode, height, and physics age for visual auditing.
+
+## Unit command-state checkpoint
+
+- `UnitCommandProfiles.DescribeSelection` is the shared engine-side projection
+  for Stop, Move, Attack, Waypoints, and common contextual/secondary slots.
+  Rendering and click dispatch now inspect the complete locally controlled
+  selection through this projection.
+- Ordinary commands remain enabled when any selected actor can execute them;
+  the command executor filters the capable subset. Contextual fifth-slot and
+  secondary sixth-slot actions require one identical recovered definition on
+  every selected actor, preventing mixed-selection UI from silently dropping
+  actors to manufacture an action.
+- `UnitCommandActivation` records `Immediate`, `MapTarget`, or `Pending` in the
+  engine catalog. Harvest, Ground Attack, Napalm/Disease, Drop Ship, and Saucer
+  are map-target commands; mine/tower deployment, healing, stealing, and
+  Commander Inspire are immediate. Drop Ship belongs to Human commander IDs
+  70-72 (weapons 57-59, projectile modes 5-7); Saucer belongs to Gray commander
+  IDs 74-76 (weapons 60/63/64, modes 8-10). Entity 92 `DROP` and 93 `SAUC` are
+  transport outcomes, not command owners. Payload composition, abduction radii,
+  eligibility, and three-actor grouping are implemented. Transport state is
+  engine-owned: 50-tick descent, incremental state-21 payload resolution,
+  50-tick ascent, then cleanup, with native `0x258`/`0x4b0` base heights and
+  one-cell diagonal arrival offsets. Saucer pursuit uses state 21's `0x100`
+  Manhattan threshold, value-22 initial facing 216, command-4 wrapped turning
+  at speed 10, and the full 256-bearing command-5 sine-vector projection at
+  entity speed 50, including integer residue and the exact-target copy on
+  resume. The Gray `0xff` payload-header update is preserved. Only shared-random
+  stream parity remains open in this transport path.

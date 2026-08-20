@@ -17,6 +17,21 @@ their arguments, comparison operators, grouping, and `&&` / `||`. It has no
 state evaluator, so names such as `c`, `S`, `s(...)`, `b(...)`, and `m(...)`
 remain data syntax rather than asserted mission semantics.
 
+The installed corpus also has one bare-value header, `(1)` in `alien08.tro`.
+It is represented as a value node; the reader does **not** treat it as a
+truthy constant or infer what native trigger mode it gates.
+
+Every loaded `ScenarioTrigger` carries that tree as `ParsedCondition`, while
+retaining the original `Condition` text. A condition outside this grammar is
+an explicit opaque node, never a silently repaired or evaluated mission rule.
+The direct parser itself remains strict for callers that require grammar
+validation.
+
+One installed `alien08.tro` header contains `b(1,3)&&==0`, a malformed
+comparison in an otherwise compound condition. It is the sole opaque condition
+asserted by the installed-corpus check; the port preserves its exact source
+text and does not change it to a guessed `==0` expression.
+
 The reader rejects malformed/unterminated blocks and duplicate IDs. Installed
 script-corpus checks prevent later mission work from depending on an accidental
 single-mission interpretation.

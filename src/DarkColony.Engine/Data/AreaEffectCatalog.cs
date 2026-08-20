@@ -4,16 +4,16 @@ namespace DarkColony.Engine.Data;
 
 /// <summary>
 /// One data-defined <c>boomstat.txt</c> area-effect template. The first square
-/// is retained as the authored radial percentage pattern. The second fixed
-/// three-by-three square is structurally distinct in every shipped template,
-/// but its runtime purpose remains untraced.
+/// is the authored radial percentage pattern. Loader 0x43b596 converts the
+/// second fixed three-by-three square to cumulative 8.8 weights; common fire
+/// 0x412f19 uses it to choose the projectile aim offset.
 /// </summary>
 public sealed record AreaEffectTemplate(
     int Id,
     int PatternSize,
     IReadOnlyList<string> EffectNames,
     IReadOnlyList<IReadOnlyList<int>> DamagePattern,
-    IReadOnlyList<IReadOnlyList<int>> UnknownPattern);
+    IReadOnlyList<IReadOnlyList<int>> AimWeights);
 
 /// <summary>Decoder for the installed <c>gamestat/boomstat.txt</c> effect templates.</summary>
 public sealed class AreaEffectCatalog
@@ -48,8 +48,8 @@ public sealed class AreaEffectCatalog
             cursor++;
 
             var damage = ReadSquare(header[1], header[0], "damage");
-            var unknown = ReadSquare(3, header[0], "trailing");
-            if (!templates.TryAdd(header[0], new AreaEffectTemplate(header[0], header[1], effects, damage, unknown)))
+            var aimWeights = ReadSquare(3, header[0], "aim-weight");
+            if (!templates.TryAdd(header[0], new AreaEffectTemplate(header[0], header[1], effects, damage, aimWeights)))
                 throw new InvalidDataException($"Duplicate area-effect template {header[0]}.");
         }
         if (templates.Count != declared)
