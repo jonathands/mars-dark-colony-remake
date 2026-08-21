@@ -121,9 +121,9 @@ mutate authoritative gameplay state.
   remaps, and legacy effects can move into shaders.
 - GPU resources are cached by decoded asset/frame identity and disposed with
   the device. Simulation objects never own GPU resources.
-- The current full-frame upload is a parity bridge, not the final renderer.
-  Remove it after backgrounds, FIN layers, font glyphs, and rectangles are
-  emitted as ordered GPU sprite commands.
+- Backgrounds, terrain, FIN layers, bitmap glyphs, controls, and dynamic
+  primitives are emitted as ordered GPU commands into the native target. A
+  non-presented GDI scratch surface remains only for isolated fallback code.
 
 ## Near-term acceptance sequence
 

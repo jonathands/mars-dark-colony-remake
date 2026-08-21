@@ -596,10 +596,10 @@ and networking ahead of the local playable slice.
 0. **Implemented:** native 640×480 menu host, external GIF backgrounds,
    recovered button rectangles/labels, and initial screen navigation.
    D3D11 device/swap-chain presentation is active and visually launch-tested.
-   The uploaded parity frame is point-sampled by a shader into a native 640x480
-   render target, and that target is point-sampled into the back buffer in a
-   second pass. CPU composition remains only as the input bridge until all menu
-   primitives use the GPU sprite command path.
+   Ordered GPU sprite, tile, glyph, and primitive commands compose directly
+   into the native 640x480 render target, which is point-sampled into the back
+   buffer in a second pass. The former full-frame GDI upload is removed; the
+   retained GDI scratch surface is never presented.
 1. **Implemented in part:** native raw/RLE SPR decoding, VGA palette expansion,
    standard-marker FIN parsing, layered RGBA composition, the 29-frame `DCSS`
    opening, original `LARGEBUTTON`/`MEDBUTTON` animation ranges, campaign race
@@ -613,8 +613,10 @@ and networking ahead of the local playable slice.
    (1,262,544 cells) and four tilesets (4,764 tiles). The exact 32x32 base and
    transparent-overlay compositor, independent horizontal flips, BTS frame-ID
    lookup, and VGA palette expansion render `htrain1` into the confirmed
-   516x458 gameplay viewport under the original HUD. Camera state and GPU tile
-   commands remain next.
+   516x458 gameplay viewport under the original HUD. Camera state now emits
+   cached ordered GPU tile commands for base/overlay layers, retaining the
+   original horizontal-flip and transparent-index-zero rules. Actors, HUD,
+   font glyphs, and gameplay overlays now use the ordered GPU command path.
 3. SCN placements, exact identity mappings, footprints, and render depth.
 4. Compact command queue, PTH routing, local path playback, and occupancy.
 5. Facing, MOVE animation, interpolation, blockage repair, and replanning.

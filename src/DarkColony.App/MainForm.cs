@@ -61,7 +61,11 @@ public sealed class MainForm : Form
     private readonly FixedStepClock _clock;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 15 };
     private readonly Direct3DSurface _surface;
+    private GameCanvas? _activeCanvas;
     private readonly Dictionary<string, Image> _backgrounds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, GpuImage> _gpuBackgrounds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, GpuImage> _gpuColorKeyImages = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<Bitmap, GpuImage> _gpuBitmaps = [];
     private readonly Dictionary<string, AnimationDefinition> _animationDefinitions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Bitmap> _animationFrames = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Point> _animationOrigins = new(StringComparer.OrdinalIgnoreCase);
@@ -77,7 +81,7 @@ public sealed class MainForm : Form
     private int _encyclopediaPreviewFrameOffset;
     private int _encyclopediaPreviewFacingIndex;
     private bool _encyclopediaPreviewPaused;
-    private Bitmap? _terrainPreview;
+    private readonly Dictionary<(uint FrameId, bool FlipHorizontally, bool TransparentZero), GpuImage> _terrainGpuTiles = [];
     private Bitmap? _minimapPreview;
     private ScenarioWorld? _scenarioWorld;
     private ScenarioSimulation? _scenarioSimulation;
@@ -368,7 +372,6 @@ public sealed class MainForm : Form
             foreach (var image in _backgrounds.Values) image.Dispose();
             foreach (var image in _animationFrames.Values) image.Dispose();
             foreach (var image in _fontGlyphs.Values) image.Dispose();
-            _terrainPreview?.Dispose();
             _minimapPreview?.Dispose();
         }
 
@@ -393,10 +396,9 @@ public sealed class MainForm : Form
     {
         if (screen == MenuScreenId.Gameplay && !_resumeGameplayFromStory)
         {
-            _terrainPreview?.Dispose();
-            _terrainPreview = null;
             _minimapPreview?.Dispose();
             _minimapPreview = null;
+            _terrainGpuTiles.Clear();
             _scenarioWorld = null;
             _scenarioSimulation = null;
             _gameplayMap = null;
@@ -739,17 +741,17 @@ public sealed class MainForm : Form
         return copy;
     }
 
-    private void RenderFrame(Graphics graphics)
+    private void RenderFrame(Graphics graphics, GameCanvas canvas)
     {
-        graphics.Clear(Color.Black);
+        _activeCanvas = canvas;
         var background = Background();
         if (_screen == MenuScreenId.Gameplay)
         {
-            DrawGameplayTerrain(graphics);
+            DrawGameplayTerrain(canvas);
             DrawGameplayPathRegions(graphics);
             DrawGameplayVents(graphics);
             DrawBuildingPlacementPreview(graphics);
-            DrawGameplayActors(graphics);
+            DrawGameplayActors(graphics, canvas);
             DrawGameplayFogOfWar(graphics);
             if (background is not null) DrawGameplayHud(graphics, background);
             DrawGameplayMinimap(graphics);
@@ -762,8 +764,7 @@ public sealed class MainForm : Form
         }
         else if (background is not null)
         {
-            graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-            graphics.DrawImage(background, new Rectangle(0, 0, 640, 480));
+            canvas.Draw(GpuBackground(BackgroundName(), background), new Rectangle(0, 0, 640, 480));
         }
 
         if (_screen == MenuScreenId.Main) DrawOpeningLogo(graphics);
@@ -783,28 +784,162 @@ public sealed class MainForm : Form
         {
             DrawEncyclopedia(graphics);
         }
-
+        _activeCanvas = null;
     }
 
-    private void DrawGameplayTerrain(Graphics graphics)
+    private GpuImage GpuBackground(string name, Image background)
+    {
+        if (_gpuBackgrounds.TryGetValue(name, out var cached)) return cached;
+        using var bitmap = new Bitmap(640, 480, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+            graphics.DrawImage(background, new Rectangle(0, 0, bitmap.Width, bitmap.Height));
+        }
+        var data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly, bitmap.PixelFormat);
+        try
+        {
+            var bgra = new byte[Math.Abs(data.Stride) * bitmap.Height];
+            Marshal.Copy(data.Scan0, bgra, 0, bgra.Length);
+            var rgba = new byte[bitmap.Width * bitmap.Height * 4];
+            for (var y = 0; y < bitmap.Height; y++)
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var source = y * Math.Abs(data.Stride) + x * 4;
+                var destination = (y * bitmap.Width + x) * 4;
+                rgba[destination] = bgra[source + 2];
+                rgba[destination + 1] = bgra[source + 1];
+                rgba[destination + 2] = bgra[source];
+                rgba[destination + 3] = bgra[source + 3];
+            }
+            cached = new GpuImage(bitmap.Width, bitmap.Height, rgba);
+            _gpuBackgrounds.Add(name, cached);
+            return cached;
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+    }
+
+    private GpuImage GpuColorKeyImage(string name, Image source)
+    {
+        if (_gpuColorKeyImages.TryGetValue(name, out var cached)) return cached;
+        using var bitmap = new Bitmap(640, 480, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+            graphics.DrawImage(source, new Rectangle(0, 0, bitmap.Width, bitmap.Height));
+        var data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly, bitmap.PixelFormat);
+        try
+        {
+            var bgra = new byte[Math.Abs(data.Stride) * bitmap.Height];
+            Marshal.Copy(data.Scan0, bgra, 0, bgra.Length);
+            var rgba = new byte[bitmap.Width * bitmap.Height * 4];
+            for (var y = 0; y < bitmap.Height; y++)
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var sourceOffset = y * Math.Abs(data.Stride) + x * 4;
+                var destination = (y * bitmap.Width + x) * 4;
+                var red = bgra[sourceOffset + 2];
+                var green = bgra[sourceOffset + 1];
+                var blue = bgra[sourceOffset];
+                rgba[destination] = red;
+                rgba[destination + 1] = green;
+                rgba[destination + 2] = blue;
+                rgba[destination + 3] = red == 0 && green == 0 && blue == 0 ? (byte)0 : bgra[sourceOffset + 3];
+            }
+            cached = new GpuImage(bitmap.Width, bitmap.Height, rgba);
+            _gpuColorKeyImages.Add(name, cached);
+            return cached;
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+    }
+
+    private GpuImage GpuBitmap(Bitmap bitmap)
+    {
+        if (_gpuBitmaps.TryGetValue(bitmap, out var cached)) return cached;
+        var data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            var bgra = new byte[Math.Abs(data.Stride) * bitmap.Height];
+            Marshal.Copy(data.Scan0, bgra, 0, bgra.Length);
+            var rgba = new byte[bitmap.Width * bitmap.Height * 4];
+            for (var y = 0; y < bitmap.Height; y++)
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var source = y * Math.Abs(data.Stride) + x * 4;
+                var destination = (y * bitmap.Width + x) * 4;
+                rgba[destination] = bgra[source + 2];
+                rgba[destination + 1] = bgra[source + 1];
+                rgba[destination + 2] = bgra[source];
+                rgba[destination + 3] = bgra[source + 3];
+            }
+            cached = new GpuImage(bitmap.Width, bitmap.Height, rgba);
+            _gpuBitmaps.Add(bitmap, cached);
+            return cached;
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+    }
+
+    private void DrawGameplayTerrain(GameCanvas canvas)
     {
         if (_installation is null) return;
         try
         {
             if (_gameplayMap is null || _gameplayTileset is null || _gameplayPath is null || _scenarioWorld is null) return;
 
-            if (_terrainPreview is null)
+            var firstCellX = Math.Max(0, _cameraX / TerrainRasterizer.TileSize);
+            var firstCellY = Math.Max(0, _cameraY / TerrainRasterizer.TileSize);
+            var lastCellX = Math.Min(_gameplayMap.Width - 1, (_cameraX + 516 - 1) / TerrainRasterizer.TileSize);
+            var lastCellY = Math.Min(_gameplayMap.Height - 1, (_cameraY + 458 - 1) / TerrainRasterizer.TileSize);
+            for (var cellY = firstCellY; cellY <= lastCellY; cellY++)
             {
-                var image = TerrainRasterizer.RenderViewport(_gameplayMap, _gameplayTileset, _cameraX, _cameraY, 516, 458);
-                _terrainPreview = BitmapFromRgba(image.Width, image.Height, image.Rgba);
+                for (var cellX = firstCellX; cellX <= lastCellX; cellX++)
+                {
+                    var cell = _gameplayMap[cellX, cellY];
+                    DrawGameplayTerrainTile(canvas, cell.BaseTileId, cellX, cellY, cell.FlipBaseHorizontally, transparentZero: false);
+                    if (cell.OverlayTileId != 0)
+                        DrawGameplayTerrainTile(canvas, cell.OverlayTileId, cellX, cellY, cell.FlipOverlayHorizontally, transparentZero: true);
+                }
             }
-
-            graphics.DrawImageUnscaled(_terrainPreview, 0, 0);
         }
         catch (Exception error) when (error is IOException or InvalidDataException)
         {
             _status = $"Terrain error: {error.Message}";
         }
+    }
+
+    private void DrawGameplayTerrainTile(GameCanvas canvas, ushort tileId, int cellX, int cellY, bool flipHorizontally, bool transparentZero)
+    {
+        if (_gameplayTileset is null || !_gameplayTileset.TilesById.TryGetValue(tileId, out var tile)) return;
+        var key = (tile.FrameId, flipHorizontally, transparentZero);
+        if (!_terrainGpuTiles.TryGetValue(key, out var image))
+        {
+            var rgba = new byte[TerrainTile.Width * TerrainTile.Height * 4];
+            for (var y = 0; y < TerrainTile.Height; y++)
+            for (var x = 0; x < TerrainTile.Width; x++)
+            {
+                var sourceX = flipHorizontally ? TerrainTile.Width - 1 - x : x;
+                var paletteIndex = tile.PaletteIndices[y * TerrainTile.Width + sourceX];
+                var destination = (y * TerrainTile.Width + x) * 4;
+                if (transparentZero && paletteIndex == 0) continue;
+                var color = _gameplayTileset.Palette[paletteIndex];
+                rgba[destination] = color.Red;
+                rgba[destination + 1] = color.Green;
+                rgba[destination + 2] = color.Blue;
+                rgba[destination + 3] = 255;
+            }
+            image = new GpuImage(TerrainTile.Width, TerrainTile.Height, rgba);
+            _terrainGpuTiles.Add(key, image);
+        }
+        canvas.Draw(image,
+            cellX * TerrainRasterizer.TileSize - _cameraX,
+            cellY * TerrainRasterizer.TileSize - _cameraY);
     }
 
     // `0x409c94` subtracts 0x207 from pointer X and 0x5a from pointer Y,
@@ -818,7 +953,10 @@ public sealed class MainForm : Form
         _minimapPreview ??= BuildGameplayMinimap(_gameplayMap, _gameplayTileset);
         var state = graphics.Save();
         graphics.SetClip(GameplayMinimapBounds);
-        graphics.DrawImageUnscaled(_minimapPreview, GameplayMinimapBounds.Location);
+        if (_activeCanvas is { } canvas)
+            canvas.Draw(GpuBitmap(_minimapPreview), GameplayMinimapBounds.X, GameplayMinimapBounds.Y);
+        else
+            graphics.DrawImageUnscaled(_minimapPreview, GameplayMinimapBounds.Location);
 
         if (_scenarioSimulation is not null)
         {
@@ -828,10 +966,11 @@ public sealed class MainForm : Form
                 var position = actor.Movement.VisualPosition;
                 var x = GameplayMinimapBounds.X + position.XRaw / 256d / _gameplayMap.Width * GameplayMinimapBounds.Width;
                 var y = GameplayMinimapBounds.Bottom - 1 - position.ZRaw / 256d / _gameplayMap.Height * GameplayMinimapBounds.Height;
-                using var marker = new SolidBrush(actor.Seed.Team == _localPlayerTeam
+                var marker = actor.Seed.Team == _localPlayerTeam
                     ? Color.FromArgb(235, 85, 235, 240)
-                    : Color.FromArgb(235, 240, 85, 70));
-                graphics.FillRectangle(marker, (int)Math.Round(x) - 1, (int)Math.Round(y) - 1, 3, 3);
+                    : Color.FromArgb(235, 240, 85, 70);
+                if (_activeCanvas is { } minimapCanvas) minimapCanvas.FillForeground(new Rectangle((int)Math.Round(x) - 1, (int)Math.Round(y) - 1, 3, 3), marker);
+                else { using var brush = new SolidBrush(marker); graphics.FillRectangle(brush, (int)Math.Round(x) - 1, (int)Math.Round(y) - 1, 3, 3); }
             }
         }
 
@@ -842,8 +981,15 @@ public sealed class MainForm : Form
             GameplayMinimapBounds.Y + (int)Math.Round((worldHeight - _cameraY - 458) / (double)worldHeight * GameplayMinimapBounds.Height),
             Math.Max(1, (int)Math.Ceiling(516d / worldWidth * GameplayMinimapBounds.Width)),
             Math.Max(1, (int)Math.Ceiling(458d / worldHeight * GameplayMinimapBounds.Height)));
-        using var camera = new Pen(Color.FromArgb(240, 225, 245, 210));
-        graphics.DrawRectangle(camera, viewport.X, viewport.Y, viewport.Width, viewport.Height);
+        var camera = Color.FromArgb(240, 225, 245, 210);
+        if (_activeCanvas is { } foreground)
+        {
+            foreground.FillForeground(new Rectangle(viewport.X, viewport.Y, viewport.Width, 1), camera);
+            foreground.FillForeground(new Rectangle(viewport.X, viewport.Bottom - 1, viewport.Width, 1), camera);
+            foreground.FillForeground(new Rectangle(viewport.X, viewport.Y, 1, viewport.Height), camera);
+            foreground.FillForeground(new Rectangle(viewport.Right - 1, viewport.Y, 1, viewport.Height), camera);
+        }
+        else { using var pen = new Pen(camera); graphics.DrawRectangle(pen, viewport.X, viewport.Y, viewport.Width, viewport.Height); }
         graphics.Restore(state);
     }
 
@@ -929,10 +1075,11 @@ public sealed class MainForm : Form
     private void DrawGameplayPathRegions(Graphics graphics)
     {
         if (!_showPathRegions || _gameplayPath is null) return;
-        var state = graphics.Save();
-        graphics.SetClip(new Rectangle(0, 0, 516, 458));
-        using var zero = new SolidBrush(Color.FromArgb(65, 220, 35, 35));
-        using var boundary = new Pen(Color.FromArgb(150, 40, 220, 230));
+        var canvas = _activeCanvas;
+        var state = canvas is null ? graphics.Save() : null;
+        if (canvas is null) graphics.SetClip(new Rectangle(0, 0, 516, 458));
+        using var zero = canvas is null ? new SolidBrush(Color.FromArgb(65, 220, 35, 35)) : null;
+        using var boundary = canvas is null ? new Pen(Color.FromArgb(150, 40, 220, 230)) : null;
         var firstX = Math.Max(0, _cameraX / 32);
         var firstZ = Math.Max(0, _cameraY / 32);
         var lastX = Math.Min(_gameplayPath.Width - 1, (_cameraX + 515) / 32);
@@ -944,30 +1091,52 @@ public sealed class MainForm : Form
             var region = _gameplayPath.RegionAt(cell);
             var screenX = x * 32 - _cameraX;
             var screenY = z * 32 - _cameraY;
-            if (region == 0) graphics.FillRectangle(zero, screenX, screenY, 32, 32);
+            if (region == 0)
+            {
+                if (canvas is not null) canvas.Fill(new Rectangle(screenX, screenY, 32, 32), Color.FromArgb(65, 220, 35, 35));
+                else graphics.FillRectangle(zero!, screenX, screenY, 32, 32);
+            }
             if (x > 0 && _gameplayPath.RegionAt(new CellCoordinate(x - 1, z)) != region)
-                graphics.DrawLine(boundary, screenX, screenY, screenX, screenY + 32);
+            {
+                if (canvas is not null) canvas.Fill(new Rectangle(screenX, screenY, 1, 32), Color.FromArgb(150, 40, 220, 230));
+                else graphics.DrawLine(boundary!, screenX, screenY, screenX, screenY + 32);
+            }
             if (z > 0 && _gameplayPath.RegionAt(new CellCoordinate(x, z - 1)) != region)
-                graphics.DrawLine(boundary, screenX, screenY, screenX + 32, screenY);
+            {
+                if (canvas is not null) canvas.Fill(new Rectangle(screenX, screenY, 32, 1), Color.FromArgb(150, 40, 220, 230));
+                else graphics.DrawLine(boundary!, screenX, screenY, screenX + 32, screenY);
+            }
         }
-        graphics.Restore(state);
+        if (state is not null) graphics.Restore(state);
     }
 
     private void DrawGameplayVents(Graphics graphics)
     {
         if (_scenarioSimulation is null) return;
+        if (_activeCanvas is { } canvas)
+        {
+            foreach (var vent in _scenarioSimulation.PetraVents)
+            {
+                var x = vent.Position.X * 32 - _cameraX;
+                var y = vent.Position.Z * 32 - _cameraY;
+                canvas.Ellipse(new Rectangle(x + 7, y + 7, 18, 18),
+                    vent.HarvesterInstanceId is null ? Color.FromArgb(220, 230, 185, 40) : Color.FromArgb(220, 65, 230, 110),
+                    thickness: 2, foreground: true);
+                DrawMenuText(graphics, vent.HarvesterInstanceId is null ? "P7" : "P7+", new Rectangle(x + 6, y - 1, 24, 14), center: false, remap: Color.FromArgb(220, 230, 185, 40));
+            }
+            return;
+        }
         var state = graphics.Save();
         graphics.SetClip(new Rectangle(0, 0, 516, 458));
         using var unclaimed = new Pen(Color.FromArgb(220, 230, 185, 40), 2);
         using var claimed = new Pen(Color.FromArgb(220, 65, 230, 110), 2);
         using var text = new SolidBrush(Color.FromArgb(220, 230, 185, 40));
-        using var font = new Font(FontFamily.GenericMonospace, 8, FontStyle.Bold, GraphicsUnit.Pixel);
         foreach (var vent in _scenarioSimulation.PetraVents)
         {
             var x = vent.Position.X * 32 - _cameraX;
             var y = vent.Position.Z * 32 - _cameraY;
             graphics.DrawEllipse(vent.HarvesterInstanceId is null ? unclaimed : claimed, x + 7, y + 7, 18, 18);
-            graphics.DrawString(vent.HarvesterInstanceId is null ? "P7" : "P7+", font, text, x + 6, y - 1);
+            DrawMenuText(graphics, vent.HarvesterInstanceId is null ? "P7" : "P7+", new Rectangle(x + 6, y - 1, 24, 14), center: false, remap: Color.FromArgb(220, 230, 185, 40));
         }
         graphics.Restore(state);
     }
@@ -979,9 +1148,9 @@ public sealed class MainForm : Form
         // engine's current sight after terrain and actors so presentation cannot
         // leak a hostile unit beyond its day/night observation radius. Explored
         // terrain memory is a separate future rule; this is live sight only.
-        var state = graphics.Save();
-        graphics.SetClip(new Rectangle(0, 0, 516, 458));
-        using var unseen = new SolidBrush(Color.Black);
+        var state = _activeCanvas is null ? graphics.Save() : null;
+        if (_activeCanvas is null) graphics.SetClip(new Rectangle(0, 0, 516, 458));
+        using var unseen = _activeCanvas is null ? new SolidBrush(Color.Black) : null;
         var firstX = Math.Max(0, _cameraX / 32);
         var firstZ = Math.Max(0, _cameraY / 32);
         var lastX = Math.Min(_gameplayMap.Width - 1, (_cameraX + 515) / 32);
@@ -990,9 +1159,11 @@ public sealed class MainForm : Form
         for (var x = firstX; x <= lastX; x++)
         {
             if (_scenarioSimulation.IsCellVisibleToTeam(_localPlayerTeam, new CellCoordinate(x, z))) continue;
-            graphics.FillRectangle(unseen, x * 32 - _cameraX, z * 32 - _cameraY, 32, 32);
+            var bounds = new Rectangle(x * 32 - _cameraX, z * 32 - _cameraY, 32, 32);
+            if (_activeCanvas is { } canvas) canvas.Fill(bounds, Color.Black);
+            else graphics.FillRectangle(unseen!, bounds);
         }
-        graphics.Restore(state);
+        if (state is not null) graphics.Restore(state);
     }
 
     private void DrawBuildingPlacementPreview(Graphics graphics)
@@ -1004,17 +1175,31 @@ public sealed class MainForm : Form
         // cells come from dc.exe's footprint table, so its green/red result is
         // identical to the engine's immediate placement preflight; the native
         // transport/drop animation itself has not been recovered yet.
-        var state = graphics.Save();
-        graphics.SetClip(new Rectangle(0, 0, 516, 458));
-        using var fill = new SolidBrush(valid ? Color.FromArgb(70, 65, 230, 105) : Color.FromArgb(80, 235, 65, 50));
-        using var border = new Pen(valid ? Color.FromArgb(235, 80, 245, 120) : Color.FromArgb(235, 250, 80, 55), 2);
+        var canvas = _activeCanvas;
+        var state = canvas is null ? graphics.Save() : null;
+        if (canvas is null) graphics.SetClip(new Rectangle(0, 0, 516, 458));
+        var fillColor = valid ? Color.FromArgb(70, 65, 230, 105) : Color.FromArgb(80, 235, 65, 50);
+        var borderColor = valid ? Color.FromArgb(235, 80, 245, 120) : Color.FromArgb(235, 250, 80, 55);
+        using var fill = canvas is null ? new SolidBrush(fillColor) : null;
+        using var border = canvas is null ? new Pen(borderColor, 2) : null;
         foreach (var cell in cells)
         {
             var bounds = new Rectangle(cell.X * 32 - _cameraX + 1, cell.Z * 32 - _cameraY + 1, 30, 30);
-            graphics.FillRectangle(fill, bounds);
-            graphics.DrawRectangle(border, bounds);
+            if (canvas is not null)
+            {
+                canvas.Fill(bounds, fillColor);
+                canvas.Fill(new Rectangle(bounds.X, bounds.Y, bounds.Width, 2), borderColor);
+                canvas.Fill(new Rectangle(bounds.X, bounds.Bottom - 2, bounds.Width, 2), borderColor);
+                canvas.Fill(new Rectangle(bounds.X, bounds.Y, 2, bounds.Height), borderColor);
+                canvas.Fill(new Rectangle(bounds.Right - 2, bounds.Y, 2, bounds.Height), borderColor);
+            }
+            else
+            {
+                graphics.FillRectangle(fill!, bounds);
+                graphics.DrawRectangle(border!, bounds);
+            }
         }
-        graphics.Restore(state);
+        if (state is not null) graphics.Restore(state);
 
         var label = $"{BuildingLabel(item)} #{entityId}: {(valid ? "CLEAR DROP" : "BLOCKED")}";
         DrawGameplayHudText(graphics, label, new Rectangle(8, 404, 500, 14));
@@ -1102,7 +1287,7 @@ public sealed class MainForm : Form
         return true;
     }
 
-    private void DrawGameplayActors(Graphics graphics)
+    private void DrawGameplayActors(Graphics graphics, GameCanvas canvas)
     {
         if (_installation is null || _scenarioSimulation is null) return;
         try
@@ -1133,42 +1318,37 @@ public sealed class MainForm : Form
                 var centerX = opaque.Left + opaque.Width / 2;
                 if (_selectedEntityInstanceIds.Contains(entity.InstanceId))
                 {
-                    using var selection = new Pen(Color.FromArgb(72, 255, 255), 2);
                     // A FIN logical origin is not consistently the visible
                     // feet of its composed sprite. Anchor the provisional
                     // ground indicator to the frame's opaque visual base so
                     // it stays with the unit instead of its abstract cell.
                     var groundY = opaque.Bottom;
-                    graphics.DrawEllipse(selection, centerX - 25, groundY - 12, 50, 20);
+                    canvas.Ellipse(new Rectangle(centerX - 25, groundY - 12, 50, 20), Color.FromArgb(72, 255, 255), thickness: 2, foreground: true);
                 }
-                graphics.DrawImageUnscaled(bitmap, visual.CanvasBounds.Location);
+                canvas.Draw(GpuBitmap(bitmap), visual.CanvasBounds);
 
                 // Status indicators are foreground UI. Draw them after the
                 // FIN composite and bind target geometry to the visible pixels,
                 // not to transparent canvas margins whose origins vary by frame.
                 if (targetedInstanceIds.Contains(entity.InstanceId))
                 {
-                    using var targeted = new Pen(Color.FromArgb(220, 255, 80, 55), 2);
-                    graphics.DrawRectangle(targeted,
-                        opaque.Left - 2,
-                        opaque.Top - 2,
-                        opaque.Width + 3,
-                        opaque.Height + 3);
+                    var targetedBounds = new Rectangle(opaque.Left - 2, opaque.Top - 2, opaque.Width + 3, opaque.Height + 3);
+                    var targetedColor = Color.FromArgb(220, 255, 80, 55);
+                    canvas.FillForeground(new Rectangle(targetedBounds.X, targetedBounds.Y, targetedBounds.Width, 2), targetedColor);
+                    canvas.FillForeground(new Rectangle(targetedBounds.X, targetedBounds.Bottom - 2, targetedBounds.Width, 2), targetedColor);
+                    canvas.FillForeground(new Rectangle(targetedBounds.X, targetedBounds.Y, 2, targetedBounds.Height), targetedColor);
+                    canvas.FillForeground(new Rectangle(targetedBounds.Right - 2, targetedBounds.Y, 2, targetedBounds.Height), targetedColor);
                 }
                 if (actorState is not null && (_selectedEntityInstanceIds.Contains(entity.InstanceId) || actorState.Health < actorState.MaximumHealth))
-                    DrawActorHealthBar(graphics, actorState, centerX, opaque.Top - 5);
+                    DrawActorHealthBar(graphics, canvas, actorState, centerX, opaque.Top - 5);
                 if (actorState?.InspirationTicksRemaining > 0)
                 {
-                    using var inspired = new SolidBrush(Color.FromArgb(235, 255, 214, 72));
-                    graphics.FillEllipse(inspired, centerX - 3, opaque.Top - 13, 7, 7);
+                    canvas.Ellipse(new Rectangle(centerX - 3, opaque.Top - 13, 7, 7), Color.FromArgb(235, 255, 214, 72), filled: true, foreground: true);
                 }
 
                 if (_showAssetNames)
                 {
                     var definition = _entityCatalog[renderEntityId];
-                    using var font = new Font(FontFamily.GenericMonospace, 8, FontStyle.Regular, GraphicsUnit.Pixel);
-                    using var back = new SolidBrush(Color.FromArgb(190, 0, 0, 0));
-                    using var text = new SolidBrush(Color.FromArgb(245, 241, 200));
                     var animationState = combatPresentation is not null
                         ? $" · {candidate.AnimationName} [action]"
                         : moveSelection is not null
@@ -1180,16 +1360,15 @@ public sealed class MainForm : Form
                         ? $" · action {command.Label}"
                         : "";
                     var label = $"{identity} {definition.Code} · team {entity.Team} / faction {definition.Faction} {ownership}{special} · {fileName}{animationState}";
-                    var size = graphics.MeasureString(label, font);
                     var labelX = worldX + 5 - _cameraX;
                     var labelY = worldY - 12 - _cameraY;
-                    graphics.FillRectangle(back, labelX, labelY, size.Width, size.Height);
-                    graphics.DrawString(label, font, text, labelX, labelY);
+                    canvas.FillForeground(new Rectangle(labelX, labelY, 500, 14), Color.FromArgb(190, 0, 0, 0));
+                    DrawMenuText(graphics, label, new Rectangle(labelX, labelY, 500, 14), center: false, remap: Color.FromArgb(245, 241, 200));
                 }
             }
-            DrawGameplayImpactEffects(graphics);
-            DrawGameplayTransportEffects(graphics);
-            DrawGameplayDeathEffects(graphics);
+            DrawGameplayImpactEffects(graphics, canvas);
+            DrawGameplayTransportEffects(graphics, canvas);
+            DrawGameplayDeathEffects(graphics, canvas);
             foreach (var projectile in _scenarioSimulation.Projectiles)
             {
                 var x = projectile.Position.XRaw / 8 - _cameraX;
@@ -1205,53 +1384,52 @@ public sealed class MainForm : Form
                     if (bitmap is not null)
                     {
                         var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
-                        graphics.DrawImageUnscaled(bitmap, x + origin.X, y + origin.Y);
+                        canvas.Draw(GpuBitmap(bitmap), x + origin.X, y + origin.Y);
                         rendered = true;
                     }
                 }
                 if (!rendered)
                 {
-                    using var glow = new SolidBrush(Color.FromArgb(235, 255, 225, 95));
-                    using var core = new SolidBrush(Color.FromArgb(255, 255, 255, 215));
-                    graphics.FillEllipse(glow, x - 4, y - 4, 8, 8);
-                    graphics.FillEllipse(core, x - 1, y - 1, 3, 3);
+                    canvas.Ellipse(new Rectangle(x - 4, y - 4, 8, 8), Color.FromArgb(235, 255, 225, 95), filled: true);
+                    canvas.Ellipse(new Rectangle(x - 1, y - 1, 3, 3), Color.FromArgb(255, 255, 255, 215), filled: true);
                 }
                 if (_showAssetNames)
                 {
-                    using var font = new Font(FontFamily.GenericMonospace, 8, FontStyle.Regular, GraphicsUnit.Pixel);
-                    using var back = new SolidBrush(Color.FromArgb(190, 0, 0, 0));
-                    using var text = new SolidBrush(Color.FromArgb(245, 241, 200));
                     var label = $"W{projectile.WeaponId} M{projectile.ProjectileMode} H{projectile.HeightRaw} U{projectile.ElapsedTicks}";
-                    var size = graphics.MeasureString(label, font);
-                    graphics.FillRectangle(back, x + 5, y - 10, size.Width, size.Height);
-                    graphics.DrawString(label, font, text, x + 5, y - 10);
+                    canvas.FillForeground(new Rectangle(x + 5, y - 10, 160, 14), Color.FromArgb(190, 0, 0, 0));
+                    DrawMenuText(graphics, label, new Rectangle(x + 5, y - 10, 160, 14), center: false, remap: Color.FromArgb(245, 241, 200));
                 }
             }
-            DrawSelectedWaypointQueue(graphics);
+            DrawSelectedWaypointQueue(graphics, canvas);
             if (_diagnosticMoveTarget is { } target)
             {
                 if (_diagnosticPathCells.Count > 1)
                 {
-                    using var pathPen = new Pen(Color.FromArgb(225, 255, 205, 55), 2);
                     var points = _diagnosticPathCells.Select(cell => new Point(
                         cell.X * 32 + 16 - _cameraX,
                         cell.Z * 32 + 16 - _cameraY)).ToArray();
-                    graphics.DrawLines(pathPen, points);
+                    for (var index = 1; index < points.Length; index++)
+                        canvas.Line(points[index - 1], points[index], Color.FromArgb(225, 255, 205, 55), thickness: 2, foreground: true);
                 }
                 var x = target.X * 32 - _cameraX;
                 var y = target.Z * 32 - _cameraY;
-                using var marker = new Pen(Color.FromArgb(80, 255, 255), 2);
-                graphics.DrawRectangle(marker, x + 3, y + 3, 25, 25);
-                graphics.DrawLine(marker, x + 8, y + 16, x + 23, y + 16);
-                graphics.DrawLine(marker, x + 16, y + 8, x + 16, y + 23);
+                var marker = Color.FromArgb(80, 255, 255);
+                canvas.FillForeground(new Rectangle(x + 3, y + 3, 25, 2), marker);
+                canvas.FillForeground(new Rectangle(x + 3, y + 26, 25, 2), marker);
+                canvas.FillForeground(new Rectangle(x + 3, y + 3, 2, 25), marker);
+                canvas.FillForeground(new Rectangle(x + 26, y + 3, 2, 25), marker);
+                canvas.Line(new Point(x + 8, y + 16), new Point(x + 23, y + 16), marker, thickness: 2, foreground: true);
+                canvas.Line(new Point(x + 16, y + 8), new Point(x + 16, y + 23), marker, thickness: 2, foreground: true);
             }
             if (_selectionDragStart is { } selectionStart && IsSelectionBoxGesture(selectionStart, _selectionDragCurrent, _selectionGestureStartedAtTick))
             {
                 var bounds = GameplaySelectionBounds(selectionStart, _selectionDragCurrent);
-                using var selectionFill = new SolidBrush(Color.FromArgb(35, 80, 235, 220));
-                using var selectionBorder = new Pen(Color.FromArgb(210, 110, 255, 235));
-                graphics.FillRectangle(selectionFill, bounds);
-                graphics.DrawRectangle(selectionBorder, bounds);
+                canvas.FillForeground(bounds, Color.FromArgb(35, 80, 235, 220));
+                var selectionBorder = Color.FromArgb(210, 110, 255, 235);
+                canvas.FillForeground(new Rectangle(bounds.X, bounds.Y, bounds.Width, 1), selectionBorder);
+                canvas.FillForeground(new Rectangle(bounds.X, bounds.Bottom - 1, bounds.Width, 1), selectionBorder);
+                canvas.FillForeground(new Rectangle(bounds.X, bounds.Y, 1, bounds.Height), selectionBorder);
+                canvas.FillForeground(new Rectangle(bounds.Right - 1, bounds.Y, 1, bounds.Height), selectionBorder);
             }
             graphics.Restore(state);
         }
@@ -1261,22 +1439,25 @@ public sealed class MainForm : Form
         }
     }
 
-    private static void DrawActorHealthBar(Graphics graphics, SimulatedActor actor, int centerX, int y)
+    private static void DrawActorHealthBar(Graphics graphics, GameCanvas canvas, SimulatedActor actor, int centerX, int y)
     {
         if (actor.MaximumHealth <= 0) return;
         const int width = 30;
         const int height = 4;
         var ratio = Math.Clamp((float)actor.Health / actor.MaximumHealth, 0f, 1f);
         var left = centerX - width / 2;
-        using var background = new SolidBrush(Color.FromArgb(215, 16, 12, 12));
-        using var foreground = new SolidBrush(ratio > .5f ? Color.FromArgb(220, 78, 228, 87) : Color.FromArgb(220, 240, 173, 48));
-        using var border = new Pen(Color.FromArgb(230, 5, 5, 5));
-        graphics.FillRectangle(background, left, y, width, height);
-        graphics.FillRectangle(foreground, left, y, Math.Max(1, (int)(width * ratio)), height);
-        graphics.DrawRectangle(border, left, y, width - 1, height - 1);
+        var background = Color.FromArgb(215, 16, 12, 12);
+        var foreground = ratio > .5f ? Color.FromArgb(220, 78, 228, 87) : Color.FromArgb(220, 240, 173, 48);
+        var border = Color.FromArgb(230, 5, 5, 5);
+        canvas.FillForeground(new Rectangle(left, y, width, height), background);
+        canvas.FillForeground(new Rectangle(left, y, Math.Max(1, (int)(width * ratio)), height), foreground);
+        canvas.FillForeground(new Rectangle(left, y, width, 1), border);
+        canvas.FillForeground(new Rectangle(left, y + height - 1, width, 1), border);
+        canvas.FillForeground(new Rectangle(left, y, 1, height), border);
+        canvas.FillForeground(new Rectangle(left + width - 1, y, 1, height), border);
     }
 
-    private void DrawSelectedWaypointQueue(Graphics graphics)
+    private void DrawSelectedWaypointQueue(Graphics graphics, GameCanvas canvas)
     {
         if (_scenarioSimulation is null) return;
         var lead = SelectedGameplayEntities().FirstOrDefault();
@@ -1291,18 +1472,14 @@ public sealed class MainForm : Form
         points.AddRange(destinations.Select(cell => new Point(
             cell.X * 32 + 16 - _cameraX,
             cell.Z * 32 + 16 - _cameraY)));
-        using var route = new Pen(Color.FromArgb(190, 92, 228, 255), 1);
-        if (points.Count > 1) graphics.DrawLines(route, points.ToArray());
-        using var marker = new Pen(Color.FromArgb(245, 130, 245, 255), 2);
-        using var fill = new SolidBrush(Color.FromArgb(150, 10, 35, 48));
-        using var font = new Font(FontFamily.GenericMonospace, 8, FontStyle.Bold, GraphicsUnit.Pixel);
-        using var label = new SolidBrush(Color.FromArgb(240, 235, 255, 255));
+        for (var index = 1; index < points.Count; index++)
+            canvas.Line(points[index - 1], points[index], Color.FromArgb(190, 92, 228, 255), foreground: true);
         for (var index = 0; index < destinations.Length; index++)
         {
             var point = points[index + 1];
-            graphics.FillEllipse(fill, point.X - 7, point.Y - 7, 14, 14);
-            graphics.DrawEllipse(marker, point.X - 7, point.Y - 7, 14, 14);
-            graphics.DrawString((index + 1).ToString(), font, label, point.X - 3, point.Y - 5);
+            canvas.Ellipse(new Rectangle(point.X - 7, point.Y - 7, 14, 14), Color.FromArgb(150, 10, 35, 48), filled: true, foreground: true);
+            canvas.Ellipse(new Rectangle(point.X - 7, point.Y - 7, 14, 14), Color.FromArgb(245, 130, 245, 255), thickness: 2, foreground: true);
+            DrawMenuText(graphics, (index + 1).ToString(), new Rectangle(point.X - 3, point.Y - 5, 10, 14), center: false, remap: Color.FromArgb(240, 235, 255, 255));
         }
     }
 
@@ -1589,7 +1766,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private void DrawGameplayImpactEffects(Graphics graphics)
+    private void DrawGameplayImpactEffects(Graphics graphics, GameCanvas canvas)
     {
         if (_weaponEffects is null) return;
         for (var index = _impactEffects.Count - 1; index >= 0; index--)
@@ -1613,11 +1790,11 @@ public sealed class MainForm : Form
             var bitmap = AnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
             var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
-            graphics.DrawImageUnscaled(bitmap, effect.Position.XRaw / 8 - _cameraX + origin.X, effect.Position.ZRaw / 8 - _cameraY + origin.Y);
+            canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, effect.Position.ZRaw / 8 - _cameraY + origin.Y);
         }
     }
 
-    private void DrawGameplayTransportEffects(Graphics graphics)
+    private void DrawGameplayTransportEffects(Graphics graphics, GameCanvas canvas)
     {
         if (_entityAnimations is null || _scenarioSimulation is null) return;
         foreach (var transport in _scenarioSimulation.BattlefieldTransports.OrderBy(item => item.InstanceId))
@@ -1633,7 +1810,7 @@ public sealed class MainForm : Form
             var bitmap = AnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
             var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
-            graphics.DrawImageUnscaled(bitmap,
+            canvas.Draw(GpuBitmap(bitmap),
                 transport.Position.XRaw / 8 - _cameraX + origin.X,
                 transport.Position.ZRaw / 8 - transport.HeightRaw / 8 - _cameraY + origin.Y);
             if (!_showAssetNames) continue;
@@ -1648,7 +1825,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private void DrawGameplayDeathEffects(Graphics graphics)
+    private void DrawGameplayDeathEffects(Graphics graphics, GameCanvas canvas)
     {
         if (_entityAnimations is null) return;
         for (var index = _deathEffects.Count - 1; index >= 0; index--)
@@ -1672,7 +1849,7 @@ public sealed class MainForm : Form
             var bitmap = AnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
             var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
-            graphics.DrawImageUnscaled(bitmap, effect.Position.XRaw / 8 - _cameraX + origin.X, effect.Position.ZRaw / 8 - _cameraY + origin.Y);
+            canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, effect.Position.ZRaw / 8 - _cameraY + origin.Y);
         }
     }
 
@@ -1724,8 +1901,13 @@ public sealed class MainForm : Form
         return true;
     }
 
-    private static void DrawGameplayHud(Graphics graphics, Image hud)
+    private void DrawGameplayHud(Graphics graphics, Image hud)
     {
+        if (_activeCanvas is { } canvas)
+        {
+            canvas.Draw(GpuColorKeyImage("gameplay-hud", hud), new Rectangle(0, 0, 640, 480));
+            return;
+        }
         using var attributes = new ImageAttributes();
         attributes.SetColorKey(Color.Black, Color.Black);
         graphics.DrawImage(
@@ -1855,7 +2037,10 @@ public sealed class MainForm : Form
         // Cursor FIN layers have their own negative hotspot offsets. Unlike a
         // UI gadget rectangle, the pointer itself is that logical origin.
         var origin = _animationOrigins.GetValueOrDefault($"curs.fin:{frame}:base");
-        graphics.DrawImageUnscaled(bitmap, pointer.X + origin.X, pointer.Y + origin.Y);
+        if (_activeCanvas is { } canvas)
+            canvas.DrawForeground(GpuBitmap(bitmap), pointer.X + origin.X, pointer.Y + origin.Y);
+        else
+            graphics.DrawImageUnscaled(bitmap, pointer.X + origin.X, pointer.Y + origin.Y);
     }
 
     private string GameplayCursorAnimation(Point pointer)
@@ -2486,6 +2671,19 @@ public sealed class MainForm : Form
     private void DrawGameplayIconButton(Graphics graphics, Rectangle bounds, int frame, bool selected, bool available)
     {
         var bitmap = SpriteFrameBitmap("mainbut", frame);
+        if (_activeCanvas is { } canvas)
+        {
+            if (bitmap is not null) canvas.DrawForeground(GpuBitmap(bitmap), bounds.X, bounds.Y);
+            else canvas.FillForeground(bounds, Color.FromArgb(70, 90, 105));
+            var borderColor = selected ? Color.FromArgb(130, 255, 244, 85) : Color.FromArgb(80, 8, 12, 8);
+            var thickness = selected ? 2 : 1;
+            canvas.FillForeground(new Rectangle(bounds.X, bounds.Y, bounds.Width, thickness), borderColor);
+            canvas.FillForeground(new Rectangle(bounds.X, bounds.Bottom - thickness, bounds.Width, thickness), borderColor);
+            canvas.FillForeground(new Rectangle(bounds.X, bounds.Y, thickness, bounds.Height), borderColor);
+            canvas.FillForeground(new Rectangle(bounds.Right - thickness, bounds.Y, thickness, bounds.Height), borderColor);
+            if (!available) canvas.FillForeground(bounds, Color.FromArgb(150, 0, 0, 0));
+            return;
+        }
         if (bitmap is not null) graphics.DrawImageUnscaled(bitmap, bounds.Location);
         else { using var fill = new SolidBrush(Color.FromArgb(70, 90, 105)); graphics.FillRectangle(fill, bounds); }
         using var border = new Pen(selected ? Color.FromArgb(130, 255, 244, 85) : Color.FromArgb(80, 8, 12, 8), selected ? 2 : 1);
@@ -2507,7 +2705,10 @@ public sealed class MainForm : Form
         {
             var bitmap = SpriteFrameBitmap("mainbut", counter.Frame + digit - '0');
             if (bitmap is not null)
-                graphics.DrawImageUnscaled(bitmap, x, counter.Bounds.Y);
+            {
+                if (_activeCanvas is { } canvas) canvas.DrawForeground(GpuBitmap(bitmap), x, counter.Bounds.Y);
+                else graphics.DrawImageUnscaled(bitmap, x, counter.Bounds.Y);
+            }
             x += digitWidth;
         }
     }
@@ -2981,7 +3182,10 @@ public sealed class MainForm : Form
                         else _remappedFontGlyphs[cacheKey] = bitmap;
                     }
 
-                    graphics.DrawImageUnscaled(bitmap!, cursor + frame.AnchorX, lineTop + frame.AnchorY);
+                    if (_activeCanvas is { } canvas)
+                        canvas.DrawForeground(GpuBitmap(bitmap!), cursor + frame.AnchorX, lineTop + frame.AnchorY);
+                    else
+                        graphics.DrawImageUnscaled(bitmap!, cursor + frame.AnchorX, lineTop + frame.AnchorY);
                 }
 
                 cursor += _menuFont.Advance(character);
@@ -3029,7 +3233,9 @@ public sealed class MainForm : Form
         // Interface source rectangles already specify the gadget origin. FIN
         // layer offsets were consumed while composing/cropping the bitmap and
         // must not be applied a second time here.
-        if (opacity >= 1f) graphics.DrawImageUnscaled(bitmap, x, y);
+        if (opacity >= 1f && _activeCanvas is { } canvas)
+            canvas.DrawForeground(GpuBitmap(bitmap), x, y);
+        else if (opacity >= 1f) graphics.DrawImageUnscaled(bitmap, x, y);
         else
         {
             using var attributes = new ImageAttributes();
@@ -3596,8 +3802,6 @@ public sealed class MainForm : Form
         _cameraY = y;
         ClampGameplayCamera();
         if (_cameraX == previousX && _cameraY == previousY) return;
-        _terrainPreview?.Dispose();
-        _terrainPreview = null;
         _surface.Invalidate();
     }
 

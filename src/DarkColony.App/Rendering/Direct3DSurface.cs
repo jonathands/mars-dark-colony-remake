@@ -12,21 +12,21 @@ namespace DarkColony.App.Rendering;
 
 /// <summary>
 /// D3D11 presentation surface for the fixed 640x480 game framebuffer.
-/// The callback bridge is temporary while individual menu draw operations are
-/// moved to the GPU sprite batch; presentation no longer depends on WM_PAINT.
+/// Presented layers are emitted as ordered GPU commands. The callback retains
+/// a scratch <see cref="Graphics"/> only for isolated fallback code; its
+/// contents are never uploaded or presented as a full-frame texture.
 /// </summary>
 public sealed class Direct3DSurface : Control
 {
     private const int NativeWidth = 640;
     private const int NativeHeight = 480;
-    private readonly Action<Graphics> _renderLegacyFrame;
-    private readonly Bitmap _transferBitmap = new(NativeWidth, NativeHeight, PixelFormat.Format32bppArgb);
+    private readonly Action<Graphics, GameCanvas> _renderFrame;
+    private readonly GameCanvas _canvas = new();
+    private readonly Bitmap _legacyScratch = new(NativeWidth, NativeHeight, PixelFormat.Format32bppArgb);
     private IDXGISwapChain? _swapChain;
     private ID3D11Device? _device;
     private ID3D11DeviceContext? _context;
-    private ID3D11Texture2D? _uploadTexture;
     private ID3D11Texture2D? _backBuffer;
-    private ID3D11ShaderResourceView? _uploadView;
     private ID3D11RenderTargetView? _backBufferView;
     private ID3D11Texture2D? _nativeTarget;
     private ID3D11RenderTargetView? _nativeTargetView;
@@ -36,10 +36,12 @@ public sealed class Direct3DSurface : Control
     private ID3D11PixelShader? _pixelShader;
     private ID3D11InputLayout? _inputLayout;
     private ID3D11SamplerState? _pointSampler;
+    private ID3D11BlendState? _alphaBlend;
+    private readonly Dictionary<GpuImage, GpuTexture> _gpuImages = [];
 
-    public Direct3DSurface(Action<Graphics> renderLegacyFrame)
+    public Direct3DSurface(Action<Graphics, GameCanvas> renderFrame)
     {
-        _renderLegacyFrame = renderLegacyFrame;
+        _renderFrame = renderFrame;
         SetStyle(ControlStyles.Opaque | ControlStyles.UserPaint | ControlStyles.Selectable, true);
         TabStop = true;
         Cursor = Cursors.Hand;
@@ -50,32 +52,18 @@ public sealed class Direct3DSurface : Control
         if (!IsHandleCreated || ClientSize.Width == 0 || ClientSize.Height == 0) return;
         EnsureDevice();
 
-        using (var graphics = Graphics.FromImage(_transferBitmap))
+        _canvas.Reset();
+        using (var graphics = Graphics.FromImage(_legacyScratch))
         {
-            _renderLegacyFrame(graphics);
+            graphics.Clear(System.Drawing.Color.Transparent);
+            _renderFrame(graphics, _canvas);
         }
 
-        var data = _transferBitmap.LockBits(
-            new Rectangle(0, 0, NativeWidth, NativeHeight),
-            ImageLockMode.ReadOnly,
-            PixelFormat.Format32bppArgb);
-        try
-        {
-            _context!.UpdateSubresource(
-                _uploadTexture!,
-                0,
-                null,
-                data.Scan0,
-                (uint)data.Stride,
-                0);
-        }
-        finally
-        {
-            _transferBitmap.UnlockBits(data);
-        }
+        _context!.ClearRenderTargetView(_nativeTargetView!, new Color4(0f, 0f, 0f, 1f));
+        DrawCommands(_canvas.Commands);
 
-        DrawTexture(_uploadView!, _nativeTargetView!);
-        DrawTexture(_nativeTargetResource!, _backBufferView!);
+        DrawCommands(_canvas.ForegroundCommands);
+        DrawTexture(_nativeTargetResource!, _backBufferView!, new Rectangle(0, 0, NativeWidth, NativeHeight), alphaBlend: false);
         _swapChain!.Present(1, PresentFlags.None);
     }
 
@@ -90,7 +78,7 @@ public sealed class Direct3DSurface : Control
         if (disposing)
         {
             ReleaseDevice();
-            _transferBitmap.Dispose();
+            _legacyScratch.Dispose();
         }
 
         base.Dispose(disposing);
@@ -131,18 +119,6 @@ public sealed class Direct3DSurface : Control
         var swapChain = _swapChain ?? throw new InvalidOperationException("D3D11 did not return a swap chain.");
         var device = _device ?? throw new InvalidOperationException("D3D11 did not return a device.");
         _backBuffer = swapChain.GetBuffer<ID3D11Texture2D>(0);
-        _uploadTexture = device.CreateTexture2D(new Texture2DDescription
-        {
-            Width = NativeWidth,
-            Height = NativeHeight,
-            MipLevels = 1,
-            ArraySize = 1,
-            Format = Format.B8G8R8A8_UNorm,
-            SampleDescription = new SampleDescription(1, 0),
-            Usage = ResourceUsage.Default,
-            BindFlags = BindFlags.ShaderResource,
-        });
-        _uploadView = device.CreateShaderResourceView(_uploadTexture);
         _backBufferView = device.CreateRenderTargetView(_backBuffer);
 
         _nativeTarget = device.CreateTexture2D(new Texture2DDescription
@@ -183,13 +159,60 @@ public sealed class Direct3DSurface : Control
         _pixelShader = device.CreatePixelShader(pixelBytecode.Span);
         _inputLayout = device.CreateInputLayout(QuadVertex.InputElements, vertexBytecode.Span);
         _pointSampler = device.CreateSamplerState(SamplerDescription.PointClamp);
+        _alphaBlend = device.CreateBlendState(BlendDescription.NonPremultiplied);
     }
 
-    private void DrawTexture(ID3D11ShaderResourceView source, ID3D11RenderTargetView destination)
+    private void DrawCommands(IReadOnlyList<SpriteCommand> commands)
+    {
+        foreach (var command in commands)
+        {
+            if (command.Destination.Width <= 0 || command.Destination.Height <= 0) continue;
+            DrawTexture(GetGpuImage(command.Image), _nativeTargetView!, command.Destination, alphaBlend: true);
+        }
+    }
+
+    private unsafe ID3D11ShaderResourceView GetGpuImage(GpuImage image)
+    {
+        if (_gpuImages.TryGetValue(image, out var cached)) return cached.View;
+        var device = _device ?? throw new InvalidOperationException("D3D11 device is unavailable.");
+        var texture = device.CreateTexture2D(new Texture2DDescription
+        {
+            Width = (uint)image.Width,
+            Height = (uint)image.Height,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = Format.B8G8R8A8_UNorm,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.ShaderResource,
+        });
+        var bgra = new byte[image.Rgba.Length];
+        for (var index = 0; index < image.Rgba.Length; index += 4)
+        {
+            bgra[index] = image.Rgba[index + 2];
+            bgra[index + 1] = image.Rgba[index + 1];
+            bgra[index + 2] = image.Rgba[index];
+            bgra[index + 3] = image.Rgba[index + 3];
+        }
+        var handle = GCHandle.Alloc(bgra, GCHandleType.Pinned);
+        try
+        {
+            _context!.UpdateSubresource(texture, 0, null, handle.AddrOfPinnedObject(), (uint)(image.Width * 4), 0);
+        }
+        finally
+        {
+            handle.Free();
+        }
+        var view = device.CreateShaderResourceView(texture);
+        _gpuImages.Add(image, new GpuTexture(texture, view));
+        return view;
+    }
+
+    private unsafe void DrawTexture(ID3D11ShaderResourceView source, ID3D11RenderTargetView destination, Rectangle destinationBounds, bool alphaBlend)
     {
         var context = _context ?? throw new InvalidOperationException("D3D11 context is unavailable.");
         context.OMSetRenderTargets(destination);
-        context.RSSetViewport(new Viewport(0, 0, NativeWidth, NativeHeight));
+        context.RSSetViewport(new Viewport(destinationBounds.X, destinationBounds.Y, destinationBounds.Width, destinationBounds.Height));
         context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         context.IASetInputLayout(_inputLayout);
         context.IASetVertexBuffer(0, _quadVertices!, QuadVertex.SizeInBytes);
@@ -197,6 +220,7 @@ public sealed class Direct3DSurface : Control
         context.PSSetShader(_pixelShader);
         context.PSSetShaderResource(0, source);
         context.PSSetSampler(0, _pointSampler);
+        context.OMSetBlendState(alphaBlend ? _alphaBlend : null, null, uint.MaxValue);
         context.Draw(6, 0);
         context.PSSetShaderResource(0, default!);
     }
@@ -204,6 +228,13 @@ public sealed class Direct3DSurface : Control
     private void ReleaseDevice()
     {
         _context?.ClearState();
+        foreach (var image in _gpuImages.Values)
+        {
+            image.View.Dispose();
+            image.Texture.Dispose();
+        }
+        _gpuImages.Clear();
+        _alphaBlend?.Dispose();
         _pointSampler?.Dispose();
         _inputLayout?.Dispose();
         _pixelShader?.Dispose();
@@ -213,18 +244,16 @@ public sealed class Direct3DSurface : Control
         _nativeTargetView?.Dispose();
         _nativeTarget?.Dispose();
         _backBufferView?.Dispose();
-        _uploadView?.Dispose();
         _backBuffer?.Dispose();
-        _uploadTexture?.Dispose();
         _context?.Dispose();
         _device?.Dispose();
         _swapChain?.Dispose();
         _backBuffer = null;
-        _uploadTexture = null;
         _context = null;
         _device = null;
         _swapChain = null;
         _pointSampler = null;
+        _alphaBlend = null;
         _inputLayout = null;
         _pixelShader = null;
         _vertexShader = null;
@@ -233,8 +262,9 @@ public sealed class Direct3DSurface : Control
         _nativeTargetView = null;
         _nativeTarget = null;
         _backBufferView = null;
-        _uploadView = null;
     }
+
+    private sealed record GpuTexture(ID3D11Texture2D Texture, ID3D11ShaderResourceView View);
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
     private readonly record struct QuadVertex(Vector3 Position, Vector2 TextureCoordinate)
