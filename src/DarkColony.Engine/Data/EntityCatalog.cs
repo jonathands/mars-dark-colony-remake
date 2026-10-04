@@ -59,6 +59,12 @@ public sealed record EntityDefinition(
     /// definitions set it, placing those actors in the dedicated mine layer.
     /// </summary>
     public bool UsesNativeMineLayer => Values[14] != 0;
+
+    /// <summary>
+    /// Source value 16 (runtime <c>+0x6C</c>): the actor's sight stamp reveals
+    /// mines (<c>0x44A823</c>). SARG/PSYC, ENGI/SLOM and the stealing stances.
+    /// </summary>
+    public bool DetectsMines => Values[15] != 0;
     /// <summary>
     /// Source value 11 (runtime <c>+0x40</c>): the column of the ten-class
     /// weapon/armor resistance matrix. It is not a movement layer.

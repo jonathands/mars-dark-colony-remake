@@ -197,7 +197,7 @@ public sealed partial class MainForm
             _areaEffects ??= rules.AreaEffects;
             _dependencyCatalog ??= rules.Dependencies;
             var missionScript = MissionScript.LoadForScenario(_installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.scn"));
-            _scenarioSimulation = ScenarioSimulation.Create(definition, _gameplayPath, rules, missionScript);
+            _scenarioSimulation = ScenarioSimulation.Create(definition, _gameplayPath, rules, missionScript, _gameplayMap);
             _missionOutcomeReported = false;
             _previousActorRenderPositions.Clear();
             _groundOccupancy = _scenarioSimulation.GroundOccupancy;
@@ -305,10 +305,9 @@ public sealed partial class MainForm
     private void DrawGameplayFogOfWar(Graphics graphics)
     {
         if (_scenarioSimulation is null || _gameplayMap is null) return;
-        // The running original leaves undiscovered map space black. Apply the
-        // engine's current sight after terrain and actors so presentation cannot
-        // leak a hostile unit beyond its day/night observation radius. Explored
-        // terrain memory is a separate future rule; this is live sight only.
+        // The original leaves map space no stamp has reached black (grid bit 31,
+        // explored memory). Hostile units outside current sight are hidden by
+        // the actor pass, not here.
         var state = _activeCanvas is null ? graphics.Save() : null;
         if (_activeCanvas is null) graphics.SetClip(new Rectangle(0, 0, 516, 458));
         using var unseen = _activeCanvas is null ? new SolidBrush(Color.Black) : null;
@@ -320,7 +319,7 @@ public sealed partial class MainForm
         for (var x = firstX; x <= lastX; x++)
         {
             var z = _gameplayMap.Height - 1 - row;
-            if (_scenarioSimulation.IsCellVisibleToTeam(_localPlayerTeam, new CellCoordinate(x, z))) continue;
+            if (_scenarioSimulation.IsCellExploredByTeam(_localPlayerTeam, new CellCoordinate(x, z))) continue;
             var bounds = new Rectangle(x * 32 - _cameraX, row * 32 - _cameraY, 32, 32);
             if (_activeCanvas is { } canvas) canvas.Fill(bounds, Color.Black);
             else graphics.FillRectangle(unseen!, bounds);

@@ -85,7 +85,9 @@ neighbor:
   ring 16 holds only the four axis cells. Rings 0 through the radius are
   walked in table order around the scanner's current cell.
 - **Visibility:** only cells whose ground-grid word has the scanner team's
-  visibility bit are considered (team 9 uses the union of teams 0-7).
+  visibility bit are considered (team 9 uses the union of teams 0-7). Another
+  team's mine also needs the scanner team's revealed bit (`+0xCA`,
+  `0x435829`). See [vision.md](vision.md).
 - **Occupants:** each cell's ground, alternate, and mine occupants are
   candidates, in that order.
 - **Rejected candidates:**
@@ -129,13 +131,8 @@ Before each step of a move, the word at command +8 selects a mode:
   which matches the native filter.
 - Computer teams are those with a nonzero SCN `%AI` profile; Single Player War
   marks every enabled non-local team as computer.
-- Hostile mines are never auto-targeted because the revealed bit is not
-  modeled.
-- Visibility uses a per-tick snapshot computed with the same rule as
-  `IsCellVisibleToTeam`. The original clears and restamps the grid's
-  visibility bits only every 16 updates (`0x419A30`: `world + 0x94C & 15`,
-  then `0x4456F0` and `0x44A6D4`), and once when the clock is zero
-  (`0x41988C`), so between refreshes it uses a stale picture.
+- Allied vision bits (`player + 0x19C0`) are not modeled yet: a scanner sees
+  only its own team's bits.
 - The mode-2 approach targets the closest free cell within weapon range of the
   hostile (the pursuit helper), because the port's local search has no partial
   routes to an occupied cell.

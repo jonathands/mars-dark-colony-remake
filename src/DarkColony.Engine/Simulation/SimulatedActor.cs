@@ -60,6 +60,11 @@ public sealed class SimulatedActor
     public int? StealVictimInstanceId { get; internal set; }
     /// <summary>Deployed harvester: the stance draining it (its command record word +4, <c>0x417EB8</c>).</summary>
     public int? ThiefInstanceId { get; internal set; }
+    /// <summary>
+    /// Native byte <c>+0xCA</c>: bit t is set when a mine detector of team t saw
+    /// this actor in the mine grid at the last visibility refresh.
+    /// </summary>
+    public int RevealedTeamMask { get; internal set; }
     public int? AttackTargetInstanceId { get; internal set; }
     /// <summary>Pending one-shot opcode-0x1b/state-18 ground target.</summary>
     public CellCoordinate? GroundSpecialAttackTarget { get; internal set; }

@@ -589,6 +589,32 @@ Check("armed blockers with a hostile in range yield straight ahead instead of at
     Equal(true, blocker.AttackTargetInstanceId is null);
 });
 
+Check("a hostile mine is a target only after a detector of the scanner's team reveals it", () =>
+{
+    // GUARD (team 0) has the mine (team 1, value 15) within weapon range. The
+    // selector skips it (0x435829) until a value-16 detector of team 0 sees
+    // its cell at a visibility refresh (0x44A6D4), which sets +0xCA bit 0.
+    var catalog = EntityCatalog.Parse("3\n" +
+        "GUARD 0 255 25 8 8 1 -1 -1 1 1 0 1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n" +
+        // Speed 1 only so the SCN seed enters the mine grid (speed-0 seeds without a footprint enter none).
+        "MINE 0 0 1 1 1 -1 -1 -1 1 1 0 800 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n" +
+        "DETECTOR 0 255 25 4 4 -1 -1 -1 1 1 0 100 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
+    ScenarioSimulation Run(string extra)
+    {
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 0 0 1000 0\n7 5 1 1 800 0\n" + extra),
+            catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
+        for (var tick = 0; tick < 20; tick++) simulation.Step([]);
+        return simulation;
+    }
+    var unrevealed = Run("");
+    Equal(0, unrevealed.Actor(2)!.RevealedTeamMask);
+    Equal(true, unrevealed.Actor(1)!.AttackTargetInstanceId is null);
+    var revealed = Run("6 3 2 0 100 0\n");
+    Equal(1, revealed.Actor(2)!.RevealedTeamMask);
+    Equal(2, revealed.Actor(1)!.AttackTargetInstanceId ?? -1);
+});
+
 Check("a fully blocked yield shuffles its order with the shared random stream", () =>
 {
     // Every sideways candidate around (5,5) is held, so 0x4126A8 fails and
@@ -1074,7 +1100,7 @@ Check("scenario simulation executes P7 purchase intents deterministically", () =
     Equal(new[] { 9 }, simulation.EconomyForTeam(0)!.ReservedItems.ToArray());
 });
 
-Check("Exploiter vent deployment accelerates P7 and day night selects observation", () =>
+Check("Exploiter vent deployment accelerates P7 and sight blends day and night", () =>
 {
     var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 9 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 8 5 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n1 1 40 0 100\n";
@@ -1083,14 +1109,15 @@ Check("Exploiter vent deployment accelerates P7 and day night selects observatio
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4),
         petraFlowRules: new PetraFlowRules(100, 1, 4), dayNight: new DayNightCycle(2));
     var exploiter = simulation.Actors.Single();
-    Equal(2, simulation.ObservationRange(exploiter));
+    int Blend() => (simulation.DayNight.LightingLevel * 9 + (256 - simulation.DayNight.LightingLevel) * 2) >> 8;
+    Equal(Blend(), simulation.ObservationRange(exploiter));
     simulation.Step([new ScheduledWorldCommand(1, 0, new HarvestVentIntent(exploiter.Seed.InstanceId, 0))]);
     Equal(HarvesterDeploymentOutcome.Preparing, simulation.LastHarvesterDeployments.Single().Outcome);
     Equal(ScenarioSimulation.NativeHarvesterAttachTicks, simulation.PetraVents[0].AttachTicksRemaining);
     Equal(0, simulation.ResourceForTeam(0));
     simulation.Step([]);
     Equal(DayNightPhase.Night, simulation.DayNight.Phase);
-    Equal(9, simulation.ObservationRange(exploiter));
+    Equal(Blend(), simulation.ObservationRange(exploiter));
     for (var tick = 1; tick < ScenarioSimulation.NativeHarvesterAttachTicks; tick++) simulation.Step([]);
     Equal(true, simulation.PetraVents[0].HarvesterInstanceId == exploiter.Seed.InstanceId);
     for (var tick = ScenarioSimulation.NativeHarvesterAttachTicks + 1;
@@ -1115,22 +1142,6 @@ Check("P7 source stops before consuming its final exact-rate remainder", () =>
     simulation.Step([]);
     Equal(4, simulation.PetraVents[0].RemainingReservoir);
     Equal(0, simulation.LastP7Income.Count);
-});
-
-Check("team visibility follows each observer's decoded day and night range", () =>
-{
-    var catalog = EntityCatalog.Parse("1\nSCOUT 0 255 25 2 5 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 2 0 0 100 0\n";
-    var bytes = new byte[PathRegionMap.RouteTableSize + 100];
-    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 10), dayNight: new DayNightCycle(1));
-    var scout = simulation.Actors.Single();
-    Equal(true, simulation.IsCellVisibleToTeam(0, new CellCoordinate(4, 2)));
-    Equal(false, simulation.IsCellVisibleToTeam(0, new CellCoordinate(5, 2)));
-    simulation.Step([]);
-    Equal(true, simulation.IsActorVisibleToTeam(0, scout));
-    Equal(true, simulation.IsCellVisibleToTeam(0, new CellCoordinate(7, 2)));
-    Equal(false, simulation.IsCellVisibleToTeam(0, new CellCoordinate(8, 2)));
 });
 
 Check("harvester deployment walks to a vent then attaches deterministically", () =>
@@ -1272,10 +1283,11 @@ Check("vents pay their own SCN rate per pulse, and a zero-rate vent pays nothing
 
 Check("a steal stance links the first visible deployed harvester and halves its pulses", () =>
 {
-    // SARGSTL sees 12 cells, so both stances see the harvester at (1,1).
-    var catalog = EntityCatalog.Parse("4\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nSARG 0 10 45 1 1 -1 -1 -1 1 1 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 3 0\nSARGSTL 0 10 0 12 12 -1 -1 -1 1 1 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 2 0\n");
+    // Both forms see 10 cells (the largest sight tree), so both stances see
+    // the harvester at (1,1) from 10 and 9 cells away.
+    var catalog = EntityCatalog.Parse("4\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nSARG 0 10 45 10 10 -1 -1 -1 1 1 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 3 0\nSARGSTL 0 10 0 10 10 -1 -1 -1 1 1 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 2 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
-        "11 1 2 0 100 0\n12 1 2 0 100 0\n1 1 0 1 100 0\n1 1 40 0 5000\n";
+        "11 1 2 0 100 0\n10 1 2 0 100 0\n1 1 0 1 100 0\n1 1 40 0 5000\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 16, 4),
@@ -2114,7 +2126,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
             });
         var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
         var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
-        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(text), path, rules);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(text), path, rules, terrain: map);
         Equal(true, simulation.CityBuilding(0, 0) is null);
         var headquarters = simulation.CityBuilding(1, 0)!;
         Equal(2000, headquarters.Health);
@@ -2261,7 +2273,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
             match => $"%City{match.Groups[1].Value}1 -1 0 -1 2 -1", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1));
         var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
         var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
-        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(text), path, rules);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(text), path, rules, terrain: map);
         var economy = simulation.EconomyForTeam(0)!;
         // depend.txt: item 3 is robot factory 1 (slot 2, variant 0), item 5 robot
         // factory 2 (variant 1); 0x438220 accepts any live variant at least as high.
@@ -2344,6 +2356,74 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(4, simulation.PlayerStatistic(7, 0));
     });
 
+    Check("native sight: tree occlusion, shaded cells, day/night blend and the 16-update refresh", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var trees = NativeVisionTrees.Load(install.ExecutablePath);
+        const int size = 24;
+        var viewer = new CellCoordinate(8, 12);
+        var nodes = trees.Nodes(4);
+        int NodeAt(int dx, int dz) => nodes.Select((node, index) => (node, index)).Single(entry => entry.node.DeltaX == dx && entry.node.DeltaZ == dz).index;
+        bool Under(int index, int ancestor)
+        {
+            for (var parent = nodes[index].Parent; parent >= 0; parent = nodes[parent].Parent)
+                if (parent == ancestor) return true;
+            return false;
+        }
+        // World cells; the MAP row of world z is size - 1 - z.
+        var wall = new CellCoordinate(viewer.X + 2, viewer.Z);
+        var nearShade = new CellCoordinate(viewer.X, viewer.Z - 1);
+        var farShadeNode = nodes.Select((node, index) => (node, index)).First(entry => entry.node.Depth >= 2 && entry.node.DeltaX == 0 && entry.node.DeltaZ > 0);
+        var farShade = new CellCoordinate(viewer.X, viewer.Z + farShadeNode.node.DeltaZ);
+        var map = new byte[8 + size * size * 6];
+        BinaryPrimitives.WriteUInt32LittleEndian(map, size);
+        BinaryPrimitives.WriteUInt32LittleEndian(map.AsSpan(4), size);
+        for (var z = 0; z < size; z++)
+        for (var x = 0; x < size; x++)
+        {
+            var attribute = 8 + size * size * 4 + ((size - 1 - z) * size + x) * 2;
+            var cell = new CellCoordinate(x, z);
+            // Bit 7 lets sight through; bit 8 (shaded) cells are opaque in every shipped map.
+            map[attribute] = (byte)(cell == wall || cell == nearShade || cell == farShade ? 0 : 0x80);
+            map[attribute + 1] = (byte)(cell == nearShade || cell == farShade ? 1 : 0);
+        }
+        var catalog = EntityCatalog.Parse("1\nSCOUT 0 255 25 4 8 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+        var source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
+            $"{viewer.X} {viewer.Z} 0 0 100 0\n";
+        var bytes = new byte[PathRegionMap.RouteTableSize + size * size];
+        bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        // Day at its last tick: lighting 0, so the radius is the day sight (4).
+        var clock = DayNightCycle.FromNativeScenario(new ScenarioDayNight(0, 100, 100, 1));
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, size, size),
+            dayNight: clock, terrain: TerrainMap.Parse(map), visionTrees: trees);
+        var scout = simulation.Actors.Single();
+        Equal(4, simulation.ObservationRange(scout));
+
+        Equal(true, simulation.IsCellVisibleToTeam(0, wall));
+        var wallIndex = NodeAt(2, 0);
+        var hidden = nodes.Where((node, index) => Under(index, wallIndex)).ToList();
+        Equal(true, hidden.Count > 0);
+        foreach (var node in hidden)
+            Equal(false, simulation.IsCellVisibleToTeam(0, new CellCoordinate(viewer.X + node.DeltaX, viewer.Z + node.DeltaZ)));
+        // A shaded cell is seen at depth 1, not at depth 2 or more.
+        Equal(1, nodes[NodeAt(0, -1)].Depth);
+        Equal(true, simulation.IsCellVisibleToTeam(0, nearShade));
+        Equal(false, simulation.IsCellVisibleToTeam(0, farShade));
+        // Explored memory (bit 31) takes every reached cell, shaded or not.
+        Equal(true, simulation.IsCellExploredByTeam(0, farShade));
+        Equal(false, simulation.IsCellExploredByTeam(0, new CellCoordinate(viewer.X + hidden[0].DeltaX, viewer.Z + hidden[0].DeltaZ)));
+
+        // Night begins next update and is fully dark one update later (night
+        // sight 8), but the stamps only refresh on update 16.
+        var far = new CellCoordinate(viewer.X - 6, viewer.Z);
+        Equal(false, simulation.IsCellVisibleToTeam(0, far));
+        for (var update = 1; update < 16; update++) simulation.Step([]);
+        Equal(8, simulation.ObservationRange(scout));
+        Equal(false, simulation.IsCellVisibleToTeam(0, far));
+        simulation.Step([]);
+        Equal(true, simulation.IsCellVisibleToTeam(0, far));
+    });
+
     Check("the SCN loader swaps a placement of the other race for its counterpart", () =>
     {
         var install = GameInstallation.Open(dataPath);
@@ -2356,7 +2436,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var lines = File.ReadAllLines(file).ToList();
         lines[lines.IndexOf("TEAM 1 1") + 1] = "1";
         lines.AddRange(["2 2 0 1 -1 0", "3 2 0 0 -1 0", "4 2 0 4 -1 0"]);
-        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(string.Join("\n", lines) + "\n"), path, rules);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(string.Join("\n", lines) + "\n"), path, rules, terrain: map);
         int EntityAt(int x, int team) =>
             simulation.Actors.Single(actor => actor.Seed.Team == team && actor.Seed.SpawnCell == new CellCoordinate(x, 2)).Seed.EntityId;
 
@@ -2374,7 +2454,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var file = install.DataFile("scenario", "human", "human01") + ".scn";
         var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
         var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
-        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Load(file), path, rules);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Load(file), path, rules, terrain: map);
         Equal(false, simulation.HasCity(0));
         Equal(false, simulation.UsesPortConstructionAdapters());
         var start = simulation.ResourceForTeam(0);
@@ -2394,7 +2474,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
         var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
         var scenario = ScenarioDefinition.Load(file);
-        var simulation = ScenarioSimulation.Create(scenario, path, rules);
+        var simulation = ScenarioSimulation.Create(scenario, path, rules, terrain: map);
         simulation.Step([]);
         // 0x41E6AC: (648 - critter groups - actors of city-less teams 0-8
         // (vents are team 8) - 100) / players with a city, at most 150.
@@ -2405,7 +2485,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
 
         // 500 marines of the city-less team 4 push the cap below team 0's count.
         var crowd = string.Concat(Enumerable.Range(0, 500).Select(index => $"{2 + index % 100} {2 + index / 100} 0 4 -1 0\n"));
-        var crowded = ScenarioSimulation.Create(ScenarioDefinition.Parse(File.ReadAllText(file) + crowd), path, rules);
+        var crowded = ScenarioSimulation.Create(ScenarioDefinition.Parse(File.ReadAllText(file) + crowd), path, rules, terrain: map);
         var headquarters = crowded.CityBuilding(0, 0)!;
         var start = crowded.ResourceForTeam(0);
         crowded.Step([

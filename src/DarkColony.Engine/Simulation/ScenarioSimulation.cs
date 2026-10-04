@@ -7,6 +7,7 @@ using DarkColony.Engine.Economy;
 using DarkColony.Engine.Time;
 using DarkColony.Engine.Movement;
 using DarkColony.Engine.Scenario;
+using DarkColony.Engine.Terrain;
 using DarkColony.Engine.World;
 
 namespace DarkColony.Engine.Simulation;
@@ -86,7 +87,6 @@ public sealed partial class ScenarioSimulation
     // Teams whose SCN %AI profile is nonzero (native player flag +0xbbc).
     private HashSet<int> computerTeams = [];
     // Per-tick team visibility snapshots used by the target selector.
-    private readonly Dictionary<int, bool[]> scanVisibility = [];
     // City building actor per (team, slot), created from %AISlots/%City.
     private readonly Dictionary<(int Team, int Slot), int> cityBuildings = [];
     // True when the SCN declares cities (%AISlots); P7 income then requires a
@@ -192,11 +192,14 @@ public sealed partial class ScenarioSimulation
     public ulong TickCount => simulationTicks;
 
     /// <summary>Creates a simulation with every installed rule table, as the game host does.</summary>
-    public static ScenarioSimulation Create(ScenarioDefinition scenario, PathRegionMap path, SimulationRules rules, MissionScript? missionScript = null)
+    public static ScenarioSimulation Create(ScenarioDefinition scenario, PathRegionMap path, SimulationRules rules,
+        MissionScript? missionScript = null, TerrainMap? terrain = null)
     {
         ArgumentNullException.ThrowIfNull(rules);
         return Create(scenario, rules.Entities, path, rules.Footprints,
             missionScript: missionScript,
+            terrain: terrain,
+            visionTrees: rules.VisionTrees,
             weaponCatalog: rules.Weapons,
             damageMatrix: rules.DamageMatrix,
             dependencyCatalog: rules.Dependencies,
@@ -221,7 +224,9 @@ public sealed partial class ScenarioSimulation
         NativeRandomTable? randomTable = null,
         NativeTargetRings? targetRings = null,
         TroopBuildTimings? buildTimings = null,
-        MissionScript? missionScript = null)
+        MissionScript? missionScript = null,
+        TerrainMap? terrain = null,
+        NativeVisionTrees? visionTrees = null)
     {
         var teamRaces = scenario.Teams.Where(team => team.Race is not null).ToDictionary(team => team.TeamId, team => team.Race!.Value);
         var seeds = scenario.Placements.Where(placement => placement.Team != -1).Select((placement, index) =>
@@ -272,6 +277,8 @@ public sealed partial class ScenarioSimulation
         if (!simulation.petraFlowRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraFlowRules));
         simulation.nativeRandomTable = randomTable ?? NativeRandomTable.Synthetic;
         simulation.targetRings = targetRings;
+        simulation.visionTrees = visionTrees ?? NativeVisionTrees.Flat;
+        simulation.LoadTerrainSight(terrain);
         simulation.computerTeams = scenario.Teams.Where(team => team.Enabled && team.AiProfile > 0).Select(team => team.TeamId).ToHashSet();
         simulation.citiesDeclared = scenario.Teams.Any(team => team.CityOrigin is not null);
         foreach (var city in cityBuildings) simulation.cityBuildings[(city.Team, city.Slot)] = city.InstanceId;
@@ -326,33 +333,6 @@ public sealed partial class ScenarioSimulation
     /// </summary>
     public bool MarkDependencyBuildingCompleted(int teamId, int dependencyItemId) =>
         teamEconomies.TryGetValue(teamId, out var economy) && economy.MarkCompleted(dependencyCatalog, dependencyItemId);
-
-    /// <summary>Uses the catalog's separate day/night observation columns.</summary>
-    public int ObservationRange(SimulatedActor actor) => DayNight.Phase == DayNightPhase.Day
-        ? EffectiveDefinition(actor).DayObservation : EffectiveDefinition(actor).NightObservation;
-
-    /// <summary>
-    /// Returns whether a map cell is currently inside the live sight radius of
-    /// an enabled team's surviving actors. This is an engine query so rendering,
-    /// targeting, and future fog-memory rules share day/night observation data.
-    /// </summary>
-    public bool IsCellVisibleToTeam(int teamId, CellCoordinate cell)
-    {
-        foreach (var observer in Actors)
-        {
-            if (observer.IsDestroyed || observer.Seed.Team != teamId) continue;
-            var range = ObservationRange(observer);
-            var origin = observer.Movement.OccupiedCell;
-            var x = (long)cell.X - origin.X;
-            var z = (long)cell.Z - origin.Z;
-            if (x * x + z * z <= (long)range * range) return true;
-        }
-        return false;
-    }
-
-    /// <summary>Visibility of a live actor at its authoritative occupied cell.</summary>
-    public bool IsActorVisibleToTeam(int teamId, SimulatedActor actor) =>
-        !actor.IsDestroyed && IsCellVisibleToTeam(teamId, actor.Movement.OccupiedCell);
 
     /// <summary>Returns an actor's current shipped form for all live simulation capabilities.</summary>
     public EntityDefinition EffectiveDefinition(SimulatedActor actor) => actor.DeployedEntityId is { } entityId
@@ -433,7 +413,11 @@ public sealed partial class ScenarioSimulation
         TroopCap = ComputeTroopCap();
         pendingMissionMessages.Clear();
         pendingUnmodeledMissionActions.Clear();
+        // 0x41988C stamps visibility while the clock is still zero.
+        EnsureVision();
         LastDayNightChanges = DayNight.Step() ? [new DayNightChangedEvent(DayNight.Phase)] : [];
+        // 0x419A30: after the day/night update, every 16 updates.
+        if ((update & 15) == 0) RefreshVision();
         var nativeIncomeCadence = petraFlowRules.TicksPerPulse == PetraFlowRules.NativeHarvesterPulseTicks;
         var syntheticPulse = !nativeIncomeCadence && SyntheticPetraPulse();
         LastAutonomousWanders = (update & 7) == 0 ? UpdateAutonomousActors() : [];
@@ -663,7 +647,6 @@ public sealed partial class ScenarioSimulation
         var fired = events.Fired;
         var attackMoveAcquisitions = events.AttackMoveAcquisitions;
         var harvesterDeployments = events.HarvesterDeployments;
-        scanVisibility.Clear();
         UpdateCityProduction(events);
         foreach (var actor in actors.ToArray())
         {

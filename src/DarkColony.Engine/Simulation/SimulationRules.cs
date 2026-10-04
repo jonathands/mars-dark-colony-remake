@@ -19,7 +19,8 @@ public sealed record SimulationRules(
     BuildingFootprintCatalog Footprints,
     NativeRandomTable RandomTable,
     NativeTargetRings TargetRings,
-    TroopBuildTimings? BuildTimings = null)
+    TroopBuildTimings? BuildTimings = null,
+    NativeVisionTrees? VisionTrees = null)
 {
     public static SimulationRules Load(GameInstallation installation)
     {
@@ -34,6 +35,7 @@ public sealed record SimulationRules(
             BuildingFootprintCatalog.Load(installation.ExecutablePath),
             NativeRandomTable.Load(installation.ExecutablePath),
             NativeTargetRings.Load(installation.ExecutablePath),
-            TroopBuildTimings.Load(entities, installation));
+            TroopBuildTimings.Load(entities, installation),
+            NativeVisionTrees.Load(installation.ExecutablePath));
     }
 }

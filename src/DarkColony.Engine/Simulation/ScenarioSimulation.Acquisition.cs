@@ -206,10 +206,10 @@ public sealed partial class ScenarioSimulation
     {
         if (candidate.IsDestroyed || candidate == scanner) return false;
         var definition = EffectiveDefinition(candidate);
-        // Hostile mines need a per-team "revealed" bit that is not modeled yet,
-        // so only same-team mines pass this gate (and the relation test then
-        // rejects them).
-        if (definition.UsesNativeMineLayer && candidate.Seed.Team != scanner.Seed.Team) return false;
+        // 0x435829: another team's mine is a candidate only once a detector of
+        // the scanner's team revealed it at the last visibility refresh.
+        if (definition.UsesNativeMineLayer && candidate.Seed.Team != scanner.Seed.Team &&
+            (scanner.Seed.Team is < 0 or > 7 || (candidate.RevealedTeamMask & (1 << scanner.Seed.Team)) == 0)) return false;
         if (definition.IsNativeUntargetable) return false;
         if (candidate.Seed.Team is < 0 or 8 or 9) return false;
         if (!TeamRelations.IsHostile(scanner.Seed.Team, candidate.Seed.Team)) return false;
@@ -244,40 +244,5 @@ public sealed partial class ScenarioSimulation
             score += TeamRelations.IsHostile(scanner.Seed.Team, occupant.Seed.Team) ? 10 : -15;
         }
         return score;
-    }
-
-    /// <summary>
-    /// The selector only considers cells its team currently sees (team 9 uses
-    /// the union of teams 0-7). Visibility is snapshotted per team once per
-    /// tick with the same rule as <see cref="IsCellVisibleToTeam"/>.
-    /// </summary>
-    private bool IsCellVisibleForScan(int team, CellCoordinate cell)
-    {
-        if (team >= 8)
-        {
-            for (var player = 0; player < 8; player++)
-                if (IsCellVisibleForScan(player, cell)) return true;
-            return false;
-        }
-        if (!scanVisibility.TryGetValue(team, out var visible))
-        {
-            visible = new bool[path.Width * path.Height];
-            foreach (var observer in actors)
-            {
-                if (observer.IsDestroyed || observer.Seed.Team != team) continue;
-                var range = ObservationRange(observer);
-                if (range < 0) continue;
-                var center = observer.Movement.OccupiedCell;
-                for (var z = Math.Max(0, center.Z - range); z <= Math.Min(path.Height - 1, center.Z + range); z++)
-                for (var x = Math.Max(0, center.X - range); x <= Math.Min(path.Width - 1, center.X + range); x++)
-                {
-                    long dx = x - center.X;
-                    long dz = z - center.Z;
-                    if (dx * dx + dz * dz <= (long)range * range) visible[z * path.Width + x] = true;
-                }
-            }
-            scanVisibility[team] = visible;
-        }
-        return visible[cell.Z * path.Width + cell.X];
     }
 }

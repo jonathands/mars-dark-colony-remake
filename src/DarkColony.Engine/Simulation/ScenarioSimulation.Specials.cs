@@ -289,9 +289,6 @@ public sealed partial class ScenarioSimulation
     private IReadOnlyList<StealDeploymentEvent> UpdateStealStances()
     {
         var events = new List<StealDeploymentEvent>();
-        // The victim search reads this update's visibility, not the snapshot
-        // left by the previous update's actors.
-        scanVisibility.Clear();
         foreach (var actor in actors.Where(actor => actor.StealTransitionTicksRemaining > 0 ||
                      actor.DeployedEntityId is not null && actor.Definition.Code is "SARG" or "PSYC").ToArray())
         {

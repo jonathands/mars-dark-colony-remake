@@ -31,12 +31,13 @@ one harvester may own or prepare on a vent.
   `SDPL` (Gray) mining-tower form while retaining the original mobile actor
   identity for economy and command ownership. The simulation owns the resulting
   income. `gamestat` already supplies distinct day/night observation values,
-  and the simulation selects those from a deterministic phase clock. Team
-  visibility is now an engine query over each living actor's current decoded
-  observation radius; the gameplay renderer uses it to black out unseen cells
-  and suppress unseen hostile minimap markers. This recovers the original
-  black unexplored-space behavior without turning presentation into a second
-  sight model. Persistent explored-terrain memory remains unrecovered. The
+  and the sight radius blends them by the lighting level. Team visibility
+  follows `dc.exe`: per-radius sight trees read from the executable, MAP
+  opacity and shaded cells, mine detectors, and a rebuild every 16 updates
+  (see [`reverse-engineering/vision.md`](reverse-engineering/vision.md)). The
+  gameplay renderer uses it to black out unseen cells and suppress unseen
+  hostile minimap markers. The original keeps explored-terrain memory in
+  grid bit 31; the port does not draw it yet. The
   native P7 gain constants remain unrecovered. Day/night is now decoded from
   each SCN header: the phase, cycle limit, initial counter, and transition
   limit populate world fields <c>+0x53c</c>, <c>+0x534</c>, <c>+0x530</c>, and
