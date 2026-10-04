@@ -74,6 +74,35 @@ internal static class AssetsChecks
             Equal(1, entities[50].AbilityChargeRecovery);
         }, CheckTags.Data);
 
+        Check("mirrored FIN layers draw flipped at their X - 1, opposite their source direction", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            Sprite Load(string name) => Sprite.Load(install.DataFile("sprites", $"{name}.spr"));
+            // EXPLSTAND12 is expl frame 4 at FIN x -159 (frame x 133); EXPLSTAND4 is the
+            // same frame with the mirror word set, at FIN x -29.
+            var exploiter = AnimationDefinition.Load(install.DataFile("animate", "expl.fin"));
+            CompositeFrame Stand(AnimationDefinition definition, string name) =>
+                definition.Compose(definition.Animations.Single(animation => animation.Name == name).FirstFrame, Load, bottomAnchored: true);
+            var left = Stand(exploiter, "EXPLSTAND12");
+            var right = Stand(exploiter, "EXPLSTAND4");
+            Equal((-26, 30), (left.X, left.X + left.Width));
+            Equal((-30, 26), (right.X, right.X + right.Width));
+            Equal((left.Y, left.Width, left.Height), (right.Y, right.Width, right.Height));
+            for (var y = 0; y < left.Height; y++)
+            for (var x = 0; x < left.Width; x++)
+                Equal(left.Rgba[(y * left.Width + x) * 4 + 3], right.Rgba[(y * left.Width + left.Width - 1 - x) * 4 + 3]);
+
+            // SCGMSTAND2 mixes mirrored and ordinary engine-glow layers; with the
+            // rule, the hull and both glows keep their places in all four frames.
+            var vtol = AnimationDefinition.Load(install.DataFile("animate", "scgm.fin"));
+            var stand = vtol.Animations.Single(animation => animation.Name == "SCGMSTAND2");
+            var extents = Enumerable.Range(stand.FirstFrame, stand.LastFrame - stand.FirstFrame + 1)
+                .Select(frame => vtol.Compose(frame, Load, bottomAnchored: true))
+                .Select(frame => (frame.X, frame.X + frame.Width)).ToArray();
+            foreach (var (from, to) in extents)
+                if (from < -22 || to > 38) throw new InvalidOperationException($"SCGMSTAND2 spans {from}..{to}");
+        }, CheckTags.Data);
+
         Check("world sprites hang from their layer's bottom row and city art from the city origin", () =>
         {
             var install = GameInstallation.Open(dataPath);

@@ -5,7 +5,21 @@ namespace DarkColony.Engine.Assets;
 
 public sealed record AnimationRange(string Name, ushort FirstFrame, ushort LastFrame);
 
-public sealed record DrawLayer(string SpriteName, ushort SpriteFrame, short X, short Y, ushort[] Values);
+/// <summary>
+/// A FIN draw layer. <see cref="Values"/> holds the record's four trailing
+/// words; the last one is 1 when the layer is drawn mirrored (see <see cref="Mirrored"/>).
+/// </summary>
+public sealed record DrawLayer(string SpriteName, ushort SpriteFrame, short X, short Y, ushort[] Values)
+{
+    /// <summary>
+    /// The fourth trailing word: 1 draws the frame mirrored left to right.
+    /// Derived from the shipped data, not yet from the executable: the
+    /// right-facing directions reuse the left-facing frames with this word
+    /// set (EXPLSTAND4 is EXPLSTAND12's expl frame 4 mirrored), and only 0
+    /// and 1 occur (11,871 of 56,605 layers in 72 files).
+    /// </summary>
+    public bool Mirrored => Values.Length > 3 && Values[3] != 0;
+}
 
 /// <summary>A FIN logical frame: its delay word (frame ticks are <c>(d + 3) * 15 / 100</c>, d 0 meaning 15; see <see cref="NativeAnimationTiming"/>) and its layers.</summary>
 public sealed record LogicalFrame(ushort Delay, IReadOnlyList<DrawLayer> Layers);
@@ -93,8 +107,12 @@ public sealed class AnimationDefinition
     }
 
     /// <summary>
-    /// Composes one logical frame. Every layer starts at its FIN X plus the
-    /// sprite frame's X. Vertically, <paramref name="bottomAnchored"/> places
+    /// Composes one logical frame. An ordinary layer starts at its FIN X plus
+    /// the sprite frame's X. A mirrored layer (<see cref="DrawLayer.Mirrored"/>)
+    /// is drawn flipped with its left edge at its FIN X - 1, without the
+    /// frame's X. That places every mirrored direction exactly opposite its
+    /// source: EXPLSTAND12 spans x -26..30 and EXPLSTAND4 -30..26. It also
+    /// keeps the VTOL's engine glow beside its hull in every frame. Vertically, <paramref name="bottomAnchored"/> places
     /// the frame's bottom row at the layer's Y, as the world sprite blit does
     /// (<c>0x454751</c> culls a queued sprite to <c>[y - height, y]</c>, and
     /// <c>0x4399AD</c> queues each layer at the actor's position plus its
@@ -112,25 +130,28 @@ public sealed class AnimationDefinition
         {
             var sprite = spriteLoader(layer.SpriteName);
             var frame = sprite.Frames[layer.SpriteFrame];
+            var x = layer.Mirrored ? layer.X - 1 : layer.X + frame.AnchorX;
             var y = bottomAnchored ? layer.Y - frame.Height : layer.Y + frame.AnchorY;
-            return (Layer: layer, Frame: frame, Y: y, Rgba: sprite.FrameRgba(layer.SpriteFrame, palette: palette));
+            return (Layer: layer, Frame: frame, X: x, Y: y, Rgba: sprite.FrameRgba(layer.SpriteFrame, palette: palette));
         }).ToArray();
-        var left = sources.Min(item => item.Layer.X + item.Frame.AnchorX);
+        var left = sources.Min(item => item.X);
         var top = sources.Min(item => item.Y);
-        var right = sources.Max(item => item.Layer.X + item.Frame.AnchorX + item.Frame.Width);
+        var right = sources.Max(item => item.X + item.Frame.Width);
         var bottom = sources.Max(item => item.Y + item.Frame.Height);
         var width = right - left;
         var height = bottom - top;
         var target = new byte[checked(width * height * 4)];
         foreach (var source in sources)
         {
-            var targetX = source.Layer.X + source.Frame.AnchorX - left;
+            var targetX = source.X - left;
             var targetY = source.Y - top;
+            var mirrored = source.Layer.Mirrored;
             for (var y = 0; y < source.Frame.Height; y++)
             {
                 for (var x = 0; x < source.Frame.Width; x++)
                 {
-                    var sourceOffset = (y * source.Frame.Width + x) * 4;
+                    var sourceX = mirrored ? source.Frame.Width - 1 - x : x;
+                    var sourceOffset = (y * source.Frame.Width + sourceX) * 4;
                     if (source.Rgba[sourceOffset + 3] == 0) continue;
                     var targetOffset = ((targetY + y) * width + targetX + x) * 4;
                     source.Rgba.AsSpan(sourceOffset, 4).CopyTo(target.AsSpan(targetOffset));

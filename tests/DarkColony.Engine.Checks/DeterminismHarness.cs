@@ -378,7 +378,7 @@ internal static class DeterminismCli
         var update = args.Contains("--update-goldens");
         var dump = Array.IndexOf(args, "--dump-digest");
         var summary = Array.IndexOf(args, "--event-summary");
-        string[] modes = ["--dump-fin", "--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke", "--decode-avi", "--lockstep", "--catalog-sweep"];
+        string[] modes = ["--dump-fin", "--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke", "--decode-avi", "--lockstep", "--catalog-sweep", "--fin-sheet"];
         if (!args.Any(modes.Contains)) return false;
 
         // --decode-avi <file.avi> [frame ...]: SHA-256 prefixes of decoded RGB24 frames (compare with ffmpeg -pix_fmt rgb24).
@@ -519,6 +519,51 @@ internal static class DeterminismCli
                     ppm.AddRange(composite.Rgba[pixel * 4 + 3] == 0 ? [0, 0, 0] : [composite.Rgba[pixel * 4], composite.Rgba[pixel * 4 + 1], composite.Rgba[pixel * 4 + 2]]);
                 File.WriteAllBytes(Path.Combine(args[dumpFin + 3], $"{range.Name}-{frame}-d{definition.LogicalFrames[frame].Delay}.ppm"), [.. ppm]);
             }
+            return true;
+        }
+
+        // --fin-sheet <file.fin> <name prefix> <out.ppm>: every animation whose name starts with the
+        // prefix, one row each (ordered by trailing number), its frames composed as the world draws
+        // them (bottom-anchored) and placed by their anchor offsets, so motion between frames shows.
+        var finSheet = Array.IndexOf(args, "--fin-sheet");
+        if (finSheet >= 0)
+        {
+            var definition = AnimationDefinition.Load(installation.DataFile("animate", args[finSheet + 1]));
+            Sprite Load(string name) => Sprite.Load(File.Exists(installation.DataFile("sprites", name + ".spr"))
+                ? installation.DataFile("sprites", name + ".spr") : installation.DataFile("intrface", name + ".spr"));
+            static int Trailing(string name) => int.TryParse(new string(name.Reverse().TakeWhile(char.IsDigit).Reverse().ToArray()), out var value) ? value : -1;
+            var rows = definition.Animations.Where(animation => animation.Name.StartsWith(args[finSheet + 2], StringComparison.OrdinalIgnoreCase))
+                .OrderBy(animation => Trailing(animation.Name)).ThenBy(animation => animation.Name, StringComparer.Ordinal).ToArray();
+            var frames = rows.Select(row => Enumerable.Range(row.FirstFrame, row.LastFrame - row.FirstFrame + 1)
+                .Select(frame => definition.Compose(frame, Load, bottomAnchored: true)).ToArray()).ToArray();
+            var all = frames.SelectMany(row => row).ToArray();
+            int minX = all.Min(frame => frame.X), minY = all.Min(frame => frame.Y);
+            int cellWidth = all.Max(frame => frame.X + frame.Width) - minX + 4, cellHeight = all.Max(frame => frame.Y + frame.Height) - minY + 4;
+            var columns = frames.Max(row => row.Length);
+            int width = cellWidth * columns, height = cellHeight * rows.Length;
+            var pixels = new byte[width * height * 3];
+            for (var index = 0; index < pixels.Length; index += 3) (pixels[index], pixels[index + 1], pixels[index + 2]) = ((byte)40, (byte)60, (byte)40);
+            for (var row = 0; row < frames.Length; row++)
+            {
+                Console.WriteLine($"{rows[row].Name}: frames {rows[row].FirstFrame}-{rows[row].LastFrame}, delays " +
+                    string.Join(' ', Enumerable.Range(rows[row].FirstFrame, rows[row].LastFrame - rows[row].FirstFrame + 1).Select(frame => definition.LogicalFrames[frame].Delay)) +
+                    ", anchors " + string.Join(' ', frames[row].Select(frame => $"({frame.X},{frame.Y} {frame.Width}x{frame.Height})")));
+                for (var column = 0; column < frames[row].Length; column++)
+                {
+                    var frame = frames[row][column];
+                    var left = column * cellWidth + 2 + frame.X - minX;
+                    var top = row * cellHeight + 2 + frame.Y - minY;
+                    for (var y = 0; y < frame.Height; y++)
+                    for (var x = 0; x < frame.Width; x++)
+                    {
+                        var source = (y * frame.Width + x) * 4;
+                        if (frame.Rgba[source + 3] == 0) continue;
+                        var target = ((top + y) * width + left + x) * 3;
+                        (pixels[target], pixels[target + 1], pixels[target + 2]) = (frame.Rgba[source], frame.Rgba[source + 1], frame.Rgba[source + 2]);
+                    }
+                }
+            }
+            File.WriteAllBytes(args[finSheet + 3], [.. System.Text.Encoding.ASCII.GetBytes($"P6 {width} {height} 255\n"), .. pixels]);
             return true;
         }
 
