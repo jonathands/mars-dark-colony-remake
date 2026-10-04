@@ -21,7 +21,12 @@ public sealed record ScenarioPlacement(
     int Value,
     int Flag);
 
-public sealed record ScenarioVent(int X, int Z, int EntityId, int Value, int Interval);
+/// <summary>
+/// Native entity-40 records contain <c>x z entity initial-state reservoir</c>.
+/// The fifth value is passed to the actor constructor as runtime <c>+0x0c</c>,
+/// which the deployed-harvester pulse consumes as its source reservoir.
+/// </summary>
+public sealed record ScenarioVent(int X, int Z, int EntityId, int InitialState, int InitialReservoir);
 
 /// <summary>
 /// The four scalar lines after the SCN's map descriptor. dc.exe loads these

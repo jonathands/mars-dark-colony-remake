@@ -388,7 +388,7 @@ public sealed class ScenarioSimulation
         if (!simulation.petraFlowRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraFlowRules));
         if (!simulation.petraStealRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraStealRules));
         simulation.SeedScenarioBuildingDependencies();
-        simulation.PetraVents = scenario.Vents.Select((vent, index) => new PetraVent(index, new CellCoordinate(vent.X, vent.Z), vent.Value, vent.Interval)).ToArray();
+        simulation.PetraVents = scenario.Vents.Select((vent, index) => new PetraVent(index, new CellCoordinate(vent.X, vent.Z), vent.InitialState, vent.InitialReservoir)).ToArray();
         simulation.autonomousGroups.AddRange(scenario.AutonomousSpawnGroups.Select(group => new AutonomousGroupRuntime(
             group, autonomous.EntitiesByGroup.GetValueOrDefault(group.GroupId, []).Select(entity => entity.InstanceId))));
         return simulation;
@@ -739,6 +739,9 @@ public sealed class ScenarioSimulation
                 else if (status == PackedPathPlaybackStatus.Complete)
                 {
                     actor.Playback = null;
+                    if (actor.MoveOrder?.Target == actor.Movement.OccupiedCell &&
+                        TryBeginHarvesterAttachmentOnVentArrival(actor, harvesterDeployments))
+                        continue;
                     if (actor.MoveOrder?.Target == actor.Movement.OccupiedCell && !actor.MoveOrder.AdvanceWaypoint())
                         actor.MoveOrder = null;
                 }
@@ -1256,6 +1259,10 @@ public sealed class ScenarioSimulation
     private void RemoveActorFromWorld(SimulatedActor actor)
     {
         actor.Health = 0;
+        // Removing a transported or abducted actor must release any pending
+        // Petra-7 vent handshake immediately; otherwise the vent remains
+        // falsely occupied until the next sixteen-step income pass.
+        DetachHarvester(actor);
         actor.Playback?.Cancel();
         actor.Playback = null;
         actor.MoveOrder = null;
@@ -1416,6 +1423,30 @@ public sealed class ScenarioSimulation
             if (vent.AttachTicksRemaining > 0) vent.AttachTicksRemaining--;
             if (vent.AttachTicksRemaining == 0) events.Add(AttachHarvester(actor, vent));
         }
+    }
+
+    /// <summary>
+    /// The original <c>dc.exe</c> begins the EXPL/SLUG deployment sequence when
+    /// an ordinary move command finishes on an unclaimed vent.  This is kept at
+    /// the route-completion boundary so crossing a vent, or stopping beside it,
+    /// remains an ordinary movement command.
+    /// </summary>
+    private bool TryBeginHarvesterAttachmentOnVentArrival(
+        SimulatedActor actor,
+        ICollection<HarvesterDeploymentEvent> events)
+    {
+        if (actor.IsDestroyed || actor.HarvestVentId is not null || actor.Seed.Team < 0 ||
+            actor.Definition.Code is not ("EXPL" or "SLUG"))
+            return false;
+
+        var vent = PetraVents.FirstOrDefault(candidate => candidate.Position == actor.Movement.OccupiedCell);
+        if (vent is null ||
+            vent.HarvesterInstanceId is not null ||
+            vent.PendingHarvesterInstanceId is not null)
+            return false;
+
+        events.Add(BeginHarvesterAttachment(actor, vent));
+        return true;
     }
 
     private static HarvesterDeploymentEvent BeginHarvesterAttachment(SimulatedActor actor, PetraVent vent)
@@ -1758,8 +1789,23 @@ public sealed class ScenarioSimulation
     private IReadOnlyList<P7IncomeEvent> ApplyPetraFlow()
     {
         LastP7Thefts = [];
-        if (++petraPulseTicks < petraFlowRules.TicksPerPulse) return [];
-        petraPulseTicks = 0;
+        // The native producer does not own an independent interval counter:
+        // 0x4139D7 tests world+0x530 directly with `& 0x0f`.  Retaining that
+        // phase matters when a harvester attaches between two global updates.
+        // Alternate rules are intentionally still supported for narrow engine
+        // checks that inject a synthetic cadence.
+        if (petraFlowRules.TicksPerPulse == PetraFlowRules.NativeHarvesterPulseTicks)
+        {
+            if ((simulationTicks & (PetraFlowRules.NativeHarvesterPulseTicks - 1)) != 0) return [];
+        }
+        else if (++petraPulseTicks < petraFlowRules.TicksPerPulse)
+        {
+            return [];
+        }
+        else
+        {
+            petraPulseTicks = 0;
+        }
         var income = new List<P7IncomeEvent>();
         var thefts = new List<P7TheftEvent>();
         foreach (var (teamId, economy) in teamEconomies.OrderBy(pair => pair.Key))
@@ -1784,7 +1830,14 @@ public sealed class ScenarioSimulation
                 continue;
             }
             if (!teamEconomies.TryGetValue(harvester.Seed.Team, out var economy)) continue;
-            var attachedIncome = petraFlowRules.AttachedP7PerPulse;
+            // Native 0x413856 tests the source reservoir with a strict
+            // `remaining - baseRate > 0` check before the 16-step payout, then
+            // subtracts the credited source amount at 0x413bdf. The exact
+            // authored rate is still unrecovered, so the explicit port pulse
+            // amount remains the replaceable base rate here.
+            var attachedIncome = petraFlowRules.EffectiveAttachedP7;
+            if (!petraFlowRules.CanCreditReservoir(vent.RemainingReservoir, attachedIncome)) continue;
+            vent.RemainingReservoir -= attachedIncome;
             var thief = FindPetraThief(harvester);
             var stolen = thief is null ? 0 : petraStealRules.StolenAmount(attachedIncome);
             var retained = attachedIncome - stolen;
@@ -1825,6 +1878,10 @@ public sealed class ScenarioSimulation
     private void Destroy(SimulatedActor actor, ICollection<DestroyedActorEvent> destroyed)
     {
         destroyed.Add(new DestroyedActorEvent(actor.Seed.InstanceId, actor.Seed.EntityId, actor.Movement.VisualPosition));
+        // The native actor destructor removes a live EXPL/SLUG source from its
+        // vent record as part of world removal, rather than waiting for the
+        // next producer pulse to notice a stale pointer.
+        DetachHarvester(actor);
         actor.Playback?.Cancel();
         actor.Playback = null;
         actor.MoveOrder = null;

@@ -16,13 +16,17 @@
   security troops are item 9, cost 350 P7, entity 0, prerequisite item 1;
   Gray warriors are item 23, cost 350 P7, entity 8, prerequisite item 15.
 - SCN entity-40 vent records now become deterministic Petra-7 runtime objects;
-  their fifth field is retained as the established independent cycle interval.
-  The compiled Deploy command accepts Human `EXPL` and Gray `SLUG`, routes one
-  onto the vent's exact cell, waits the executable-recovered 50-tick attachment
-  handshake, then atomically attaches it. The deployed record's zero movement
-  speed is now authoritative, so Stop/move cannot silently detach it. Pressing
-  its contextual control or Enter executes the proven EDPLY/SDPL reverse
-  transition and restores mobility; one harvester may own or prepare on a vent.
+  their fifth field initializes the native source reservoir at actor `+0x0c`.
+  The source pulse requires `remaining - baseRate > 0` before paying and then
+  decrements that reservoir. The exact authored base-rate field remains open.
+The compiled Deploy command accepts Human `EXPL` and Gray `SLUG`, routes one
+onto the vent's exact cell, waits the executable-recovered 50-tick attachment
+handshake, then atomically attaches it. A normal move order that finishes on a
+free vent starts that same handshake, matching the controlled `dc.exe`
+observation. The deployed record's zero movement speed is now authoritative,
+so Stop/move cannot silently detach it. Pressing its contextual control or
+Enter executes the proven EDPLY/SDPL reverse transition and restores mobility;
+one harvester may own or prepare on a vent.
   While attached, the renderer selects the data-resolved `EDPLY` (Human) or
   `SDPL` (Gray) mining-tower form while retaining the original mobile actor
   identity for economy and command ownership. The simulation owns the resulting
@@ -33,9 +37,26 @@
   and suppress unseen hostile minimap markers. This recovers the original
   black unexplored-space behavior without turning presentation into a second
   sight model. Persistent explored-terrain memory remains unrecovered. The
-  native P7 gain constants and exact phase duration remain unrecovered:
-  current 15-tick pulses, +1 passive P7, +4 deployed-vent P7, and 900-tick
-  half-days are explicit provisional rules rather than claimed executable fact.
+  native P7 gain constants remain unrecovered. Day/night is now decoded from
+  each SCN header: the phase, cycle limit, initial counter, and transition
+  limit populate world fields <c>+0x53c</c>, <c>+0x534</c>, <c>+0x530</c>, and
+  <c>+0x538</c>. The world tick increments the counter and flips only when
+  <c>counter &gt; cycleLimit</c>, resetting it to zero; during the configured
+  transition it computes the linear 0..256 lighting field at <c>+0x540</c>.
+  The
+  deployed-harvester producer's cadence is executable-confirmed: it gates on
+  the low four world-counter bits, yielding one opportunity every 16 fixed
+  steps. Static trace of `0x4139d7`--`0x413be4` further proves that a payout
+  begins as the high word of runtime source field `+0x30`, is optionally
+  multiplied by the owning player's signed 8.8 field `+0x19b8` when its
+  `+0xbbc` flag is set, then credits player P7 at `+0xbac` and decrements the
+  source's remaining quantity at `+0x0c`. A nearby 0x4d/0x4e interceptor is
+  credited the signed half before the owner receives the remainder. This
+  refutes the prior implied global `+4` model: the SCN-to-runtime source-field
+  mapping and the player multiplier's dataflow still require runtime evidence.
+  The default port rule no longer grants a global passive P7 pulse: that is
+  contradicted by the native attached-source path. The former global 900-tick
+  half-day has been replaced by the recovered per-SCN clock.
 - Human 10 and Alien 11 campaign text establishes that a deployed S.A.R.G.E.
   or Gorrem near an enemy mining unit intercepts 50% of its resource income,
   has long range, and does not require sight. The deterministic engine now

@@ -100,6 +100,31 @@ Check("SCN day-night header retains the executable's strict cycle and lighting r
     Equal(256, cycle.LightingLevel);
 });
 
+Check("default P7 harvester cadence follows the native low-four-bit gate", () =>
+{
+    Equal(PetraFlowRules.NativeHarvesterPulseTicks, PetraFlowRules.ProvisionalDefault.TicksPerPulse);
+    Equal(16, PetraFlowRules.NativeHarvesterPulseTicks);
+    Equal(0, PetraFlowRules.ProvisionalDefault.PassiveP7PerPulse);
+});
+
+Check("P7 source credit keeps the native strict reservoir boundary", () =>
+{
+    var rules = PetraFlowRules.ProvisionalDefault;
+    Equal(true, rules.CanCreditReservoir(5, 4));
+    Equal(false, rules.CanCreditReservoir(4, 4));
+    Equal(false, rules.CanCreditReservoir(3, 4));
+});
+
+Check("P7 source credit applies the recovered signed 8.8 owner multiplier", () =>
+{
+    Equal(4, new PetraFlowRules(16, 0, 4).EffectiveAttachedP7);
+    Equal(4, new PetraFlowRules(16, 0, 4, 0x180).EffectiveAttachedP7);
+    Equal(6, new PetraFlowRules(16, 0, 4, 0x180, true).EffectiveAttachedP7);
+    Equal(2, new PetraFlowRules(16, 0, 4, 0x80, true).EffectiveAttachedP7);
+    Equal(-2, new PetraFlowRules(16, 0, 3, -0x80, true).EffectiveAttachedP7);
+    Equal(false, new PetraFlowRules(16, 0, 3, -0x80, true).CanCreditReservoir(100, -2));
+});
+
 Check("unit special-command identities preserve recovered HUD mappings", () =>
 {
     Equal(true, UnitSpecialCommandCatalog.TryGet("EXPL", out var exploiter));
@@ -616,6 +641,24 @@ Check("Exploiter vent deployment accelerates P7 and day night selects observatio
          tick < 100; tick++) simulation.Step([]);
     Equal(5, simulation.ResourceForTeam(0));
     Equal(new[] { 1, 4 }, simulation.LastP7Income.Select(income => income.Amount).ToArray());
+    Equal(96, simulation.PetraVents[0].RemainingReservoir);
+});
+
+Check("P7 source stops before consuming its final exact-rate remainder", () =>
+{
+    var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n1 1 40 0 4\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 16];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4),
+        petraFlowRules: new PetraFlowRules(1, 0, 4));
+    var exploiter = simulation.Actors.Single();
+    simulation.Step([new ScheduledWorldCommand(1, 0, new HarvestVentIntent(exploiter.Seed.InstanceId, 0))]);
+    for (var tick = 0; tick < ScenarioSimulation.NativeHarvesterAttachTicks; tick++) simulation.Step([]);
+    Equal(exploiter.Seed.InstanceId, simulation.PetraVents[0].HarvesterInstanceId!.Value);
+    simulation.Step([]);
+    Equal(4, simulation.PetraVents[0].RemainingReservoir);
+    Equal(0, simulation.LastP7Income.Count);
 });
 
 Check("team visibility follows each observer's decoded day and night range", () =>
@@ -659,6 +702,24 @@ Check("harvester deployment walks to a vent then attaches deterministically", ()
     Equal(new CellCoordinate(3, 3), exploiter.Movement.OccupiedCell);
     simulation.Step([new ScheduledWorldCommand(3, 0, new MoveIntent(exploiter.Seed.InstanceId, new CellCoordinate(2, 3)))]);
     Equal(true, simulation.LastMoveOutcomes.Single().StepCount > 0);
+});
+
+Check("ordinary movement onto a free vent automatically begins harvester deployment", () =>
+{
+    var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 9 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 8 5 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 100 0\n3 3 40 0 100\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 36];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 6));
+    var exploiter = simulation.Actors.Single();
+
+    simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(exploiter.Seed.InstanceId, new CellCoordinate(3, 3)))]);
+    for (var tick = 0; tick < 250 && simulation.LastHarvesterDeployments.Count == 0; tick++) simulation.Step([]);
+
+    Equal(HarvesterDeploymentOutcome.Preparing, simulation.LastHarvesterDeployments.Single().Outcome);
+    Equal(0, exploiter.HarvestVentId!.Value);
+    Equal(true, exploiter.MoveOrder is null && exploiter.Playback is null);
+    Equal(ScenarioSimulation.NativeHarvesterAttachTicks, simulation.PetraVents[0].AttachTicksRemaining);
 });
 
 Check("tower builders deploy into their paired armed static forms", () =>
