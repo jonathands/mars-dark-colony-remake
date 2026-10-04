@@ -65,7 +65,9 @@ dotnet run --project tests/DarkColony.Engine.Checks
 The checks include a whole-simulation determinism guard: scripted runs of
 installed scenarios are hashed every tick and compared with recorded goldens.
 `dotnet run --project tests/DarkColony.Engine.Checks -- --verify-goldens` runs
-only that comparison. See [`docs/DETERMINISM.md`](docs/DETERMINISM.md).
+only that comparison. See [`docs/DETERMINISM.md`](docs/DETERMINISM.md). Set
+`DARKCOLONY_CHECK_FILTER=<text>` to run only the checks whose name contains
+that text.
 
 The first milestone establishes a native 640×480 compiled menu host using the
 original external GIF backgrounds and recovered control coordinates. The

@@ -14,6 +14,8 @@ using System.Buffers.Binary;
 if (DeterminismCli.TryRun(args, out var determinismExitCode)) return determinismExitCode;
 
 var failures = new List<string>();
+// DARKCOLONY_CHECK_FILTER runs only checks whose name contains the given text.
+var checkFilter = Environment.GetEnvironmentVariable("DARKCOLONY_CHECK_FILTER");
 
 Check("clock uses strict comparison", () =>
 {
@@ -2522,7 +2524,12 @@ Check("single-player War maps complete a local movement order", () =>
             simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(actor.Seed.InstanceId, target.Value))]);
             for (var tick = 0; tick < 1_000 && actor.MoveOrder is not null; tick++) simulation.Step([]);
             if (actor.Movement.OccupiedCell != target.Value || actor.MoveOrder is not null)
-                throw new InvalidDataException($"{Path.GetFileName(file)} local unit {actor.Seed.InstanceId} did not complete its movement order.");
+            {
+                var owner = simulation.GroundOccupancy.TryGetOwner(target.Value, out var ownerId) ? ownerId.ToString() : "none";
+                throw new InvalidDataException(
+                    $"{Path.GetFileName(file)} local unit {actor.Seed.InstanceId} did not complete its movement order " +
+                    $"({actor.Movement.OccupiedCell} -> {target.Value}, target owner {owner}).");
+            }
             movedMaps++;
         }
         Equal(files.Length, movedMaps);
@@ -2841,6 +2848,7 @@ PathRegionMap OpenPath(int width, int height)
 
 void Check(string name, Action action)
 {
+    if (!string.IsNullOrEmpty(checkFilter) && !name.Contains(checkFilter, StringComparison.OrdinalIgnoreCase)) return;
     try
     {
         action();
