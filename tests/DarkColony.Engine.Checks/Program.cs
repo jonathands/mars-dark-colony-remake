@@ -4113,9 +4113,10 @@ Check("faction-selected War rosters complete a local movement order", () =>
             lineHeight: 14);
         Equal(123, font.Sprite.Frames.Count);
         Equal(34, font.FrameIndex('A'));
-        Equal(7, font.Advance('A'));
-        Equal(7, font.Advance(' '));
-        Equal(5, font.Advance('!'));
+        // Extent plus the native one-pixel spacing (captured menu and lobby).
+        Equal(8, font.Advance('A'));
+        Equal(8, font.Advance(' '));
+        Equal(6, font.Advance('!'));
     });
 
     Check("encyclopedia catalog preserves shipped identities", () =>

@@ -261,9 +261,10 @@ public sealed partial class MainForm
         int x,
         int y,
         float opacity = 1f,
-        bool remapWarControlPalette = false)
+        bool remapWarControlPalette = false,
+        bool dimmed = false)
     {
-        var bitmap = AnimationBitmap(fileName, frameIndex, remapWarControlPalette);
+        var bitmap = AnimationBitmap(fileName, frameIndex, remapWarControlPalette, dimmed: dimmed);
         if (bitmap is null) return false;
         // Interface source rectangles already specify the gadget origin. FIN
         // layer offsets were consumed while composing/cropping the bitmap and
@@ -298,10 +299,10 @@ public sealed partial class MainForm
     /// </summary>
     private Bitmap? WorldAnimationBitmap(string fileName, int frameIndex) => AnimationBitmap(fileName, frameIndex, world: true);
 
-    private Bitmap? AnimationBitmap(string fileName, int frameIndex, bool remapWarControlPalette = false, bool world = false)
+    private Bitmap? AnimationBitmap(string fileName, int frameIndex, bool remapWarControlPalette = false, bool world = false, bool dimmed = false)
     {
         if (_installation is null) return null;
-        var key = $"{fileName}:{frameIndex}:{(world ? "world" : remapWarControlPalette ? "war-controls" : "base")}";
+        var key = $"{fileName}:{frameIndex}:{(world ? "world" : remapWarControlPalette ? "war-controls" : dimmed ? "dim" : "base")}";
         try
         {
             if (_animationFrames.TryGetValue(key, out var cached)) return cached;
@@ -322,6 +323,15 @@ public sealed partial class MainForm
                 // recoloring every opaque pixel would destroy the composite's
                 // black, grey, cyan, and glyph details.
                 RemapWarControlPalette(composite.Rgba);
+            }
+            if (dimmed)
+            {
+                // The main menu blends its buttons into the black screen
+                // through intro.rmp; the captured result is 11/16 of the
+                // sprite colors (255,44,0 -> 173,32,0).
+                for (var pixel = 0; pixel < composite.Rgba.Length; pixel += 4)
+                    for (var channel = 0; channel < 3; channel++)
+                        composite.Rgba[pixel + channel] = (byte)(composite.Rgba[pixel + channel] * 11 / 16);
             }
             var bitmap = BitmapFromRgba(composite);
             _animationFrames[key] = bitmap;

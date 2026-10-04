@@ -135,7 +135,7 @@ public sealed partial class MainForm
                 graphics.FillRectangle(highlight, bounds);
             }
             DrawMenuText(graphics, maps[index].DisplayName, new Rectangle(29, bounds.Y, 280, rowHeight), center: false);
-            DrawMenuText(graphics, WarMapDescription(maps[index].Stem), new Rectangle(310, bounds.Y, 250, rowHeight), center: false);
+            DrawMenuText(graphics, WarMapDescription(maps[index].Stem), new Rectangle(373, bounds.Y, 190, rowHeight), center: false);
         }
         graphics.Restore(state);
 
@@ -263,7 +263,8 @@ public sealed partial class MainForm
             'j' => "Jungle",
             _ => "Unknown",
         };
-        return $"({players} Player {terrain} Map)";
+        // The native lobby leaves a space before the closing parenthesis.
+        return $"({players} Player {terrain} Map )";
     }
 
     private void SelectSinglePlayerMapAt(Point point)

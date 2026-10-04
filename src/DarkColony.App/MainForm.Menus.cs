@@ -266,14 +266,22 @@ public sealed partial class MainForm
         if (art is not null)
         {
             ushort frame;
+            var dimmed = false;
             if (_screen == MenuScreenId.Main)
             {
                 var age = (long)(_world.TickCount - _screenStartedAtTick) - sequenceIndex * 2L;
                 // Several one-off ranges end with an empty FIN sentinel.
-                // LARGE/MED/SMALL BUTTON and UP/DOWN all have their final
-                // visible frame immediately before that sentinel.
+                // LARGE/MED/SMALL BUTTON build up to the frame before the last
+                // visible one (black with a double red outline, held by its
+                // long delay); the last visible frame is the highlight. The
+                // native capture shows the resting button there.
                 var lastVisible = LastVisibleFrame(art);
-                frame = (ushort)(art.FirstFrame + Math.Clamp(age, 0L, (long)(lastVisible - art.FirstFrame)));
+                var rest = Math.Max(art.FirstFrame, lastVisible - 1);
+                var buildUp = Math.Clamp(age, 0L, (long)(rest - art.FirstFrame));
+                frame = (pressed || bright) && buildUp == rest - art.FirstFrame
+                    ? (ushort)lastVisible
+                    : (ushort)(art.FirstFrame + buildUp);
+                dimmed = frame != lastVisible;
             }
             else if (pressed || bright)
             {
@@ -286,7 +294,8 @@ public sealed partial class MainForm
                 frame,
                 button.Bounds.X,
                 button.Bounds.Y,
-                remapWarControlPalette: _screen == MenuScreenId.SinglePlayer);
+                remapWarControlPalette: _screen == MenuScreenId.SinglePlayer,
+                dimmed: dimmed);
         }
 
         if (!drewOriginal)
@@ -297,8 +306,14 @@ public sealed partial class MainForm
             graphics.DrawRectangle(border, button.Bounds.X, button.Bounds.Y, button.Bounds.Width - 1, button.Bounds.Height - 1);
         }
 
-        var warButtonText = _screen == MenuScreenId.SinglePlayer ? Color.FromArgb(159, 19, 19) : (Color?)null;
-        if (!DrawMenuText(graphics, button.Label, button.Bounds, remap: warButtonText))
+        // Captured native text: War (159,19,19), main menu (140,12,8).
+        var warButtonText = _screen switch
+        {
+            MenuScreenId.SinglePlayer => Color.FromArgb(159, 19, 19),
+            MenuScreenId.Main => Color.FromArgb(140, 12, 8),
+            _ => (Color?)null,
+        };
+        if (!DrawMenuText(graphics, button.Label, button.Bounds, remap: warButtonText, shaded: _screen == MenuScreenId.Main))
         {
             using var font = new Font(FontFamily.GenericSansSerif, 10, FontStyle.Bold, GraphicsUnit.Pixel);
             using var brush = new SolidBrush(pressed ? Color.FromArgb(145, 170, 135) : Color.FromArgb(205, 226, 195));
@@ -307,7 +322,12 @@ public sealed partial class MainForm
         }
     }
 
-    private bool DrawMenuText(Graphics graphics, string text, Rectangle bounds, bool center = true, Color? remap = null)
+    /// <param name="shaded">
+    /// Keep the glyphs' shading: each cyan tone (0, v, v) becomes the tint
+    /// times v / 203, as the native main-menu capture shows; otherwise every
+    /// glyph pixel takes the tint.
+    /// </param>
+    private bool DrawMenuText(Graphics graphics, string text, Rectangle bounds, bool center = true, Color? remap = null, bool shaded = false)
     {
         if (_installation is null) return false;
         try
@@ -327,7 +347,7 @@ public sealed partial class MainForm
                 if (frame.Width != 0 && frame.Height != 0)
                 {
                     Bitmap? bitmap;
-                    var cacheKey = remap is { } color ? $"{frameIndex}:{color.ToArgb()}" : string.Empty;
+                    var cacheKey = remap is { } color ? $"{frameIndex}:{color.ToArgb()}:{shaded}" : string.Empty;
                     var found = remap is null
                         ? _fontGlyphs.TryGetValue(frameIndex, out bitmap)
                         : _remappedFontGlyphs.TryGetValue(cacheKey, out bitmap);
@@ -340,9 +360,10 @@ public sealed partial class MainForm
                             for (var pixel = 0; pixel < rgba.Length; pixel += 4)
                             {
                                 if (rgba[pixel + 3] == 0) continue;
-                                rgba[pixel] = tint.R;
-                                rgba[pixel + 1] = tint.G;
-                                rgba[pixel + 2] = tint.B;
+                                var level = shaded ? Math.Min(255, (int)rgba[pixel + 1]) : 203;
+                                rgba[pixel] = (byte)(tint.R * level / 203);
+                                rgba[pixel + 1] = (byte)(tint.G * level / 203);
+                                rgba[pixel + 2] = (byte)(tint.B * level / 203);
                             }
                         }
                         bitmap = BitmapFromRgba(frame.Width, frame.Height, rgba);

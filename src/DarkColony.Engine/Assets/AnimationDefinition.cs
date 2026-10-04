@@ -102,7 +102,8 @@ public sealed class AnimationDefinition
     /// canvas. Otherwise the frame's Y is added to the layer's, which is how
     /// the interface art is laid out.
     /// </summary>
-    public CompositeFrame Compose(int frameIndex, Func<string, Sprite> spriteLoader, bool bottomAnchored = false)
+    public CompositeFrame Compose(int frameIndex, Func<string, Sprite> spriteLoader, bool bottomAnchored = false,
+        IReadOnlyList<VgaColor>? palette = null)
     {
         ArgumentNullException.ThrowIfNull(spriteLoader);
         var logical = LogicalFrames[frameIndex];
@@ -112,7 +113,7 @@ public sealed class AnimationDefinition
             var sprite = spriteLoader(layer.SpriteName);
             var frame = sprite.Frames[layer.SpriteFrame];
             var y = bottomAnchored ? layer.Y - frame.Height : layer.Y + frame.AnchorY;
-            return (Layer: layer, Frame: frame, Y: y, Rgba: sprite.FrameRgba(layer.SpriteFrame));
+            return (Layer: layer, Frame: frame, Y: y, Rgba: sprite.FrameRgba(layer.SpriteFrame, palette: palette));
         }).ToArray();
         var left = sources.Min(item => item.Layer.X + item.Frame.AnchorX);
         var top = sources.Min(item => item.Y);

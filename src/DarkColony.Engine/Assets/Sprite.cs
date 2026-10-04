@@ -100,14 +100,19 @@ public sealed class Sprite
         return new Sprite(signature, palette, frames);
     }
 
-    public byte[] FrameRgba(int frameIndex, bool transparentPaletteZero = true)
+    /// <param name="palette">
+    /// A screen palette to use instead of the file's own: the executable draws
+    /// interface sprites with the palette of the screen they are on.
+    /// </param>
+    public byte[] FrameRgba(int frameIndex, bool transparentPaletteZero = true, IReadOnlyList<VgaColor>? palette = null)
     {
+        var colors = palette ?? Palette;
         var indices = Frames[frameIndex].DecodeIndices();
         var rgba = new byte[indices.Length * 4];
         for (var index = 0; index < indices.Length; index++)
         {
             var paletteIndex = indices[index];
-            var color = Palette[paletteIndex];
+            var color = paletteIndex < colors.Count ? colors[paletteIndex] : Palette[paletteIndex];
             var destination = index * 4;
             rgba[destination] = color.Red;
             rgba[destination + 1] = color.Green;

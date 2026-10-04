@@ -374,7 +374,7 @@ internal static class DeterminismCli
         var update = args.Contains("--update-goldens");
         var dump = Array.IndexOf(args, "--dump-digest");
         var summary = Array.IndexOf(args, "--event-summary");
-        string[] modes = ["--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke"];
+        string[] modes = ["--dump-fin", "--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke"];
         if (!args.Any(modes.Contains)) return false;
 
         var dataIndex = Array.IndexOf(args, "--data");
@@ -448,6 +448,30 @@ internal static class DeterminismCli
                 var keys = DeterminismHarness.EventSummary(installation, rules, scanned, scanTicks)
                     .Where(pair => pair.Value > 0).Select(pair => pair.Key).ToArray();
                 Console.WriteLine($"{keys.Length,3} {scanned,-18} {string.Join(' ', keys.Where(key => !key.EndsWith("SourceInvalid") && !key.EndsWith("Unsupported") && !key.Contains("SourceNot")).Select(key => key.Replace("Last", "")))}");
+            }
+            return true;
+        }
+
+        var dumpFin = Array.IndexOf(args, "--dump-fin");
+        if (dumpFin >= 0)
+        {
+            // --dump-fin <file.fin> <animation> <directory>: each frame as a PPM (black background).
+            var definition = AnimationDefinition.Load(installation.DataFile("animate", args[dumpFin + 1]));
+            var range = definition.Animations.First(animation => animation.Name.Equals(args[dumpFin + 2], StringComparison.OrdinalIgnoreCase));
+            Directory.CreateDirectory(args[dumpFin + 3]);
+            Sprite Load(string name) => Sprite.Load(File.Exists(installation.DataFile("sprites", name + ".spr"))
+                ? installation.DataFile("sprites", name + ".spr") : installation.DataFile("intrface", name + ".spr"));
+            // Optional 5th argument: an interface GIF whose global palette replaces the sprites' own.
+            IReadOnlyList<VgaColor>? screenPalette = dumpFin + 4 < args.Length && !args[dumpFin + 4].StartsWith("--")
+                ? GifPalette(installation.DataFile("intrface", args[dumpFin + 4] + ".gif"))
+                : null;
+            for (var frame = range.FirstFrame; frame <= range.LastFrame; frame++)
+            {
+                var composite = definition.Compose(frame, Load, palette: screenPalette);
+                var ppm = new List<byte>(System.Text.Encoding.ASCII.GetBytes($"P6 {Math.Max(1, composite.Width)} {Math.Max(1, composite.Height)} 255\n"));
+                for (var pixel = 0; pixel < composite.Width * composite.Height; pixel++)
+                    ppm.AddRange(composite.Rgba[pixel * 4 + 3] == 0 ? [0, 0, 0] : [composite.Rgba[pixel * 4], composite.Rgba[pixel * 4 + 1], composite.Rgba[pixel * 4 + 2]]);
+                File.WriteAllBytes(Path.Combine(args[dumpFin + 3], $"{range.Name}-{frame}-d{definition.LogicalFrames[frame].Delay}.ppm"), [.. ppm]);
             }
             return true;
         }
@@ -537,6 +561,15 @@ internal static class DeterminismCli
                 }
             }
         }
+    }
+
+    /// <summary>A GIF's global color table.</summary>
+    private static IReadOnlyList<VgaColor> GifPalette(string path)
+    {
+        var data = File.ReadAllBytes(path);
+        if ((data[10] & 0x80) == 0) throw new InvalidDataException($"{path} has no global color table.");
+        var count = 2 << (data[10] & 7);
+        return [.. Enumerable.Range(0, count).Select(index => new VgaColor(data[13 + index * 3], data[14 + index * 3], data[15 + index * 3]))];
     }
 
     /// <summary>The campaign and training missions, in campaign order.</summary>
