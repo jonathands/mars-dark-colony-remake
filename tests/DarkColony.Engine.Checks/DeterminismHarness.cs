@@ -9,6 +9,7 @@ using DarkColony.Engine.Simulation;
 using DarkColony.Engine.Terrain;
 using DarkColony.Engine.World;
 using DarkColony.Engine.Video;
+using DarkColony.Engine.Network;
 
 /// <summary>
 /// Deterministic stand-in for players: it issues every kind of world command
@@ -375,7 +376,7 @@ internal static class DeterminismCli
         var update = args.Contains("--update-goldens");
         var dump = Array.IndexOf(args, "--dump-digest");
         var summary = Array.IndexOf(args, "--event-summary");
-        string[] modes = ["--dump-fin", "--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke", "--decode-avi"];
+        string[] modes = ["--dump-fin", "--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke", "--decode-avi", "--lockstep"];
         if (!args.Any(modes.Contains)) return false;
 
         // --decode-avi <file.avi> [frame ...]: SHA-256 prefixes of decoded RGB24 frames (compare with ffmpeg -pix_fmt rgb24).
@@ -398,6 +399,14 @@ internal static class DeterminismCli
         var dataIndex = Array.IndexOf(args, "--data");
         var installation = GameInstallation.Open(dataIndex >= 0 ? args[dataIndex + 1] : Path.Combine("..", "Dark Colony"));
         var rules = SimulationRules.Load(installation);
+
+        // --lockstep host|join <port> <ticks>: one peer of a two-process scripted match on mplayer/d2play01.
+        var lockstep = Array.IndexOf(args, "--lockstep");
+        if (lockstep >= 0)
+        {
+            exitCode = RunLockstepPeer(installation, rules, args[lockstep + 1], int.Parse(args[lockstep + 2]), ulong.Parse(args[lockstep + 3]));
+            return true;
+        }
         if (update)
         {
             var runs = DeterminismHarness.GoldenScenarios
@@ -578,6 +587,57 @@ internal static class DeterminismCli
                     Console.WriteLine($"    g{group.Index}: {string.Join(' ', tasks)}");
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// One process of a lockstep pair: the host listens on <paramref name="port"/>
+    /// and plays team 0, the joiner plays team 1. Each side's scripted
+    /// commander orders only its own team. Prints the digest every 100 ticks;
+    /// exit code 0 when no desync was seen.
+    /// </summary>
+    private static int RunLockstepPeer(GameInstallation installation, SimulationRules rules, string role, int port, ulong ticks)
+    {
+        const string scenario = "mplayer/d2play01";
+        var player = role == "host" ? 0 : 1;
+        ILockstepTransport transport;
+        if (player == 0)
+        {
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, port);
+            listener.Start();
+            Console.WriteLine($"host: waiting on port {port}");
+            transport = TcpLockstepTransport.Host(listener, clients: 1, TimeSpan.FromSeconds(60));
+            listener.Stop();
+        }
+        else transport = TcpLockstepTransport.Join(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, port), TimeSpan.FromSeconds(60));
+
+        using (transport)
+        {
+            var (simulation, path) = DeterminismHarness.Load(installation, rules, scenario);
+            var session = new LockstepSession(player, 2, transport);
+            var commander = new ScriptedCommander(simulation, path, rules, DeterminismHarness.StableSeed(scenario));
+            var started = DateTime.UtcNow;
+            while (simulation.TickCount < ticks && session.Desync is null)
+            {
+                foreach (var scheduled in commander.CommandsFor(simulation.TickCount + 1))
+                {
+                    var command = scheduled.Command;
+                    var team = command.GetType().GetProperty("EntityInstanceId")?.GetValue(command) is int id
+                        ? simulation.Actor(id)?.Seed.Team ?? -1
+                        : command.GetType().GetProperty("TeamId")?.GetValue(command) as int? ?? -1;
+                    if (team == player) session.Queue(command);
+                }
+                if (session.TryAdvance(simulation) is null)
+                {
+                    Thread.Sleep(1);
+                    continue;
+                }
+                if (simulation.TickCount % 100 == 0) Console.WriteLine($"{role}: tick {simulation.TickCount} {SimulationDigest.Hash(simulation)[..16]}");
+            }
+            Console.WriteLine(session.Desync is { } desync
+                ? $"{role}: DESYNC at tick {desync.Tick} (player {desync.Player})"
+                : $"{role}: {simulation.TickCount} ticks in sync, {session.ConfirmedDigests} digests confirmed, {(DateTime.UtcNow - started).TotalSeconds:0.0}s");
+            return session.Desync is null ? 0 : 1;
         }
     }
 

@@ -47,6 +47,10 @@ internal static class Program
             CdImagePath = CdImageLocator.Locate(arguments, installation?.RootPath),
             NoMusic = arguments.Any(argument => argument.Equals("--no-music", StringComparison.OrdinalIgnoreCase)),
             NoVideo = arguments.Any(argument => argument.Equals("--no-video", StringComparison.OrdinalIgnoreCase)),
+            // --replay <file.dcsave> watches a saved game from its first update.
+            ReplayPath = Array.FindIndex(arguments, argument => argument.Equals("--replay", StringComparison.OrdinalIgnoreCase)) is var replay and >= 0 && replay + 1 < arguments.Length
+                ? arguments[replay + 1]
+                : null,
         });
         RuntimeLog.Info("Exited normally.");
         return 0;

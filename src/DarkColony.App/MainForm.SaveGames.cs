@@ -16,7 +16,15 @@ public sealed partial class MainForm
     private const int SaveRowHeight = 16;
     private const int SaveListRows = 14;
 
-    private CommandJournal _journal = new();
+    // Saves carry a digest every 64 updates, so a replay can point at the first step that differs.
+    private const int JournalCheckpointInterval = 64;
+    private CommandJournal _journal = new(JournalCheckpointInterval);
+    private ReplayPlayer? _replay;
+    private SavedGame? _replayGame;
+    private bool _pendingIsReplay;
+
+    /// <summary>A saved game to watch from its first update (<c>--replay &lt;file&gt;</c>).</summary>
+    public string? ReplayPath { get; init; }
     private SavedGame? _pendingSavedGame;
     private IReadOnlyList<string> _saveFiles = [];
     private int _selectedSave;
@@ -89,6 +97,26 @@ public sealed partial class MainForm
             _status = $"Cannot load {Path.GetFileName(_saveFiles[_selectedSave])}: {error.Message}";
             return;
         }
+        BeginSavedGame(saved, replay: false);
+    }
+
+    /// <summary>Opens <see cref="ReplayPath"/> and plays it from the first update.</summary>
+    private void StartReplay()
+    {
+        if (ReplayPath is null || _installation is null) return;
+        try
+        {
+            BeginSavedGame(SavedGame.FromJson(File.ReadAllText(ReplayPath)), replay: true);
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or System.Text.Json.JsonException)
+        {
+            _status = $"Cannot replay {Path.GetFileName(ReplayPath)}: {error.Message}";
+            RuntimeLog.Info(_status);
+        }
+    }
+
+    private void BeginSavedGame(SavedGame saved, bool replay)
+    {
         if (saved.War is { } war)
         {
             var settings = new SinglePlayerWarSettings(war.StorageCells, war.Artifacts, war.EruptingVents, war.RenewableVents,
@@ -108,20 +136,51 @@ public sealed partial class MainForm
             _selectedScenario = new ScenarioChoice(saved.ScenarioDirectory, saved.ScenarioName);
         }
         _pendingSavedGame = saved;
+        _pendingIsReplay = replay;
         ShowScreen(MenuScreenId.Gameplay);
     }
 
     /// <summary>Called once the scenario's simulation exists: replays a pending save onto it.</summary>
     private void RestorePendingSave()
     {
-        _journal = new CommandJournal();
+        _journal = new CommandJournal(JournalCheckpointInterval);
+        _replay = null;
+        _replayGame = null;
         if (_pendingSavedGame is not { } saved || _scenarioSimulation is null) return;
         _pendingSavedGame = null;
+        if (_pendingIsReplay)
+        {
+            _replay = new ReplayPlayer(saved);
+            _replayGame = saved;
+            _status = $"Replaying {saved.ScenarioDirectory}/{saved.ScenarioName}: {saved.Ticks} updates.";
+            RuntimeLog.Info(_status);
+            return;
+        }
         var matches = saved.Replay(_scenarioSimulation);
-        _journal = CommandJournal.Resume(saved.Steps);
+        _journal = CommandJournal.Resume(saved.Steps, saved.Checkpoints, JournalCheckpointInterval);
         RuntimeLog.Info($"Loaded {saved.ScenarioDirectory}/{saved.ScenarioName} at tick {saved.Ticks}; digest {(matches ? "matches" : "differs")}.");
         _status = matches
             ? $"Game loaded at tick {saved.Ticks}."
             : $"Game loaded at tick {saved.Ticks}, but the replayed state differs from the save (game data changed?).";
+    }
+
+    /// <summary>
+    /// One update of a replay: the saved commands, never the player's. When
+    /// the replay reaches its last update it reports whether every
+    /// checkpoint and the end digest matched, then the game pauses.
+    /// </summary>
+    private void StepReplay()
+    {
+        if (_replay is not { } replay || _replayGame is not { } game || _scenarioSimulation is null) return;
+        replay.Step(_scenarioSimulation);
+        if (!replay.Finished(_scenarioSimulation)) return;
+        var check = replay.Result(_scenarioSimulation);
+        _status = check.Matches
+            ? $"Replay finished at update {game.Ticks}: {check.CheckpointsVerified} checkpoints and the end state match."
+            : $"Replay diverged at update {check.FirstMismatchTick}.";
+        RuntimeLog.Info(_status);
+        _replay = null;
+        _replayGame = null;
+        _gameplayPaused = true;
     }
 }

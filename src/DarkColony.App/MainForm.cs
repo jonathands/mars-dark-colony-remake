@@ -267,7 +267,11 @@ public sealed partial class MainForm : Form
         // 0x404FE4: the intro plays before the main menu opens. It waits for
         // Shown so the init-only media options are set.
         if (initialScreen == MenuScreenId.Main)
-            Shown += (_, _) => PlayVideo("avi/intro.avi", () => ShowScreen(MenuScreenId.Main));
+            Shown += (_, _) =>
+            {
+                if (ReplayPath is not null) StartReplay();
+                else PlayVideo("avi/intro.avi", () => ShowScreen(MenuScreenId.Main));
+            };
         _timer.Tick += (_, _) =>
         {
             if (_video is not null)
@@ -283,7 +287,8 @@ public sealed partial class MainForm : Form
                 {
                     CapturePreviousActorRenderPositions();
                     _world.Step();
-                    if (_scenarioSimulation is not null) _journal.Step(_scenarioSimulation, _world.LastCommands);
+                    if (_replay is not null) StepReplay();
+                    else if (_scenarioSimulation is not null) _journal.Step(_scenarioSimulation, _world.LastCommands);
                     CaptureDeathEffects();
                     CaptureCombatSounds();
                     CaptureCombatAnimations();
