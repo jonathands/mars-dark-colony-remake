@@ -316,6 +316,9 @@ public sealed partial class MainForm : Form
             foreach (var image in _backgrounds.Values) image.Dispose();
             foreach (var image in _animationFrames.Values) image.Dispose();
             foreach (var image in _fontGlyphs.Values) image.Dispose();
+            foreach (var image in _remappedFontGlyphs.Values) image.Dispose();
+            foreach (var image in _nativeGlyphs.Values) image.Dispose();
+            _teletypeBeep?.Dispose();
             _minimapPreview?.Dispose();
         }
 
@@ -373,6 +376,7 @@ public sealed partial class MainForm : Form
         RuntimeLog.Info($"Screen {_screen} -> {screen}");
         _screen = screen;
         _screenStartedAtTick = _world.TickCount;
+        if (screen == MenuScreenId.Main) ResetCreditsTeletype();
         _hoveredButton = null;
         _pressedButton = null;
         _buttons = screen switch
@@ -417,7 +421,11 @@ public sealed partial class MainForm : Form
             canvas.Draw(GpuBackground(BackgroundName(), background), new Rectangle(0, 0, 640, 480));
         }
 
-        if (_screen == MenuScreenId.Main) DrawOpeningLogo(graphics);
+        if (_screen == MenuScreenId.Main)
+        {
+            DrawOpeningLogo(graphics);
+            DrawCreditsTeletype(graphics);
+        }
         DrawInnerMenuAssets(graphics);
         if (_screen == MenuScreenId.NewGame) DrawNewGameLeaderName(graphics);
         if (_screen == MenuScreenId.SinglePlayer) DrawSinglePlayerMapSelection(graphics);

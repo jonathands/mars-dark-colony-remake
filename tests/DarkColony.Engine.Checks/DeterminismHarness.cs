@@ -463,7 +463,7 @@ internal static class DeterminismCli
                 ? installation.DataFile("sprites", name + ".spr") : installation.DataFile("intrface", name + ".spr"));
             // Optional 5th argument: an interface GIF whose global palette replaces the sprites' own.
             IReadOnlyList<VgaColor>? screenPalette = dumpFin + 4 < args.Length && !args[dumpFin + 4].StartsWith("--")
-                ? GifPalette(installation.DataFile("intrface", args[dumpFin + 4] + ".gif"))
+                ? GifPalette.Load(installation.DataFile("intrface", args[dumpFin + 4] + ".gif"))
                 : null;
             for (var frame = range.FirstFrame; frame <= range.LastFrame; frame++)
             {
@@ -561,15 +561,6 @@ internal static class DeterminismCli
                 }
             }
         }
-    }
-
-    /// <summary>A GIF's global color table.</summary>
-    private static IReadOnlyList<VgaColor> GifPalette(string path)
-    {
-        var data = File.ReadAllBytes(path);
-        if ((data[10] & 0x80) == 0) throw new InvalidDataException($"{path} has no global color table.");
-        var count = 2 << (data[10] & 7);
-        return [.. Enumerable.Range(0, count).Select(index => new VgaColor(data[13 + index * 3], data[14 + index * 3], data[15 + index * 3]))];
     }
 
     /// <summary>The campaign and training missions, in campaign order.</summary>

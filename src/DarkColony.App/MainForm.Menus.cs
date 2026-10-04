@@ -306,14 +306,12 @@ public sealed partial class MainForm
             graphics.DrawRectangle(border, button.Bounds.X, button.Bounds.Y, button.Bounds.Width - 1, button.Bounds.Height - 1);
         }
 
-        // Captured native text: War (159,19,19), main menu (140,12,8).
-        var warButtonText = _screen switch
-        {
-            MenuScreenId.SinglePlayer => Color.FromArgb(159, 19, 19),
-            MenuScreenId.Main => Color.FromArgb(140, 12, 8),
-            _ => (Color?)null,
-        };
-        if (!DrawMenuText(graphics, button.Label, button.Bounds, remap: warButtonText, shaded: _screen == MenuScreenId.Main))
+        // Captured native text: War (159,19,19). The main menu labels are
+        // introe's `remap 0` at brightness 11, the same 11/16 as their
+        // buttons; dc16's RGB565 surface shows them as (140,12,8).
+        var warButtonText = _screen == MenuScreenId.SinglePlayer ? Color.FromArgb(159, 19, 19) : (Color?)null;
+        (int, int)? nativeText = _screen == MenuScreenId.Main ? (0, 11) : null;
+        if (!DrawMenuText(graphics, button.Label, button.Bounds, remap: warButtonText, native: nativeText))
         {
             using var font = new Font(FontFamily.GenericSansSerif, 10, FontStyle.Bold, GraphicsUnit.Pixel);
             using var brush = new SolidBrush(pressed ? Color.FromArgb(145, 170, 135) : Color.FromArgb(205, 226, 195));
@@ -322,20 +320,16 @@ public sealed partial class MainForm
         }
     }
 
-    /// <param name="shaded">
-    /// Keep the glyphs' shading: each cyan tone (0, v, v) becomes the tint
-    /// times v / 203, as the native main-menu capture shows; otherwise every
-    /// glyph pixel takes the tint.
+    /// <param name="native">
+    /// A native colour and brightness (<see cref="NativeColourRemap"/>); it
+    /// takes precedence over <paramref name="remap"/>, which tints every glyph pixel.
     /// </param>
-    private bool DrawMenuText(Graphics graphics, string text, Rectangle bounds, bool center = true, Color? remap = null, bool shaded = false)
+    private bool DrawMenuText(Graphics graphics, string text, Rectangle bounds, bool center = true, Color? remap = null, (int Colour, int Brightness)? native = null)
     {
         if (_installation is null) return false;
         try
         {
-            _menuFont ??= new BitmapFont(
-                Sprite.Load(_installation.DataFile("intrface", "mfonto5.spr")),
-                frameOffset: 31,
-                lineHeight: 14);
+            _menuFont = LoadMenuFont();
 
             var cursor = center ? bounds.X + (bounds.Width - _menuFont.Measure(text)) / 2 : bounds.X;
             var lineTop = bounds.Y + (bounds.Height - _menuFont.LineHeight) / 2;
@@ -347,10 +341,12 @@ public sealed partial class MainForm
                 if (frame.Width != 0 && frame.Height != 0)
                 {
                     Bitmap? bitmap;
-                    var cacheKey = remap is { } color ? $"{frameIndex}:{color.ToArgb()}:{shaded}" : string.Empty;
-                    var found = remap is null
-                        ? _fontGlyphs.TryGetValue(frameIndex, out bitmap)
-                        : _remappedFontGlyphs.TryGetValue(cacheKey, out bitmap);
+                    var cacheKey = remap is { } color ? $"{frameIndex}:{color.ToArgb()}" : string.Empty;
+                    var found = native is { } nativeColour
+                        ? (bitmap = NativeGlyphBitmap(_menuFont, frameIndex, nativeColour.Colour, nativeColour.Brightness)) is not null
+                        : remap is null
+                            ? _fontGlyphs.TryGetValue(frameIndex, out bitmap)
+                            : _remappedFontGlyphs.TryGetValue(cacheKey, out bitmap);
                     if (!found)
                     {
                         var rgba = _menuFont.Sprite.FrameRgba(frameIndex);
@@ -360,10 +356,9 @@ public sealed partial class MainForm
                             for (var pixel = 0; pixel < rgba.Length; pixel += 4)
                             {
                                 if (rgba[pixel + 3] == 0) continue;
-                                var level = shaded ? Math.Min(255, (int)rgba[pixel + 1]) : 203;
-                                rgba[pixel] = (byte)(tint.R * level / 203);
-                                rgba[pixel + 1] = (byte)(tint.G * level / 203);
-                                rgba[pixel + 2] = (byte)(tint.B * level / 203);
+                                rgba[pixel] = tint.R;
+                                rgba[pixel + 1] = tint.G;
+                                rgba[pixel + 2] = tint.B;
                             }
                         }
                         bitmap = BitmapFromRgba(frame.Width, frame.Height, rgba);

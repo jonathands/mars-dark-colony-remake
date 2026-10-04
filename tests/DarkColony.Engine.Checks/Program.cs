@@ -10,6 +10,7 @@ using DarkColony.Engine.World;
 using DarkColony.Engine.Terrain;
 using DarkColony.Engine.Scenario;
 using DarkColony.Engine.Commands;
+using DarkColony.Engine.Interface;
 using System.Buffers.Binary;
 
 if (DeterminismCli.TryRun(args, out var determinismExitCode)) return determinismExitCode;
@@ -4117,6 +4118,89 @@ Check("faction-selected War rosters complete a local movement order", () =>
         Equal(8, font.Advance('A'));
         Equal(8, font.Advance(' '));
         Equal(6, font.Advance('!'));
+    });
+
+    Check("main menu credits teletype wraps like the native window", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var font = Sprite.Load(install.DataFile("intrface", "mfonto5.spr"));
+        // 0x404BAD: x 178, y 200, 280 x 100; frame 0 is the 7 x 14 cell.
+        var (columns, lastRow) = TeletypeText.Layout(280, 100, font.Frames[0].Width, font.Frames[0].Height);
+        Equal(34, columns);
+        Equal(5, lastRow);
+        var credits = TeletypeText.Parse(File.ReadAllBytes(install.DataFile("intrface", "credits.txt")), columns, lastRow);
+        Equal(72, credits.LineCount);
+        Equal(72 * 34, credits.Cells.Count);
+        string Line(int line) => new([.. credits.Cells.Skip(line * columns).Take(columns).Select(cell => (char)cell.Character)]);
+        // 34-character lines fit exactly once text mode drops the CRs.
+        Equal("DARK COLONY ......................", Line(0));
+        Equal((byte)2, credits.Cells[0].Colour);
+        Equal("PROGRAMMING.......................", Line(5));
+        Equal("          Andy Brownbill          ", Line(6));
+        Equal((byte)0, credits.Cells[6 * columns + 10].Colour);
+        // The native capture (menu-130543.png) shows lines 55-59 under a blank line 60.
+        Equal("          Cyrus Harris            ", Line(55));
+        Equal("          Dave Wallick            ", Line(59));
+        Equal("Visit the Dark Colony web site at ", Line(62));
+        Equal((byte)7, credits.Cells[62 * columns].Colour);
+        Equal(true, Enumerable.Range(64, 8).All(line => Line(line).Trim().Length == 0));
+        Equal(1, new TeletypeCell((byte)'\n', 0).Glyph);
+        Equal(34, new TeletypeCell((byte)'A', 0).Glyph);
+    });
+
+    Check("main menu credits teletype types, scrolls and restarts", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var credits = TeletypeText.Parse(File.ReadAllBytes(install.DataFile("intrface", "credits.txt")), 34, 5);
+        Equal(0, credits.Visible(0).Count);
+        Equal(1L, TeletypeText.StepsAfter(0));
+        Equal(2L, TeletypeText.StepsAfter(6));
+        // The first step draws cells 4..0 with the trail 1F, 1C, 18, 14, 10.
+        var first = credits.Visible(1);
+        Equal("D:16 A:20 R:24 K:28", string.Join(' ', first.Select(glyph => $"{(char)glyph.Cell.Character}:{glyph.Brightness}")));
+        Equal(true, credits.Typed(1));
+        // Cell 203 ends row 5: that step scrolls one line and repaints it at 0x10.
+        var scrollStep = 203 - 3;
+        Equal(0, credits.TopLine(scrollStep - 1));
+        Equal(1, credits.TopLine(scrollStep));
+        var scrolled = credits.Visible(scrollStep);
+        Equal(true, scrolled.All(glyph => glyph.Row <= 4));
+        Equal(true, scrolled.Where(glyph => glyph.Row == 4).All(glyph => glyph.Brightness == TeletypeText.NormalBrightness || glyph.Column >= 30));
+        Equal(TeletypeText.NormalBrightness, scrolled.Single(glyph => glyph.Row == 4 && glyph.Column == 33).Brightness);
+        Equal(0x1C, scrolled.Single(glyph => glyph.Row == 4 && glyph.Column == 32).Brightness);
+        // The last step clears the window; the next one starts over.
+        Equal(2449L, credits.StepsPerCycle);
+        Equal(0, credits.Visible(credits.StepsPerCycle).Count);
+        Equal(string.Join(',', first), string.Join(',', credits.Visible(credits.StepsPerCycle + 1)));
+        Equal(false, credits.Typed(credits.StepsPerCycle - 1));
+        Equal(67, credits.TopLine(credits.StepsPerCycle - 1));
+    });
+
+    Check("native colour remap reproduces dc16 interface text", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var remap = NativeColourRemap.Load(install.ExecutablePath);
+        Equal("47,61,65,66,67,254", string.Join(',', remap.DimRamp));
+        var palette = GifPalette.Load(install.DataFile("intrface", "intro.gif"));
+        // Font ramp 138-143: colour c reads index - 6 (7 - c).
+        Equal(palette[97], remap.Map(palette, 139, 0, NativeColourRemap.NormalBrightness));
+        Equal(palette[109], remap.Map(palette, 139, 2, NativeColourRemap.NormalBrightness));
+        Equal(palette[139], remap.Map(palette, 139, 7, NativeColourRemap.NormalBrightness));
+        Equal(palette[61], remap.Map(palette, 139, 5, NativeColourRemap.NormalBrightness));
+        Equal(new VgaColor(203, 23, 23), palette[97]);
+        // Brightness scales and caps: the main-menu labels draw at 11, the teletype lead at 0x1F.
+        var label = remap.Map(palette, 139, 0, 11);
+        Equal(new VgaColor(139, 15, 15), label);
+        Equal(new VgaColor(255, 44, 44), remap.Map(palette, 139, 0, 0x1F));
+        // dc16 packs RGB565; the capture's label pixels are (140,12,8).
+        static byte Expand(int value, int bits) => (byte)(value << (8 - bits) | value >> (2 * bits - 8));
+        Equal(new VgaColor(140, 12, 8), new VgaColor(Expand(label.Red >> 3, 5), Expand(label.Green >> 2, 6), Expand(label.Blue >> 3, 5)));
+        // Other indices blend toward their luminance by colour / 11.
+        var red = palette[82];
+        var luminance = (3 * red.Red + 6 * red.Green + red.Blue) * 7;
+        Equal(new VgaColor((byte)((40 * red.Red + luminance) / 110), (byte)((40 * red.Green + luminance) / 110), (byte)((40 * red.Blue + luminance) / 110)),
+            remap.Map(palette, 82, 7, NativeColourRemap.NormalBrightness));
+        Equal(palette[82], remap.Map(palette, 82, 0, NativeColourRemap.NormalBrightness));
     });
 
     Check("encyclopedia catalog preserves shipped identities", () =>
