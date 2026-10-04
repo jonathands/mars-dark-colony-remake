@@ -76,10 +76,16 @@ public sealed partial class ScenarioSimulation
     /// troop queue restarts empty. Returns null for teams without a city,
     /// whose orders keep the port's placed-drop adapter.
     /// </summary>
-    private BuildingPlacedEvent? BuildPurchasedCitySlot(PurchaseIntent purchase)
+    private BuildingPlacedEvent? BuildPurchasedCitySlot(PurchaseIntent purchase) =>
+        dependencyCatalog?.TryGet(purchase.DependencyItemId, out var item) == true && item.IsBuilding
+            ? BuildCitySlot(purchase.TeamId, item)
+            : null;
+
+    /// <summary>Command 9's rebuild of a city slot (<c>0x444F14</c>).</summary>
+    private BuildingPlacedEvent? BuildCitySlot(int team, DependencyDefinition item)
     {
+        var purchase = new PurchaseIntent(team, item.Id);
         if (!cityOrigins.TryGetValue(purchase.TeamId, out var origin) || footprints is null ||
-            dependencyCatalog?.TryGet(purchase.DependencyItemId, out var item) != true || !item.IsBuilding ||
             !teamEconomies.TryGetValue(purchase.TeamId, out var economy)) return null;
         var slot = item.BuildingSlot!.Value;
         if (!footprints.TryResolveBuildingEntity(item.BuildingFaction!.Value, item.BuildingVariant!.Value, slot, out var entityId) ||

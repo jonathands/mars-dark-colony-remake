@@ -57,28 +57,33 @@ public sealed class DamageMatrix
         return new DamageMatrix(matrix);
     }
 
-    public int CalculateBaseDamage(int rawDamage, int weaponClass, int armorClass)
-    {
-        return CalculateNativeDamage(rawDamage, weaponClass, armorClass, reduceToThreeQuarters: false);
-    }
+    /// <summary>
+    /// The executable's table entry (loader <c>0x43B259</c>): the text
+    /// percentage times 0.01 times 256, truncated, i.e. an 8.8 factor.
+    /// </summary>
+    public int NativeFactor(int weaponClass, int armorClass) => (int)(this[weaponClass, armorClass] * 0.01 * 256.0);
+
+    public int CalculateBaseDamage(int rawDamage, int weaponClass, int armorClass) =>
+        CalculateNativeDamage(rawDamage, weaponClass, armorClass);
 
     /// <summary>
-    /// Applies the executable damage helper's optional caller-controlled
-    /// three-quarter branch. The branch is intentionally opt-in: static
-    /// callers expose the flag, but its mapping to a port command/projectile
-    /// is not yet recovered. Keeping it here preserves the exact arithmetic
-    /// for the eventual call-site mapping without changing ordinary impacts.
+    /// <c>0x441930</c>: <c>((factor * raw) &gt;&gt; 8) * multiplier &gt;&gt; 8</c>, then
+    /// times the target's armor-level factor &gt;&gt; 8, then three quarters
+    /// when asked (<c>(d * 3) &gt;&gt; 2</c>). Direct hits pass multiplier 0x100
+    /// (or an inspiring commander's factor) and the shooter's day/night
+    /// penalty; splash passes its pattern weight and no penalty.
     /// </summary>
-    public int CalculateNativeDamage(int rawDamage, int weaponClass, int armorClass, bool reduceToThreeQuarters)
+    public int CalculateNativeDamage(int rawDamage, int weaponClass, int armorClass, int multiplier = 0x100,
+        int armorMultiplier = 0x100, bool reduceToThreeQuarters = false)
     {
         if (rawDamage < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(rawDamage));
         }
 
-        var damage = checked(rawDamage * this[weaponClass, armorClass] / 100);
-        // dc16.exe 0x441c80 uses (damage * 3) >> 2, i.e. signed arithmetic
-        // shift after the multiply, rather than a floating-point fraction.
+        var damage = checked(NativeFactor(weaponClass, armorClass) * rawDamage) >> 8;
+        damage = checked(damage * multiplier) >> 8;
+        damage = checked(damage * armorMultiplier) >> 8;
         return reduceToThreeQuarters ? (damage * 3) >> 2 : damage;
     }
 }

@@ -434,8 +434,9 @@ public sealed partial class ScenarioSimulation
             if (!occupancy.TryGetOwner(cell, out var targetId) ||
                 !actorsById.TryGetValue(targetId, out var target) || target.IsDestroyed ||
                 target.Seed.Team != source.Seed.Team || target.Health >= target.MaximumHealth) continue;
-            var resistance = damageMatrix[7, EffectiveDefinition(target).ArmorClass];
-            var amount = Math.Min(target.MaximumHealth - target.Health, checked(36 * resistance / 256));
+            // 0x413E21: the 8.8 table factor of class 7 against the target, times 36 >> 8.
+            var resistance = damageMatrix.NativeFactor(7, EffectiveDefinition(target).ArmorClass);
+            var amount = Math.Min(target.MaximumHealth - target.Health, checked(36 * resistance) >> 8);
             if (amount <= 0) continue;
             target.Health += amount;
             source.AbilityCharge = 0;

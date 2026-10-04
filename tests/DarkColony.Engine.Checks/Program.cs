@@ -985,8 +985,32 @@ Check("projectiles collide with an intervening hostile instead of remaining targ
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
     for (var tick = 0; tick < 20 && simulation.LastProjectileImpacts.Count == 0; tick++) simulation.Step([]);
     Equal(3, simulation.LastProjectileImpacts.Single().TargetActorInstanceId);
-    Equal(97, simulation.Actor(3)!.Health);
+    // Matrix [0][1] is 12%, the 8.8 factor trunc(12 * 2.56) = 30: (30 * 25) >> 8 = 2.
+    Equal(98, simulation.Actor(3)!.Health);
     Equal(100, simulation.Actor(2)!.Health);
+});
+
+Check("a Human shooter deals three quarters at night and a Gray one by day", () =>
+{
+    // 0x4427AA: race 0 at night (+0x53C = 1) or race 1 by day sets the 3/4 flag of 0x441930.
+    int Hit(int shooterRace, int initialPhase)
+    {
+        var catalog = EntityCatalog.Parse($"2\nATTACKER {shooterRace} 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+        var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 20 100 90 5 0 0 0 0 0\n");
+        var matrix = DamageMatrix.Parse("10\n9\n" + string.Concat(Enumerable.Repeat("100 100 100 100 100 100 100 100 100 100\n", 9)));
+        var source = $"t\ni\nd\n0\n{initialPhase}\n1000\n0\n1\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 -1 0\n2 1 1 1 -1 0\n";
+        var bytes = new byte[PathRegionMap.RouteTableSize + 15]; bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 3), weaponCatalog: weapons, damageMatrix: matrix);
+        simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
+        for (var tick = 0; tick < 30 && simulation.LastProjectileImpacts.Count == 0; tick++) simulation.Step([]);
+        return 100 - simulation.Actor(2)!.Health;
+    }
+    Equal((100, 75), (Hit(0, 0), Hit(0, 1)));
+    Equal((75, 100), (Hit(1, 0), Hit(1, 1)));
+    // Armor levels 1 and 2 use 25600 / gamestat values 9 and 10 (0x43BD46).
+    var factors = DamageMatrix.Parse("10\n9\n" + string.Concat(Enumerable.Repeat("12 100 100 100 100 100 100 100 100 100\n", 9)));
+    Equal(30, factors.NativeFactor(0, 0));
+    Equal(((30 * 100 >> 8) * 0x100 >> 8) * (25600 / 125) >> 8, factors.CalculateNativeDamage(100, 0, 0, armorMultiplier: 25600 / 125));
 });
 
 Check("area trajectories skip intervening actors and detonate at their launch-time cell", () =>
@@ -2146,7 +2170,8 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         simulation.Step([new ScheduledWorldCommand(2, 0, new HealAreaIntent(1))]);
         var heal = simulation.LastHeals.Single();
         Equal(HealOutcome.Healed, heal.Outcome);
-        Equal(Math.Min(missingBeforeHeal, 36 * matrix[7, target.Definition.ArmorClass] / 256), heal.Amount);
+        // 0x413E21 uses the 8.8 table factor: (36 * factor) >> 8.
+        Equal(Math.Min(missingBeforeHeal, (36 * matrix.NativeFactor(7, target.Definition.ArmorClass)) >> 8), heal.Amount);
         Equal(target.MaximumHealth - missingBeforeHeal + heal.Amount, target.Health);
         Equal(0, simulation.Actor(1)!.AbilityCharge);
         // Stat 9 adds the restored health to the healed actor's player.

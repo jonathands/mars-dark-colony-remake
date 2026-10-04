@@ -402,7 +402,7 @@ public sealed partial class ScenarioSimulation
             ? economy.CompletedUpgradeLevel(dependencyCatalog, EffectiveDefinition(actor).Id, category: 0)
             : 0;
 
-    /// <summary>Tracked armor technology for HUD/debug use; its damage multiplier is not yet recovered.</summary>
+    /// <summary>The team's armor level for the actor's entity (selector <c>+0x38 + team</c>), which picks its damage armor factor.</summary>
     public int ArmorUpgradeLevel(SimulatedActor actor) =>
         teamEconomies.TryGetValue(actor.Seed.Team, out var economy)
             ? economy.CompletedUpgradeLevel(dependencyCatalog, EffectiveDefinition(actor).Id, category: 1)
@@ -579,6 +579,7 @@ public sealed partial class ScenarioSimulation
         var unitProductions = events.UnitProductions;
         var researchCompletions = events.ResearchCompletions;
         var inspires = events.Inspires;
+        ApplyNativeOrders(events);
         foreach (var scheduled in commands.OrderBy(command => command.Sequence))
         {
             // A unit order replaces the command stack, patrol included.

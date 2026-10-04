@@ -59,6 +59,14 @@ public sealed class TeamEconomy
         return PurchaseEligibility.Available;
     }
 
+    /// <summary>Spends P7 outside a reservation (a computer player's order); false when it cannot pay.</summary>
+    public bool TrySpend(int amount)
+    {
+        if (amount < 0 || P7 < amount) return false;
+        P7 -= amount;
+        return true;
+    }
+
     /// <summary>Simulation-owned P7 income; presentation only reads the resulting balance.</summary>
     public void AddP7(int amount)
     {
@@ -123,8 +131,8 @@ public sealed class TeamEconomy
     /// <summary>
     /// Returns the highest completed level for one decoded upgrade target and
     /// category. Weapon upgrades select the corresponding levelled weapon
-    /// slot from <c>gamestat.txt</c>; armor's runtime multiplier remains a
-    /// separate reconstruction target.
+    /// slot from <c>gamestat.txt</c>; armor upgrades select its level 1 or 2
+    /// armor value (the per-team selectors written by command 12).
     /// </summary>
     public int CompletedUpgradeLevel(DependencyCatalog? catalog, int targetEntityId, int category)
     {

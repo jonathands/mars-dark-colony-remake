@@ -24,13 +24,17 @@ public sealed partial class ScenarioSimulation
             if (Math.Abs(dx) > radius || Math.Abs(dz) > radius) continue;
             var percent = effect.DamagePattern[dz + radius][dx + radius];
             if (percent <= 0) continue;
-            // 0x4420F4 compares exact team bytes, not the alliance matrix.
-            // Same-team splash uses 0x40/0x100 (one quarter); every other
-            // occupied team receives the authored pattern at full strength.
-            if (actor.Seed.Team == source.Seed.Team) percent = percent * 0x40 / 0x100;
-            if (percent <= 0) continue;
-            var baseDamage = damageMatrix is null ? weapon.Damage : damageMatrix.CalculateBaseDamage(weapon.Damage, weapon.WeaponClass, EffectiveDefinition(actor).ArmorClass);
-            ApplyDamage(actor, checked(baseDamage * percent / 100), destroyed, source.Seed.Team);
+            // The boom loader stores each weight as (percent << 8) / 100
+            // (0x43B55A). 0x4420F4 compares exact team bytes, not the alliance
+            // matrix: same-team splash scales the weight by 0x40 / 0x100.
+            var weight = (percent << 8) / 100;
+            if (actor.Seed.Team == source.Seed.Team) weight = (weight * 0x40) >> 8;
+            if (weight <= 0) continue;
+            var damage = damageMatrix is null
+                ? weapon.Damage * weight >> 8
+                : damageMatrix.CalculateNativeDamage(weapon.Damage, weapon.WeaponClass, EffectiveDefinition(actor).ArmorClass,
+                    weight, ArmorFactor(actor));
+            ApplyDamage(actor, damage, destroyed, source.Seed.Team);
         }
     }
 
@@ -103,10 +107,41 @@ public sealed partial class ScenarioSimulation
     {
         if (weaponCatalog?.TryGet(projectile.WeaponId, out var weapon) != true)
             return Math.Max(0, projectile.Damage);
-        return damageMatrix is null
-            ? Math.Max(0, projectile.Damage)
-            : Math.Max(0, damageMatrix.CalculateBaseDamage(
-                projectile.Damage, weapon.WeaponClass, EffectiveDefinition(target).ArmorClass));
+        if (damageMatrix is null) return Math.Max(0, projectile.Damage);
+        // 0x4427AA reads the shooter: an inspired one hits with its commander's
+        // factor (runtime +0xFC, gamestat value 26 in 8.8), and a Human
+        // shooter at night or a Gray shooter by day deals three quarters.
+        var multiplier = 0x100;
+        var threeQuarters = false;
+        if (actorsById.TryGetValue(projectile.SourceActorInstanceId, out var shooter))
+        {
+            if (shooter.InspirationTicksRemaining > 0 && shooter.InspirationSourceActorInstanceId is { } commanderId &&
+                actorsById.TryGetValue(commanderId, out var commander))
+                multiplier = (EffectiveDefinition(commander).Values[25] << 8) / 100;
+            var race = EffectiveDefinition(shooter).Faction;
+            threeQuarters = race == 0 && DayNight.Phase == DayNightPhase.Night ||
+                            race == 1 && DayNight.Phase == DayNightPhase.Day;
+        }
+        return Math.Max(0, damageMatrix.CalculateNativeDamage(projectile.Damage, weapon.WeaponClass,
+            EffectiveDefinition(target).ArmorClass, multiplier, ArmorFactor(target), threeQuarters));
+    }
+
+    /// <summary>
+    /// The target's armor factor for its team's armor level (entity runtime
+    /// <c>+0x24 + level * 4</c>, loader <c>0x43BD46</c>): 0x100 at level 0, then
+    /// <c>25600 / armor</c> with gamestat values 9 and 10 as the level 1 and
+    /// 2 armor.
+    /// </summary>
+    private int ArmorFactor(SimulatedActor target)
+    {
+        var definition = EffectiveDefinition(target);
+        var armor = ArmorUpgradeLevel(target) switch
+        {
+            1 => definition.Values[8],
+            2 => definition.Values[9],
+            _ => 100,
+        };
+        return armor > 0 ? 25600 / armor : 0x100;
     }
 
     internal void Destroy(SimulatedActor actor, ICollection<DestroyedActorEvent> destroyed)
