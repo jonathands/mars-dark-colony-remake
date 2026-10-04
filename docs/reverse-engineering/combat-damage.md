@@ -108,16 +108,33 @@ only splash is a deterministic port policy.
 ## Shared random consumption
 
 The executable initializes a 256-dword table at `0x478e04..0x479203` and
-increments the shared cursor at `0x479204` before each read. Common fire uses
-that stream for both area-template aim selection and FIRE/FIREA/B/C variant
-selection; blocked-route jitter consumes the same cursor. The compiled
-simulation therefore uses one cursor for those three consumers. The table is
-read from the user's `dc.exe` by `NativeRandomTable`; engine checks without an
-installation use an explicitly synthetic stand-in. Its regression
-case verifies that an ordinary area shot consumes table entry one for scatter
-and entry two for its presentation roll. This avoids a deterministic-but-wrong
-split PRNG whose outcomes diverge as soon as movement repair and combat are
-interleaved.
+increments the shared cursor at `0x479204` before each read. Every consumer
+in the simulation uses this one cursor. The table is read from the user's
+`dc.exe` by `NativeRandomTable`; engine checks without an installation use an
+explicitly synthetic stand-in.
+
+Common fire (`0x412DA0`) runs once the shooter faces its target (`0x4120FC`)
+and draws in this order:
+
+1. The FIRE/FIREA/B/C variant (`0x412E13`, modulo the entity's variant count).
+2. For each projectile, the area aim, when the weapon has a boom template
+   (`0x412ED6`).
+3. For each projectile, the constructor `0x441710` stores one more draw at
+   projectile `+0x1F` (`0x4417B4`).
+
+The projectile list comes from `0x4263D8`: every frame of the fire animation
+for the shooter's direction whose hotspot 7 names a loaded animation adds a
+launch point (hotspot x * 8, -y * 8) and a delay (the sum of the frame delays
+before it). Without such a frame, one projectile leaves the actor's center at
+once. A FIN logical frame is 164 bytes: layer count, delay, then eight
+hotspots of a 16-byte name and x, y words; the name `NONAME` means none
+(`0x4254D4`). The shipped animations have at most one muzzle frame per
+animation (ATRIL FIREA, BARR FIREA, SCYT FIREB, TURR FIRE, and XENO
+XDEPLOYFIRE/XDEPLOYSTAND), so no shot fires more than one projectile. The port
+draws in the native order but does not model those muzzle offsets and delays.
+
+The regression check verifies that an ordinary area shot draws table entry one
+for its presentation roll.
 
 ## Dying state
 

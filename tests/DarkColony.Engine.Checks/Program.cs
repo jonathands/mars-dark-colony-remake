@@ -2886,10 +2886,10 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         ordinary.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
         for (var tick = 0; tick < 32 && ordinary.Projectiles.Count == 0; tick++) ordinary.Step([]);
         Equal(new CellCoordinate(14, 4), ordinary.Projectiles.Single().TimedImpactCell!.Value);
-        // The first native table value (index one) selected the ordinary
-        // scatter cell. Fire presentation must then consume index two from the
-        // same stream, rather than an independent cosmetic PRNG.
-        Equal((byte)0x81, ordinary.LastWeaponFires.Single().PresentationVariantRoll);
+        // Common fire draws the presentation variant first (0x412E13, table
+        // index one), then the area aim (index two), then the projectile
+        // constructor's byte (0x4417B4, index three), all from one stream.
+        Equal((byte)0x7e, ordinary.LastWeaponFires.Single().PresentationVariantRoll);
 
         var inspiredScenario = ScenarioDefinition.Parse(header +
             $"10 10 69 0 100 0\n10 5 {areaSource.Id} 0 100 0\n15 5 0 1 100 0\n");

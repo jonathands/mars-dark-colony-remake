@@ -253,8 +253,19 @@ public sealed partial class ScenarioSimulation
         return best;
     }
 
+    /// <summary>
+    /// Common fire (<c>0x412DA0</c>) draws from the shared stream in this
+    /// order: the fire animation variant (<c>0x412E13</c>), then per projectile
+    /// the area aim (<c>0x412ED6</c>) and the projectile constructor's byte
+    /// (<c>0x4417B4</c>, stored at projectile <c>+0x1F</c>). One projectile
+    /// leaves per frame of the fire animation whose hotspot 7 names an
+    /// animation, else one from the actor's center; the shipped animations
+    /// have at most one such frame. Not modeled: that frame's muzzle offset
+    /// and launch delay (ATRIL, BARR, SCYT FIREB, TURR, and the deployed XENO).
+    /// </summary>
     private void SpawnProjectile(SimulatedActor attacker, SimulatedActor target, WeaponDefinition weapon, ICollection<WeaponFireEvent> fired)
     {
+        var presentation = NextFirePresentationRoll();
         var source = attacker.Movement.VisualPosition;
         var destination = ApplyNativeAimOffset(attacker, target.Movement.VisualPosition, weapon);
         var dx = (long)destination.XRaw - source.XRaw;
@@ -265,6 +276,7 @@ public sealed partial class ScenarioSimulation
         var velocityZ = (int)(dz * speed / distance);
         var ticks = CalculateTrajectoryUpdates(dx, dz, velocityX, velocityZ);
         CellCoordinate? timedImpactCell = weapon.HasAreaEffect ? destination.Cell : null;
+        _ = NextNativeRandom();
         projectiles.Add(new ProjectileState(nextProjectileInstanceId++, attacker.Seed.InstanceId, target.Seed.InstanceId,
             weapon.Id, Math.Max(0, weapon.Damage), source, velocityX, velocityZ, ticks, weapon.ProjectileLifetimeTicks,
             timedImpactCell: timedImpactCell, projectileMode: weapon.ProjectileMode));
@@ -275,11 +287,13 @@ public sealed partial class ScenarioSimulation
         // in authoritative simulation state; a renderer must not decide fire
         // cadence from an animation length.
         ApplyWeaponCooldown(attacker, weapon);
-        fired.Add(new WeaponFireEvent(attacker.Seed.InstanceId, weapon.Id, NextFirePresentationRoll()));
+        fired.Add(new WeaponFireEvent(attacker.Seed.InstanceId, weapon.Id, presentation));
     }
 
+    /// <summary>The ground-special shot goes through the same common fire as <see cref="SpawnProjectile"/>.</summary>
     private void SpawnGroundProjectile(SimulatedActor attacker, CellCoordinate target, WeaponDefinition weapon, ICollection<WeaponFireEvent> fired)
     {
+        var presentation = NextFirePresentationRoll();
         var source = attacker.Movement.VisualPosition;
         var destination = ApplyNativeAimOffset(attacker, FixedPointPosition.AtCellCenter(target), weapon);
         var dx = (long)destination.XRaw - source.XRaw;
@@ -289,12 +303,13 @@ public sealed partial class ScenarioSimulation
         var velocityX = (int)(dx * speed / distance);
         var velocityZ = (int)(dz * speed / distance);
         var ticks = CalculateTrajectoryUpdates(dx, dz, velocityX, velocityZ);
+        _ = NextNativeRandom();
         projectiles.Add(new ProjectileState(nextProjectileInstanceId++, attacker.Seed.InstanceId, -1,
             weapon.Id, Math.Max(0, weapon.Damage), source, velocityX, velocityZ, ticks, weapon.ProjectileLifetimeTicks,
             target, destination.Cell, weapon.ProjectileMode));
         AddPlayerStatistic(attacker.Seed.Team, 8, 1);
         ApplyWeaponCooldown(attacker, weapon);
-        fired.Add(new WeaponFireEvent(attacker.Seed.InstanceId, weapon.Id, NextFirePresentationRoll()));
+        fired.Add(new WeaponFireEvent(attacker.Seed.InstanceId, weapon.Id, presentation));
     }
 
     private byte NextFirePresentationRoll()
