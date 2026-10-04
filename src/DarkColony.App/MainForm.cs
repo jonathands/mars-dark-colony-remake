@@ -100,6 +100,7 @@ public sealed class MainForm : Form
     private TerrainMap? _gameplayMap;
     private BtsTileset? _gameplayTileset;
     private PathRegionMap? _gameplayPath;
+    private SimulationRules? _simulationRules;
     private EntityCatalog? _entityCatalog;
     private WeaponCatalog? _weaponCatalog;
     private AreaEffectCatalog? _areaEffects;
@@ -1098,17 +1099,16 @@ public sealed class MainForm : Form
                 _installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.pth"),
                 _gameplayMap.Width,
                 _gameplayMap.Height);
-            var footprints = BuildingFootprintCatalog.Load(_installation.ExecutablePath);
-            _buildingFootprints = footprints;
-            _scenarioWorld = ScenarioWorld.Create(definition, footprints);
-            _entityCatalog ??= EntityCatalog.Load(_installation.DataFile("gamestat", "gamestat.txt"));
-            _weaponCatalog ??= WeaponCatalog.Load(_installation.DataFile("gamestat", "weapstat.txt"));
-            _areaEffects ??= AreaEffectCatalog.Load(_installation.DataFile("gamestat", "boomstat.txt"));
-            _dependencyCatalog ??= DependencyCatalog.Load(_installation.DataFile("gamestat", "depend.txt"));
-            var damageMatrix = DamageMatrix.Load(_installation.DataFile("gamestat", "mbullet.txt"));
-            _scenarioSimulation = ScenarioSimulation.Create(definition, _entityCatalog, _gameplayPath, footprints,
-                weaponCatalog: _weaponCatalog, damageMatrix: damageMatrix, dependencyCatalog: _dependencyCatalog, areaEffects: _areaEffects,
-                randomTable: NativeRandomTable.Load(_installation.ExecutablePath));
+            // The engine checks build simulations from the same rule bundle,
+            // so gameplay and the determinism suite cannot drift apart.
+            var rules = _simulationRules ??= SimulationRules.Load(_installation);
+            _buildingFootprints = rules.Footprints;
+            _scenarioWorld = ScenarioWorld.Create(definition, rules.Footprints);
+            _entityCatalog ??= rules.Entities;
+            _weaponCatalog ??= rules.Weapons;
+            _areaEffects ??= rules.AreaEffects;
+            _dependencyCatalog ??= rules.Dependencies;
+            _scenarioSimulation = ScenarioSimulation.Create(definition, _gameplayPath, rules);
             _previousActorRenderPositions.Clear();
             _groundOccupancy = _scenarioSimulation.GroundOccupancy;
             _alternateOccupancy = _scenarioSimulation.AlternateOccupancy;

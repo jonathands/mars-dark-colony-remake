@@ -352,6 +352,21 @@ public sealed class ScenarioSimulation
     public DayNightCycle DayNight { get; }
     public IReadOnlyList<PetraVent> PetraVents { get; private set; } = [];
 
+    /// <summary>Completed authoritative steps since construction.</summary>
+    public ulong TickCount => simulationTicks;
+
+    /// <summary>Creates a simulation with every installed rule table, as the game host does.</summary>
+    public static ScenarioSimulation Create(ScenarioDefinition scenario, PathRegionMap path, SimulationRules rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        return Create(scenario, rules.Entities, path, rules.Footprints,
+            weaponCatalog: rules.Weapons,
+            damageMatrix: rules.DamageMatrix,
+            dependencyCatalog: rules.Dependencies,
+            areaEffects: rules.AreaEffects,
+            randomTable: rules.RandomTable);
+    }
+
     public static ScenarioSimulation Create(
         ScenarioDefinition scenario,
         EntityCatalog catalog,
