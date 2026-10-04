@@ -91,7 +91,7 @@ public sealed record SinglePlayerWarLaunch(
     public ScenarioDefinition ApplyTo(ScenarioDefinition scenario)
     {
         ArgumentNullException.ThrowIfNull(scenario);
-        return scenario.WithSelectedWarRoster(LocalTeamId, Race, Settings.CommanderRank);
+        return scenario.WithSelectedWarRoster(LocalTeamId, Race, Settings.CommanderRank).WithComputerOpponents(LocalTeamId);
     }
 }
 

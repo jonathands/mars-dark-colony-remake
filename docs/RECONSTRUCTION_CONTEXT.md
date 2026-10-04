@@ -444,12 +444,12 @@ one harvester may own or prepare on a vent.
   gameplay.
 - `maine` frame 65 is the source's **Move & Attack** control, not a
   target-only button. A terrain command now creates an authoritative
-  `AttackMoveIntent`; the actor retains the player destination, acquires the
-  nearest hostile inside its decoded current day/night observation range,
-  fights it with the normal target/pursuit path, then resumes the destination.
-  Clicking a hostile remains a direct `AttackIntent`. The source's exact
-  acquisition predicate is still untraced, so observation range is an explicit
-  data-backed provisional boundary rather than a claim of frame-perfect AI.
+  `AttackMoveIntent`; the actor retains the player destination, acquires a
+  hostile with the native ring selector `0x435570` (weapon range, move mode
+  1), fights it with the normal target/pursuit path, then resumes the
+  destination. Clicking a hostile remains a direct `AttackIntent`. Idle units
+  now acquire targets on their own (idle command `0x4148B0`); see
+  [`reverse-engineering/target-acquisition.md`](reverse-engineering/target-acquisition.md).
   Selected-unit details expose the live direct target, P7 deployment, move, or
   attack-move destination in that precedence order, while rejected/acquired
   attack-move events are reported through the gameplay status strip.

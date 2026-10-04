@@ -105,6 +105,21 @@ public sealed class ScenarioDefinition
         return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, Teams, placements, Vents);
     }
 
+    /// <summary>
+    /// Single Player War leaves every enabled team but the local player to the
+    /// computer. Free-War SCNs author all %AI profiles as 0, so mark the other
+    /// enabled teams as computer-controlled (profile 1) unless they already
+    /// carry a profile.
+    /// </summary>
+    public ScenarioDefinition WithComputerOpponents(int localTeamId)
+    {
+        var teams = Teams.Select(team =>
+            team.Enabled && team.TeamId != localTeamId && (team.AiProfile ?? 0) <= 0
+                ? team with { AiProfile = 1 }
+                : team).ToArray();
+        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, teams, Placements, Vents);
+    }
+
     private static int SelectedWarRosterEntity(int entityId, int faction, int rank) => entityId switch
     {
         // The paired basic ground units used by free-War SCN starter slots.

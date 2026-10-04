@@ -76,6 +76,17 @@ public sealed class SimulatedActor
     public int InspirationTicksRemaining { get; internal set; }
     /// <summary>Native actor word <c>+0xd8</c>: the commander supplying Inspire.</summary>
     public int? InspirationSourceActorInstanceId { get; internal set; }
+    /// <summary>
+    /// True while the actor is in the native idle command (type 3, handler
+    /// <c>0x4148B0</c>) and its record below is live.
+    /// </summary>
+    public bool IdleCommandActive { get; internal set; }
+    /// <summary>Idle record word <c>+2</c>: health when the last scan ran, to detect damage.</summary>
+    public int IdleHealthSnapshot { get; internal set; }
+    /// <summary>Idle record word <c>+4</c>: consecutive empty scans, capped at 3.</summary>
+    public int IdleMissCount { get; internal set; }
+    /// <summary>Ticks left in the wait (15, or 45 after three misses) before the next idle scan.</summary>
+    public int IdleWaitTicks { get; internal set; }
 }
 
 /// <summary>Persistent player intent, segmented by the native 32-step buffer.</summary>
@@ -101,6 +112,12 @@ public sealed class ActiveMoveOrder
     public int SegmentCount { get; internal set; }
     public int BlockedTicksRemaining { get; internal set; }
     public CellCoordinate? LastBlockedCell { get; internal set; }
+    /// <summary>
+    /// Native move mode 2, issued by the idle handler to close on a distant
+    /// hostile: each path step first scans weapon range and the move ends as
+    /// soon as a target is found.
+    /// </summary>
+    public bool StopOnContact { get; internal init; }
 
     public bool TryAppendWaypoint(CellCoordinate target)
     {

@@ -77,6 +77,13 @@ public sealed partial class ScenarioSimulation
     private NativeRandomTable nativeRandomTable = NativeRandomTable.Synthetic;
     // Reused for every route segment; it keeps per-search scratch buffers.
     private DiagnosticLocalPathfinder? localPathfinder;
+    // Native target-search rings (0x434090); null disables automatic target
+    // selection, as in checks built without the executable.
+    private NativeTargetRings? targetRings;
+    // Teams whose SCN %AI profile is nonzero (native player flag +0xbbc).
+    private HashSet<int> computerTeams = [];
+    // Per-tick team visibility snapshots used by the target selector.
+    private readonly Dictionary<int, bool[]> scanVisibility = [];
 
     private ScenarioSimulation(
         PathRegionMap path,
@@ -142,6 +149,7 @@ public sealed partial class ScenarioSimulation
     public IReadOnlyList<BattlefieldTransportEvent> LastBattlefieldTransports { get; private set; } = [];
     public IReadOnlyList<AttackMoveOrderEvent> LastAttackMoveOrders { get; private set; } = [];
     public IReadOnlyList<AttackMoveAcquisitionEvent> LastAttackMoveAcquisitions { get; private set; } = [];
+    public IReadOnlyList<IdleAcquisitionEvent> LastIdleAcquisitions { get; private set; } = [];
     public IReadOnlyList<PurchaseReservedEvent> LastPurchaseReservations { get; private set; } = [];
     public IReadOnlyList<HarvesterDeploymentEvent> LastHarvesterDeployments { get; private set; } = [];
     public IReadOnlyList<MineDeploymentEvent> LastMineDeployments { get; private set; } = [];
@@ -169,7 +177,8 @@ public sealed partial class ScenarioSimulation
             damageMatrix: rules.DamageMatrix,
             dependencyCatalog: rules.Dependencies,
             areaEffects: rules.AreaEffects,
-            randomTable: rules.RandomTable);
+            randomTable: rules.RandomTable,
+            targetRings: rules.TargetRings);
     }
 
     public static ScenarioSimulation Create(
@@ -185,7 +194,8 @@ public sealed partial class ScenarioSimulation
         DayNightCycle? dayNight = null,
         TeamRelationMatrix? teamRelations = null,
         AreaEffectCatalog? areaEffects = null,
-        NativeRandomTable? randomTable = null)
+        NativeRandomTable? randomTable = null,
+        NativeTargetRings? targetRings = null)
     {
         var seeds = scenario.Placements.Where(placement => placement.Team != -1).Select((placement, index) =>
         {
@@ -225,6 +235,8 @@ public sealed partial class ScenarioSimulation
         if (!simulation.petraFlowRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraFlowRules));
         if (!simulation.petraStealRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraStealRules));
         simulation.nativeRandomTable = randomTable ?? NativeRandomTable.Synthetic;
+        simulation.targetRings = targetRings;
+        simulation.computerTeams = scenario.Teams.Where(team => team.Enabled && team.AiProfile > 0).Select(team => team.TeamId).ToHashSet();
         simulation.SeedScenarioBuildingDependencies();
         simulation.PetraVents = scenario.Vents.Select((vent, index) => new PetraVent(index, new CellCoordinate(vent.X, vent.Z), vent.InitialState, vent.InitialReservoir)).ToArray();
         simulation.autonomousGroups.AddRange(scenario.AutonomousSpawnGroups.Select(group => new AutonomousGroupRuntime(
@@ -365,6 +377,7 @@ public sealed partial class ScenarioSimulation
         LastProjectileImpacts = events.Impacts;
         LastBattlefieldTransports = events.BattlefieldTransports;
         LastAttackMoveAcquisitions = events.AttackMoveAcquisitions;
+        LastIdleAcquisitions = events.IdleAcquisitions;
         LastDayNightChanges = DayNight.Step() ? [new DayNightChangedEvent(DayNight.Phase)] : [];
         LastP7Income = ApplyPetraFlow();
         simulationTicks++;
@@ -384,6 +397,7 @@ public sealed partial class ScenarioSimulation
         public List<GroundSpecialAttackEvent> GroundSpecialAttacks { get; } = [];
         public List<AttackMoveOrderEvent> AttackMoves { get; } = [];
         public List<AttackMoveAcquisitionEvent> AttackMoveAcquisitions { get; } = [];
+        public List<IdleAcquisitionEvent> IdleAcquisitions { get; } = [];
         public List<PurchaseReservedEvent> Purchases { get; } = [];
         public List<HarvesterDeploymentEvent> HarvesterDeployments { get; } = [];
         public List<MineDeploymentEvent> MineDeployments { get; } = [];
@@ -545,9 +559,11 @@ public sealed partial class ScenarioSimulation
         var fired = events.Fired;
         var attackMoveAcquisitions = events.AttackMoveAcquisitions;
         var harvesterDeployments = events.HarvesterDeployments;
+        scanVisibility.Clear();
         foreach (var actor in Actors)
         {
             if (actor.IsDestroyed) continue;
+            UpdateIdleCommand(actor, events);
             if (actor.GroundSpecialAttackTarget is { } specialTarget)
                 UpdateGroundSpecialAttack(actor, specialTarget, fired);
             if (actor.AttackTargetInstanceId is { } targetId)
@@ -562,7 +578,7 @@ public sealed partial class ScenarioSimulation
             }
             if (actor.AttackTargetInstanceId is null && actor.AttackMoveDestination is { } attackMoveDestination)
             {
-                var hostile = FindAttackMoveTarget(actor);
+                var hostile = targetRings is null ? FindAttackMoveTarget(actor) : FindNativeAttackMoveTarget(actor);
                 if (hostile is not null)
                 {
                     actor.AttackTargetInstanceId = hostile.Seed.InstanceId;
@@ -581,6 +597,7 @@ public sealed partial class ScenarioSimulation
             if (actor.Facing.Current != actor.Facing.Target && EffectiveDefinition(actor).TurnSpeed > 0)
                 actor.Facing.Step(EffectiveDefinition(actor).TurnSpeed);
             if (actor.CooldownTicks > 0) actor.CooldownTicks--;
+            StopMoveOnContact(actor);
             if (actor.Playback is not null)
             {
                 var status = actor.Playback.Step();

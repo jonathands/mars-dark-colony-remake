@@ -514,6 +514,141 @@ Check("scenario simulation retains explicit attack targets until stopped", () =>
     Equal(true, simulation.Actor(1)!.AttackTargetInstanceId is null);
 });
 
+// Shared fixtures for the automatic target selection checks below.
+const string AcquisitionHeader = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
+const string AcquisitionEntities = "5\n" +
+    "GUARD 0 255 25 8 8 1 -1 -1 1 1 0 1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n" +
+    "INTRUDER 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n" +
+    "SHOOTER 0 255 25 8 8 2 -1 -1 1 1 0 1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n" +
+    "NEARSIGHT 0 255 25 1 1 1 -1 -1 1 1 0 1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n" +
+    "PROP 0 1 1 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1\n";
+const string AcquisitionWeapons = "2\n1 BULLET 0 0 1 10 90 3 0 0 0 0 0\n2 BULLET 0 0 1 10 90 8 0 0 0 0 0\n";
+
+Check("idle armed actors acquire a visible hostile in weapon range", () =>
+{
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n4 2 1 1 100 0\n"),
+        catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
+    simulation.Step([]);
+    Equal(2, simulation.Actor(1)!.AttackTargetInstanceId!.Value);
+    var acquisition = simulation.LastIdleAcquisitions.Single();
+    Equal(new IdleAcquisitionEvent(1, 2, Approach: false), acquisition);
+});
+
+Check("idle selection keeps ring order for ordinary weapons and scores area weapons", () =>
+{
+    // Ring 1 lists (+1,0) before (-1,0). The unarmed intruder sits first and
+    // the armed guard second.
+    var rings = NativeTargetRings.FromRings([[new CellCoordinate(0, 0)], [new CellCoordinate(1, 0), new CellCoordinate(-1, 0)]]);
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    const string placements = "5 5 0 0 1000 0\n6 5 1 1 100 0\n4 5 0 1 1000 0\n";
+    var ordinary = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + placements), catalog, OpenPath(12, 12),
+        weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: rings);
+    ordinary.Step([]);
+    // The native arithmetic zeroes every ordinary-weapon score, so the first
+    // candidate in ring order wins even though the other one is armed.
+    Equal(2, ordinary.Actor(1)!.AttackTargetInstanceId!.Value);
+
+    var area = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + placements), catalog, OpenPath(12, 12),
+        weaponCatalog: WeaponCatalog.Parse("2\n1 BULLET 0 0 1 10 90 3 7 0 0 0 0\n2 BULLET 0 0 1 10 90 8 0 0 0 0 0\n"), targetRings: rings);
+    area.Step([]);
+    // Area weapons score armed targets (150) above unarmed ones (50).
+    Equal(3, area.Actor(1)!.AttackTargetInstanceId!.Value);
+});
+
+Check("idle second scan radius depends on player kind and damage", () =>
+{
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
+    // The intruder is six cells away: outside weapon range 3 and the calm
+    // human radius 4, inside the computer radius 16.
+    var human = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n8 2 1 1 100 0\n"),
+        catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
+    human.Step([]);
+    Equal(true, human.Actor(1)!.AttackTargetInstanceId is null && human.Actor(1)!.MoveOrder is null);
+    Equal(ScenarioSimulation.NativeIdleShortWaitTicks, human.Actor(1)!.IdleWaitTicks);
+    Equal(1, human.Actor(1)!.IdleMissCount);
+
+    const string computerTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n4\n%AI\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
+    var computer = ScenarioSimulation.Create(ScenarioDefinition.Parse(computerTeams + "2 2 0 0 1000 0\n8 2 1 1 100 0\n"),
+        catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
+    computer.Step([]);
+    var approach = computer.LastIdleAcquisitions.Single();
+    Equal(new IdleAcquisitionEvent(1, 2, Approach: true), approach);
+    Equal(true, computer.Actor(1)!.MoveOrder!.StopOnContact);
+    // The closest free cell inside weapon range of the hostile at (8,2).
+    Equal(new CellCoordinate(6, 2), computer.Actor(1)!.MoveOrder!.Target);
+});
+
+Check("damaged human units widen their idle scan and close on the shooter", () =>
+{
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
+    // A long-range shooter six cells away hits the idle guard; the guard
+    // cannot see past radius 4 until it has been damaged, then looks 9 out.
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n8 2 2 1 1000 0\n"),
+        catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
+    simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(2, 1))]);
+    Equal(true, simulation.Actor(1)!.MoveOrder is null);
+    IdleAcquisitionEvent? approach = null;
+    for (var tick = 0; tick < 120 && approach is null; tick++)
+    {
+        simulation.Step([]);
+        approach = simulation.LastIdleAcquisitions.SingleOrDefault(acquisition => acquisition.SourceActorInstanceId == 1);
+    }
+    Equal(true, simulation.Actor(1)!.Health < 1000);
+    Equal(new IdleAcquisitionEvent(1, 2, Approach: true), approach ?? throw new InvalidOperationException("The damaged guard never closed on its attacker."));
+});
+
+Check("idle scans wait 15 ticks for three misses and then 45", () =>
+{
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n"),
+        catalog, OpenPath(8, 8), weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: EuclideanRings());
+    var guard = simulation.Actors.Single();
+    var scans = new List<int>();
+    for (var tick = 1; tick <= 140; tick++)
+    {
+        var before = guard.IdleWaitTicks;
+        simulation.Step([]);
+        if (before == 0) scans.Add(tick);
+    }
+    // A scan runs when the wait has elapsed; each miss waits 15 ticks (16-tick
+    // period) until the third, then 45 (46-tick period).
+    Equal(new[] { 1, 17, 33, 49, 95 }, scans.ToArray());
+    Equal(3, guard.IdleMissCount);
+});
+
+Check("idle selection skips critters, untargetable props, and unseen cells", () =>
+{
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
+    // Team 9 critter and an untargetable prop next to the guard, plus a
+    // hostile in weapon range but outside the guard's sight.
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 3 0 1000 0\n3 2 1 9 100 0\n2 3 4 1 100 0\n5 2 1 1 100 0\n"),
+        catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
+    simulation.Step([]);
+    Equal(true, simulation.Actor(1)!.AttackTargetInstanceId is null);
+    Equal(0, simulation.LastIdleAcquisitions.Count);
+});
+
+Check("a stop-on-contact approach ends once a hostile is in weapon range", () =>
+{
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    const string computerTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n4\n%AI\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(computerTeams + "1 2 0 0 1000 0\n8 2 1 1 100 0\n"),
+        catalog, OpenPath(14, 6), weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: EuclideanRings());
+    var guard = simulation.Actor(1)!;
+    simulation.Step([]);
+    Equal(true, guard.MoveOrder!.StopOnContact);
+    for (var tick = 0; tick < 300 && guard.AttackTargetInstanceId is null; tick++) simulation.Step([]);
+    Equal(2, guard.AttackTargetInstanceId ?? throw new InvalidOperationException("The approach never turned into an attack."));
+    // Contact came at ring 3 (distance 3, at X = 5), one cell before the
+    // (6,2) approach destination; the idle scan then took the target.
+    Equal(new CellCoordinate(5, 2), guard.Movement.OccupiedCell);
+});
+
 Check("replacement move cancels an explicit attack target", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
@@ -1748,6 +1883,16 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(beforeCadence - 1, simulation.Actor(2)!.InspirationTicksRemaining);
     });
 
+    Check("native target rings decode whole-distance rings 0 through 16", () =>
+    {
+        var rings = NativeTargetRings.Load(GameInstallation.Open(dataPath).ExecutablePath).Rings;
+        Equal(new[] { 1, 8, 16, 20, 24, 40, 36, 48, 56, 56, 68, 64, 80, 92, 88, 96, 4 }, rings.Select(ring => ring.Count).ToArray());
+        Equal(new CellCoordinate(0, 1), rings[1][0]);
+        Equal(new CellCoordinate(16, 0), rings[16][0]);
+        for (var ring = 0; ring < rings.Count; ring++)
+            Equal(true, rings[ring].All(offset => (int)Math.Floor(Math.Sqrt(offset.X * offset.X + offset.Z * offset.Z)) == ring));
+    });
+
     Check("native random table reads the executable's shared stream", () =>
     {
         var install = GameInstallation.Open(dataPath);
@@ -2672,6 +2817,27 @@ if (failures.Count != 0)
 
 Console.WriteLine("All engine checks passed.");
 return 0;
+
+// Whole-distance rings (r <= d < r + 1) shaped like dc.exe's 0x434090 table, in a synthetic
+// (Z, then X) order, for checks that run without the executable.
+NativeTargetRings EuclideanRings()
+{
+    var rings = Enumerable.Range(0, NativeTargetRings.MaximumRing + 1).Select(_ => new List<CellCoordinate>()).ToArray();
+    for (var dz = -NativeTargetRings.MaximumRing; dz <= NativeTargetRings.MaximumRing; dz++)
+    for (var dx = -NativeTargetRings.MaximumRing; dx <= NativeTargetRings.MaximumRing; dx++)
+    {
+        var ring = (int)Math.Floor(Math.Sqrt(dx * dx + dz * dz));
+        if (ring <= NativeTargetRings.MaximumRing) rings[ring].Add(new CellCoordinate(dx, dz));
+    }
+    return NativeTargetRings.FromRings(rings);
+}
+
+PathRegionMap OpenPath(int width, int height)
+{
+    var bytes = new byte[PathRegionMap.RouteTableSize + width * height];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    return PathRegionMap.Parse(bytes, width, height);
+}
 
 void Check(string name, Action action)
 {

@@ -48,6 +48,8 @@ public sealed record BattlefieldTransportEvent(
 public enum AttackMoveOrderOutcome { Accepted, SourceMissing, SourceDestroyed, Unarmed, InvalidEndpoint }
 public sealed record AttackMoveOrderEvent(int SourceActorInstanceId, CellCoordinate Target, AttackMoveOrderOutcome Outcome);
 public sealed record AttackMoveAcquisitionEvent(int SourceActorInstanceId, int TargetActorInstanceId);
+/// <summary>An idle actor selected a target: in weapon range, or (Approach) farther out to close on.</summary>
+public sealed record IdleAcquisitionEvent(int SourceActorInstanceId, int TargetActorInstanceId, bool Approach);
 public sealed record PurchaseReservedEvent(int TeamId, int DependencyItemId, PurchaseEligibility Eligibility);
 public enum HarvesterDeploymentOutcome { Attached, Retracted, Preparing, EnRoute, SourceInvalid, VentUnavailable, NoApproach }
 public sealed record HarvesterDeploymentEvent(int EntityInstanceId, int VentId, HarvesterDeploymentOutcome Outcome)

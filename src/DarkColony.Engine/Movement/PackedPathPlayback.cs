@@ -40,6 +40,8 @@ public sealed class PackedPathPlayback
     public MovementState Movement { get; }
     public FacingState Facing { get; }
     public int NextStep => nextStep;
+    /// <summary>True between cell transitions, where the native path-step handler runs.</summary>
+    public bool IsBetweenSteps => transition is null;
     public CellCoordinate? BlockedCell { get; private set; }
     /// <summary>True only on the execution which finishes a command-5 cell transition.</summary>
     public bool CompletedTransitionLastStep { get; private set; }

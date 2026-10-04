@@ -34,6 +34,16 @@ public sealed record EntityDefinition(
     /// </summary>
     public int AbilityChargeRecovery => Values[24];
     /// <summary>
+    /// Source value 20 (runtime <c>+0xdc</c>). When nonzero, the idle handler's
+    /// tail skips its random fidget command.
+    /// </summary>
+    public bool SuppressesIdleFidget => Values[19] != 0;
+    /// <summary>
+    /// Source value 32 (runtime byte <c>+0x00</c>). The target selector
+    /// <c>0x435570</c> never picks an entity with this flag set.
+    /// </summary>
+    public bool IsNativeUntargetable => Values[31] != 0;
+    /// <summary>
     /// Shipped field 14 is tested before movement class when dc.exe assigns an
     /// actor to one of its three world-selection grids. Only the two HMINE
     /// definitions set it, placing those actors in the dedicated mine layer.

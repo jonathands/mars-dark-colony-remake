@@ -206,11 +206,14 @@ In a campaign mission, team-0 units are locally controllable:
   production, research completion, P7 reservations, and faction-matched
   footprint validation run through deterministic engine intents.
 - **Move & Attack** directly targets a hostile actor, or attack-moves toward
-  terrain while acquiring visible hostiles. It turns the actor, launches a
-  simulation-owned projectile, applies original weapon-class/armor-class
+  terrain while acquiring hostiles in weapon range. It turns the actor,
+  launches a simulation-owned projectile, applies original weapon-class/armor-class
   matrix damage, plays recovered effects/sounds, and destroys actors at zero
-  HP. Projectile lifetime and autonomous target reacquisition remain
-  provisional.
+  HP. Projectile lifetime remains provisional.
+- Idle armed units acquire visible hostiles in weapon range on their own.
+  Human players' ground units also close on hostiles 4 cells out, or 9 after
+  being hit; computer units look 16 out. This follows the recovered idle
+  handler; see `docs/reverse-engineering/target-acquisition.md`.
 - Contextual fifth-slot commands are live where their rule is recovered:
   Exploiter/Slug deploy to Petra-7 vents, Engineer/Sloom deploy faction mines,
   Turret/Xenowort deploy into their armed static forms, and BEON/ZISP use

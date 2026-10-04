@@ -16,7 +16,8 @@ public sealed record SimulationRules(
     DependencyCatalog Dependencies,
     DamageMatrix DamageMatrix,
     BuildingFootprintCatalog Footprints,
-    NativeRandomTable RandomTable)
+    NativeRandomTable RandomTable,
+    NativeTargetRings TargetRings)
 {
     public static SimulationRules Load(GameInstallation installation)
     {
@@ -28,6 +29,7 @@ public sealed record SimulationRules(
             DependencyCatalog.Load(installation.DataFile("gamestat", "depend.txt")),
             DamageMatrix.Load(installation.DataFile("gamestat", "mbullet.txt")),
             BuildingFootprintCatalog.Load(installation.ExecutablePath),
-            NativeRandomTable.Load(installation.ExecutablePath));
+            NativeRandomTable.Load(installation.ExecutablePath),
+            NativeTargetRings.Load(installation.ExecutablePath));
     }
 }
