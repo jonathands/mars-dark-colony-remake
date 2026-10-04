@@ -248,8 +248,7 @@ public sealed partial class ScenarioSimulation
         var order = new ActiveMoveOrder(new CellCoordinate(values[3], values[4]));
         for (var point = 1; point < values[2]; point++)
             order.TryAppendWaypoint(new CellCoordinate(values[3 + point * 2], values[4 + point * 2]));
-        actor.Playback?.Cancel();
-        actor.Playback = null;
+        StopAfterCurrentStep(actor);
         actor.AttackTargetInstanceId = null;
         actor.MoveOrder = order;
         _ = StartSegment(actor);

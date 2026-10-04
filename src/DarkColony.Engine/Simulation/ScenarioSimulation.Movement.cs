@@ -12,9 +12,23 @@ namespace DarkColony.Engine.Simulation;
 /// <summary>Local route segments, blocked-route repair, and the shared native random cursor.</summary>
 public sealed partial class ScenarioSimulation
 {
+    /// <summary>
+    /// An order replaces the command stack, but the step in flight (type 5,
+    /// <c>0x4125BC</c>) finishes its cell transition first. The interrupted
+    /// move command applies the pending order when it next runs
+    /// (<c>0x4158A8</c>). Removing a dead actor still cancels outright.
+    /// </summary>
+    private static void StopAfterCurrentStep(SimulatedActor actor)
+    {
+        if (actor.Playback is { } playback && playback.FinishCurrentStepOnly()) actor.FinishingStep = playback;
+        actor.Playback = null;
+    }
+
     private MoveCommandOutcome StartSegment(SimulatedActor actor)
     {
         var order = actor.MoveOrder ?? throw new InvalidOperationException("Actor has no move order.");
+        if (actor.FinishingStep is not null)
+            return new MoveCommandOutcome(actor.Seed.InstanceId, order.Target, DiagnosticPathTermination.StepInFlight, 0);
         if (actor.Movement.OccupiedCell == order.Target)
         {
             // A queued duplicate of the active target is a legal input edge:

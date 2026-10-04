@@ -886,7 +886,7 @@ Check("replacement move cancels an explicit attack target", () =>
     Equal(true, simulation.Actor(1)!.AttackTargetInstanceId is null);
 });
 
-Check("direct attack replaces an in-flight movement segment", () =>
+Check("a direct attack lets the in-flight step finish, then drops the move", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 1 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1 4 0 0 0 0 0\n");
@@ -898,11 +898,17 @@ Check("direct attack replaces an in-flight movement segment", () =>
     var oldReserved = simulation.Actor(1)!.Movement.ReservedDestination;
     Equal(true, simulation.GroundOccupancy.IsOccupied(oldReserved));
     simulation.Step([new ScheduledWorldCommand(2, 0, new AttackIntent(1, 2))]);
-    Equal(false, simulation.GroundOccupancy.IsOccupied(oldReserved));
-    Equal(2, simulation.Actor(1)!.AttackTargetInstanceId!.Value);
+    // The step command (type 5, 0x4125BC) ignores the pending order.
+    var attacker = simulation.Actor(1)!;
+    Equal(true, simulation.GroundOccupancy.IsOccupied(oldReserved));
+    Equal(true, attacker.FinishingStep is not null);
+    Equal(2, attacker.AttackTargetInstanceId!.Value);
+    for (var tick = 0; tick < 100 && attacker.FinishingStep is not null; tick++) simulation.Step([]);
+    Equal(oldReserved, attacker.Movement.OccupiedCell);
+    Equal(true, attacker.MoveOrder is null);
 });
 
-Check("attack-move replaces an in-flight movement segment", () =>
+Check("an attack-move lets the in-flight step finish first", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 1 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1 4 0 0 0 0 0\n");
@@ -913,8 +919,11 @@ Check("attack-move replaces an in-flight movement segment", () =>
     simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(1, new CellCoordinate(4, 0)))]);
     var oldReserved = simulation.Actor(1)!.Movement.ReservedDestination;
     simulation.Step([new ScheduledWorldCommand(2, 0, new AttackMoveIntent(1, new CellCoordinate(0, 2)))]);
-    Equal(false, simulation.GroundOccupancy.IsOccupied(oldReserved));
-    Equal(new CellCoordinate(0, 2), simulation.Actor(1)!.AttackMoveDestination!.Value);
+    var mover = simulation.Actor(1)!;
+    Equal(true, simulation.GroundOccupancy.IsOccupied(oldReserved));
+    Equal(new CellCoordinate(0, 2), mover.AttackMoveDestination!.Value);
+    for (var tick = 0; tick < 100 && mover.FinishingStep is not null; tick++) simulation.Step([]);
+    Equal(oldReserved, mover.Movement.OccupiedCell);
 });
 
 Check("weapon bursts use rate between shots then decoded reload", () =>
@@ -1494,7 +1503,7 @@ Check("queued duplicate waypoint does not discard later destinations", () =>
     Equal(true, simulation.Actor(1)!.MoveOrder is null);
 });
 
-Check("replacement move cancels the in-flight packed segment", () =>
+Check("a replacement move finishes the in-flight step, then routes to its target", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
@@ -1508,8 +1517,10 @@ Check("replacement move cancels the in-flight packed segment", () =>
     Equal(true, oldReserved != actor.Movement.OccupiedCell);
     Equal(true, simulation.GroundOccupancy.IsOccupied(oldReserved));
     simulation.Step([new ScheduledWorldCommand(2, 0, new MoveIntent(1, new CellCoordinate(1, 3)))]);
-    Equal(false, simulation.GroundOccupancy.IsOccupied(oldReserved));
-    Equal(true, simulation.GroundOccupancy.IsOccupied(actor.Movement.ReservedDestination));
+    Equal(DiagnosticPathTermination.StepInFlight, simulation.LastMoveOutcomes.Single().PathTermination);
+    Equal(true, simulation.GroundOccupancy.IsOccupied(oldReserved));
+    for (var tick = 0; tick < 100 && actor.FinishingStep is not null; tick++) simulation.Step([]);
+    Equal(oldReserved, actor.Movement.OccupiedCell);
     for (var tick = 0; tick < 250 && simulation.Actor(1)!.MoveOrder is not null; tick++) simulation.Step([]);
     Equal(new CellCoordinate(1, 3), simulation.Actor(1)!.Movement.OccupiedCell);
 });
@@ -1526,7 +1537,7 @@ Check("active move order caps native waypoint list and ignores consecutive dupli
     Equal(false, order.TryAppendWaypoint(new CellCoordinate(10, 1)));
 });
 
-Check("scenario simulation stops an in-flight move coherently", () =>
+Check("a stop lets the in-flight step finish on its destination cell", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
@@ -1540,12 +1551,14 @@ Check("scenario simulation stops an in-flight move coherently", () =>
     Equal(true, reserved != actor.Movement.OccupiedCell);
     Equal(true, simulation.GroundOccupancy.IsOccupied(reserved));
     simulation.Step([new ScheduledWorldCommand(2, 0, new StopIntent(1))]);
-    Equal(new CellCoordinate(1, 1), actor.Movement.OccupiedCell);
-    Equal(new FixedPointPosition(1 * 256 + 128, 1 * 256 + 128), actor.Movement.VisualPosition);
-    Equal(true, simulation.GroundOccupancy.IsOccupied(new CellCoordinate(1, 1)));
-    Equal(false, simulation.GroundOccupancy.IsOccupied(reserved));
     Equal(true, actor.Playback is null);
     Equal(true, actor.MoveOrder is null);
+    Equal(true, actor.FinishingStep is not null);
+    for (var tick = 0; tick < 100 && actor.FinishingStep is not null; tick++) simulation.Step([]);
+    Equal(reserved, actor.Movement.OccupiedCell);
+    Equal(reserved, actor.Movement.VisualPosition.Cell);
+    Equal(true, simulation.GroundOccupancy.IsOccupied(reserved));
+    Equal(false, simulation.GroundOccupancy.IsOccupied(new CellCoordinate(1, 1)));
 });
 
 Check("scenario simulation waits then replans after a dynamic block", () =>

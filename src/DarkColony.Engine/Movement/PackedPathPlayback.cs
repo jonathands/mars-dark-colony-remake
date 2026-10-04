@@ -19,6 +19,7 @@ public sealed class PackedPathPlayback
     private readonly CellOccupancy occupancy;
     private NativeCellTransition? transition;
     private int nextStep;
+    private int? stopAfter;
 
     public PackedPathPlayback(
         int entityInstanceId,
@@ -47,9 +48,10 @@ public sealed class PackedPathPlayback
     public bool CompletedTransitionLastStep { get; private set; }
 
     /// <summary>
-    /// Cancels a reserved in-flight step by restoring its source claim. The port
-    /// currently resolves an interrupted sub-cell transition at the source cell;
-    /// the native stop interpolation remains to be recovered.
+    /// Cancels a reserved in-flight step by restoring its source claim. Only
+    /// world removal uses it: an order lets the step finish instead
+    /// (<see cref="FinishCurrentStepOnly"/>), because the native step command
+    /// never checks for a pending order.
     /// </summary>
     /// <remarks>
     /// The source cell is released when a step starts, so another actor may
@@ -87,18 +89,30 @@ public sealed class PackedPathPlayback
         return steps;
     }
 
+    /// <summary>
+    /// Keeps only the cell transition in flight: the playback completes when
+    /// it ends. Returns false when no transition is in flight.
+    /// </summary>
+    public bool FinishCurrentStepOnly()
+    {
+        if (transition is null) return false;
+        stopAfter = nextStep;
+        return true;
+    }
+
     public PackedPathPlaybackStatus Step()
     {
         CompletedTransitionLastStep = false;
+        var end = stopAfter ?? path.Count;
         if (BlockedCell is not null) return PackedPathPlaybackStatus.Blocked;
         if (transition is not null)
         {
             if (transition.Step()) return PackedPathPlaybackStatus.Interpolating;
             transition = null;
             CompletedTransitionLastStep = true;
-            return nextStep == path.Count ? PackedPathPlaybackStatus.Complete : PackedPathPlaybackStatus.Interpolating;
+            return nextStep == end ? PackedPathPlaybackStatus.Complete : PackedPathPlaybackStatus.Interpolating;
         }
-        if (nextStep == path.Count) return PackedPathPlaybackStatus.Complete;
+        if (nextStep == end) return PackedPathPlaybackStatus.Complete;
 
         var direction = path[nextStep];
         var destination = Movement.OccupiedCell.Offset(direction.Delta());

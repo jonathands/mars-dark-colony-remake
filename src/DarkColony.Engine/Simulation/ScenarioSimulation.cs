@@ -571,8 +571,7 @@ public sealed partial class ScenarioSimulation
             if (scheduled.Command is StopIntent stop && actorsById.TryGetValue(stop.EntityInstanceId, out var stoppedActor))
             {
                 if (stoppedActor.IsDestroyed) continue;
-                stoppedActor.Playback?.Cancel();
-                stoppedActor.Playback = null;
+                StopAfterCurrentStep(stoppedActor);
                 stoppedActor.MoveOrder = null;
                 stoppedActor.AttackTargetInstanceId = null;
                 stoppedActor.GroundSpecialAttackTarget = null;
@@ -624,13 +623,10 @@ public sealed partial class ScenarioSimulation
                 continue;
             }
 
-            // A normal move replaces—not appends to—the active command. Its
-            // existing packed segment may already have reserved the next
-            // cell, so restore that claim before planning from the actor's
-            // authoritative source cell. Leaving it active makes the actor
-            // visibly complete one old segment before following the new order.
-            actor.Playback?.Cancel();
-            actor.Playback = null;
+            // A normal move replaces—not appends to—the active command. A cell
+            // transition in flight still ends first; the new route starts from
+            // its destination cell.
+            StopAfterCurrentStep(actor);
             DetachHarvester(actor);
             actor.MineDeployTicksRemaining = 0;
             actor.AttackTargetInstanceId = null;
@@ -651,6 +647,16 @@ public sealed partial class ScenarioSimulation
         foreach (var actor in actors.ToArray())
         {
             if (actor.IsDestroyed) continue;
+            if (actor.FinishingStep is { } finishing)
+            {
+                // Only the interrupted step runs. When it ends it pops, and the
+                // new order starts next update (a new move's route is built now).
+                if (actor.CooldownTicks > 0) actor.CooldownTicks--;
+                if (finishing.Step() != PackedPathPlaybackStatus.Complete) continue;
+                actor.FinishingStep = null;
+                if (actor.MoveOrder is not null && actor.Playback is null) _ = StartSegment(actor);
+                continue;
+            }
             UpdateIdleCommand(actor, events);
             if (actor.GroundSpecialAttackTarget is { } specialTarget)
                 UpdateGroundSpecialAttack(actor, specialTarget, fired);

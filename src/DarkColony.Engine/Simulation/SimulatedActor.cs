@@ -39,6 +39,12 @@ public sealed class SimulatedActor
     /// <summary>Native actor byte +0x0a, used as the BEON/ZISP heal charge.</summary>
     public int AbilityCharge { get; internal set; }
     public PackedPathPlayback? Playback { get; internal set; }
+    /// <summary>
+    /// The cell transition an order interrupted. The step command (type 5,
+    /// <c>0x4125BC</c>) never checks for a pending order, so the actor ends
+    /// the transition before its new order runs.
+    /// </summary>
+    public PackedPathPlayback? FinishingStep { get; internal set; }
     public ActiveMoveOrder? MoveOrder { get; internal set; }
     /// <summary>Native actor byte +0x35: an allied mover's blocked direction.</summary>
     public PathDirection? YieldNotificationDirection { get; internal set; }

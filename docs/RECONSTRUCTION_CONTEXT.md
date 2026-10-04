@@ -427,6 +427,16 @@ one harvester may own or prepare on a vent.
     ends the wait at once; otherwise it ends one update after the counter
     reaches zero. The move then retries the steps it kept, starting with the
     blocked one, instead of routing afresh.
+  - A new order never interrupts a cell transition. The step command (type
+    5, `0x4125BC`) moves the actor by its per-update delta until its counter
+    ends and never checks the pending-order flag `+0x36`. The move command
+    (type 8, `0x4158A8`) applies the pending order the next time it runs. The
+    port keeps the interrupted transition as `FinishingStep`: the actor
+    finishes it and then starts the new order. Only world removal cancels a
+    transition outright.
+  - Actor state byte `+0x2C` takes only 0 (free slot), 1 (alive) and 10
+    (dying). The shuffled yield fallback's "state 1" test is therefore "alive"
+    in the port, which has no dying state.
 
   Jitter consumes the executable's initialized 256-entry stream at `0x478e04`
   with its increment-before-read cursor at `0x479204`. The app only renders this state and

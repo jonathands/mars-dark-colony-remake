@@ -43,6 +43,8 @@ public sealed partial class ScenarioSimulation
         DetachHarvester(actor);
         actor.Playback?.Cancel();
         actor.Playback = null;
+        actor.FinishingStep?.Cancel();
+        actor.FinishingStep = null;
         actor.MoveOrder = null;
         actor.AttackTargetInstanceId = null;
         actor.AttackMoveDestination = null;
@@ -59,8 +61,7 @@ public sealed partial class ScenarioSimulation
             // attack-move re-enters acquisition/pathing toward its retained
             // destination on the following deterministic update.
             other.AttackTargetInstanceId = null;
-            other.Playback?.Cancel();
-            other.Playback = null;
+            StopAfterCurrentStep(other);
             other.MoveOrder = null;
         }
     }
@@ -111,6 +112,8 @@ public sealed partial class ScenarioSimulation
         DetachHarvester(actor);
         actor.Playback?.Cancel();
         actor.Playback = null;
+        actor.FinishingStep?.Cancel();
+        actor.FinishingStep = null;
         actor.MoveOrder = null;
         actor.AttackTargetInstanceId = null;
         actor.AttackMoveDestination = null;
@@ -125,8 +128,7 @@ public sealed partial class ScenarioSimulation
             // pursuit segments immediately; an attack-move actor retains only
             // its destination and reacquires/routes next update.
             other.AttackTargetInstanceId = null;
-            other.Playback?.Cancel();
-            other.Playback = null;
+            StopAfterCurrentStep(other);
             other.MoveOrder = null;
         }
     }
@@ -150,8 +152,7 @@ public sealed partial class ScenarioSimulation
         // Direct attack replaces any queued travel. Otherwise an out-of-range
         // target is forced to wait for the previous segment to finish before
         // pursuit begins, despite the player having issued a new order.
-        attacker.Playback?.Cancel();
-        attacker.Playback = null;
+        StopAfterCurrentStep(attacker);
         attacker.MoveOrder = null;
         attacker.AttackMoveDestination = null;
         attacker.MineDeployTicksRemaining = 0;
@@ -170,8 +171,7 @@ public sealed partial class ScenarioSimulation
             return new AttackMoveOrderEvent(intent.EntityInstanceId, intent.TargetCell, AttackMoveOrderOutcome.Unarmed);
         if ((uint)intent.TargetCell.X >= (uint)path.Width || (uint)intent.TargetCell.Z >= (uint)path.Height)
             return new AttackMoveOrderEvent(intent.EntityInstanceId, intent.TargetCell, AttackMoveOrderOutcome.InvalidEndpoint);
-        actor.Playback?.Cancel();
-        actor.Playback = null;
+        StopAfterCurrentStep(actor);
         DetachHarvester(actor);
         actor.MineDeployTicksRemaining = 0;
         actor.AttackTargetInstanceId = null;
@@ -204,8 +204,7 @@ public sealed partial class ScenarioSimulation
         {
             // A previously issued approach can otherwise carry an attacker
             // past a target that has moved into weapon range.
-            attacker.Playback?.Cancel();
-            attacker.Playback = null;
+            StopAfterCurrentStep(attacker);
             attacker.MoveOrder = null;
             return;
         }
@@ -380,7 +379,8 @@ public sealed partial class ScenarioSimulation
         var fired = events.Fired;
         foreach (var attacker in Actors)
         {
-            if (attacker.AttackTargetInstanceId is not { } targetId || attacker.CooldownTicks > 0 ||
+            if (attacker.FinishingStep is not null ||
+                attacker.AttackTargetInstanceId is not { } targetId || attacker.CooldownTicks > 0 ||
                 attacker.Facing.Current != attacker.Facing.Target || !actorsById.TryGetValue(targetId, out var target) ||
                 !IsAttackTargetInRange(attacker)) continue;
             if (!TryGetWeapon(attacker, out var weapon)) continue;

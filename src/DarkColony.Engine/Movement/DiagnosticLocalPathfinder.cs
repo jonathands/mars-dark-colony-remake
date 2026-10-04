@@ -8,6 +8,8 @@ public enum DiagnosticPathTermination
     SegmentLimit,
     NoRoute,
     InvalidEndpoint,
+    /// <summary>The actor is finishing a cell transition; the route starts when it ends.</summary>
+    StepInFlight,
 }
 
 public sealed record DiagnosticLocalPath(

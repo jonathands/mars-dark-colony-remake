@@ -108,8 +108,7 @@ public sealed partial class ScenarioSimulation
 
     private static HarvesterDeploymentEvent BeginHarvesterAttachment(SimulatedActor actor, PetraVent vent)
     {
-        actor.Playback?.Cancel();
-        actor.Playback = null;
+        StopAfterCurrentStep(actor);
         actor.MoveOrder = null;
         actor.AttackTargetInstanceId = null;
         actor.AttackMoveDestination = null;

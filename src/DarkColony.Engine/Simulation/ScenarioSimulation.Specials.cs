@@ -81,8 +81,7 @@ public sealed partial class ScenarioSimulation
         if (definition.Id is < 69 or > 76 || definition.ImmediateSpecialCode == 0 || !definition.HasImmediateAreaEffect)
             return new(intent.EntityInstanceId, intent.EntityInstanceId, 0, InspireOutcome.SourceNotCommander);
 
-        source.Playback?.Cancel();
-        source.Playback = null;
+        StopAfterCurrentStep(source);
         source.MoveOrder = null;
         source.AttackTargetInstanceId = null;
         source.GroundSpecialAttackTarget = null;
@@ -166,8 +165,7 @@ public sealed partial class ScenarioSimulation
         if (source.MineDeployTicksRemaining > 0)
             return new MineDeploymentEvent(intent.EntityInstanceId, source.Seed.InstanceId, mine.Id, target, MineDeploymentOutcome.Preparing);
 
-        source.Playback?.Cancel();
-        source.Playback = null;
+        StopAfterCurrentStep(source);
         source.MoveOrder = null;
         source.AttackTargetInstanceId = null;
         source.GroundSpecialAttackTarget = null;
@@ -194,8 +192,7 @@ public sealed partial class ScenarioSimulation
 
         var previousOccupancy = source.Definition.MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
         previousOccupancy.Release(source.Seed.InstanceId);
-        source.Playback?.Cancel();
-        source.Playback = null;
+        StopAfterCurrentStep(source);
         source.MoveOrder = null;
         source.AttackTargetInstanceId = null;
         source.AttackMoveDestination = null;
@@ -221,8 +218,7 @@ public sealed partial class ScenarioSimulation
         // The paired gamestat forms turn movement speed from 15 to zero and
         // supply the actual tower weapon slots. Keep the existing actor and
         // ground claim: deployment is a state change, not a second building.
-        source.Playback?.Cancel();
-        source.Playback = null;
+        StopAfterCurrentStep(source);
         source.MoveOrder = null;
         source.AttackMoveDestination = null;
         source.DeployedEntityId = form.Id;
@@ -266,8 +262,7 @@ public sealed partial class ScenarioSimulation
     /// </summary>
     private StealDeploymentEvent BeginStealTransition(SimulatedActor source)
     {
-        source.Playback?.Cancel();
-        source.Playback = null;
+        StopAfterCurrentStep(source);
         source.MoveOrder = null;
         source.AttackTargetInstanceId = null;
         source.AttackMoveDestination = null;
@@ -401,8 +396,7 @@ public sealed partial class ScenarioSimulation
         actor.AttackTargetInstanceId = null;
         actor.AttackMoveDestination = null;
         actor.GroundSpecialAttackTarget = intent.TargetCell;
-        actor.Playback?.Cancel();
-        actor.Playback = null;
+        StopAfterCurrentStep(actor);
         actor.MoveOrder = null;
         return new(intent.EntityInstanceId, intent.TargetCell, definition.GroundSpecialWeaponId, GroundSpecialAttackOutcome.Accepted);
     }
@@ -515,8 +509,7 @@ public sealed partial class ScenarioSimulation
         var range = (long)weapon.Range * FixedPointPosition.One;
         if (DistanceSquared(actor.Movement.VisualPosition, destination) < range * range)
         {
-            actor.Playback?.Cancel();
-            actor.Playback = null;
+            StopAfterCurrentStep(actor);
             actor.MoveOrder = null;
             if (actor.CooldownTicks > 0 || actor.Facing.Current != actor.Facing.Target) return;
             SpawnGroundProjectile(actor, target, weapon, fired);
