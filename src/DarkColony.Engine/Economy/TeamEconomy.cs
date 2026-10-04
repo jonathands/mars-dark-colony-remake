@@ -11,6 +11,7 @@ public enum PurchaseEligibility
     AlreadyReserved,
     MissingPrerequisite,
     InsufficientP7,
+    Disabled,
 }
 
 /// <summary>
@@ -22,6 +23,7 @@ public sealed class TeamEconomy
 {
     private readonly HashSet<int> completedItems = [];
     private readonly List<int> reservedItems = [];
+    private readonly HashSet<int> disabledItems = [];
 
     public TeamEconomy(int p7) => P7 = Math.Max(0, p7);
 
@@ -33,6 +35,7 @@ public sealed class TeamEconomy
     {
         if (catalog is null) return PurchaseEligibility.CatalogUnavailable;
         if (!catalog.TryGet(itemId, out var item)) return PurchaseEligibility.UnknownItem;
+        if (disabledItems.Contains(itemId)) return PurchaseEligibility.Disabled;
         // Buildings and upgrades transition into the completed dependency set.
         // Troops deliberately stay repeatable production requests.
         if (item.IsBuilding || item.IsUpgrade)
@@ -80,6 +83,18 @@ public sealed class TeamEconomy
         if (catalog?.TryGet(itemId, out var item) != true || !item.IsBuilding) return false;
         return completedItems.Add(itemId);
     }
+
+    /// <summary>
+    /// <c>dfiddle</c> (player <c>+0x193C + item</c>): a disabled item fails the
+    /// dependency checks <c>0x43839C</c>/<c>0x438220</c>.
+    /// </summary>
+    public void SetItemDisabled(int itemId, bool disabled)
+    {
+        if (disabled) disabledItems.Add(itemId);
+        else disabledItems.Remove(itemId);
+    }
+
+    public IReadOnlySet<int> DisabledItems => disabledItems;
 
     /// <summary>Withdraws a building whose city slot no longer satisfies it.</summary>
     public bool WithdrawCompletedBuilding(DependencyCatalog? catalog, int itemId)

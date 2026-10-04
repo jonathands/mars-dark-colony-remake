@@ -93,6 +93,7 @@ public sealed partial class MainForm : Form
     private ScenarioSimulation? _scenarioSimulation;
     private IReadOnlyList<ScenarioTrigger> _scenarioTriggers = [];
     private ScenarioMissionText? _missionText;
+    private bool _missionOutcomeReported;
     private int _briefingScrollLine;
     private bool _storyReturnsToGameplay;
     private bool _resumeGameplayFromStory;

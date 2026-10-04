@@ -200,6 +200,20 @@ public sealed partial class MainForm
             }
             else _status = $"Building drop rejected: {placement.Outcome}.";
         }
+        foreach (var message in _scenarioSimulation.LastMissionMessages)
+        {
+            // msg: line N of the scenario's .msg text.
+            _status = _missionText?.Messages.TryGetValue(message.Index, out var line) == true ? line : $"Mission message {message.Index}.";
+        }
+        if (_scenarioSimulation.Outcome is { } outcome && _scenarioSimulation.TickCount >= outcome.EndsAtTick &&
+            !_missionOutcomeReported)
+        {
+            _missionOutcomeReported = true;
+            var key = outcome.OutcomeText.ToString("000", System.Globalization.CultureInfo.InvariantCulture);
+            _status = _missionText?.Outcomes.TryGetValue(key, out var text) == true
+                ? text
+                : $"Mission ended: result {outcome.Result}, outcome {outcome.OutcomeText}.";
+        }
         foreach (var production in _scenarioSimulation.LastUnitProductions)
         {
             if (production.TeamId != _localPlayerTeam) continue;

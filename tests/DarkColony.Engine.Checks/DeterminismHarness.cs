@@ -1,6 +1,7 @@
 using DarkColony.Engine.Commands;
 using DarkColony.Engine.Data;
 using DarkColony.Engine.Economy;
+using DarkColony.Engine.Missions;
 using DarkColony.Engine.Movement;
 using DarkColony.Engine.Scenario;
 using DarkColony.Engine.Simulation;
@@ -236,7 +237,7 @@ internal static class DeterminismHarness
         var file = installation.DataFile(["scenario", .. scenario.Split('/')]) + ".scn";
         var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
         var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
-        return (ScenarioSimulation.Create(ScenarioDefinition.Load(file), path, rules), path);
+        return (ScenarioSimulation.Create(ScenarioDefinition.Load(file), path, rules, MissionScript.LoadForScenario(file)), path);
     }
 
     public static IReadOnlyList<string> InstalledScenarios(GameInstallation installation) => Directory

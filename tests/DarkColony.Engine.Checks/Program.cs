@@ -4,6 +4,7 @@ using DarkColony.Engine.Economy;
 using DarkColony.Engine.Time;
 using DarkColony.Engine.Simulation;
 using DarkColony.Engine.Assets;
+using DarkColony.Engine.Missions;
 using DarkColony.Engine.Movement;
 using DarkColony.Engine.World;
 using DarkColony.Engine.Terrain;
@@ -645,6 +646,27 @@ Check("the idle record survives the moves it pushes itself", () =>
     for (var tick = 0; tick < 60 && blocker.MoveOrder is not null; tick++) simulation.Step([]);
     simulation.Step([]);
     Equal(0, blocker.IdleMissCount);
+});
+
+Check("trigger expressions compile and evaluate with the executable's grammar", () =>
+{
+    var context = new FakeTriggerContext();
+    int Run(string text) => TriggerExpression.Evaluate(TriggerExpression.Compile(text), context);
+    Equal(new byte[] { TriggerExpression.Clock, TriggerExpression.Literal, 0xb0, 0x04, TriggerExpression.Greater, TriggerExpression.End },
+        TriggerExpression.Compile("(c>1200)"));
+    // && and || share one precedence and associate to the right (0x43C638).
+    Equal(0, Run("(0&&0||1)"));
+    Equal(1, Run("(1||0&&0)"));
+    // Addition binds tighter than multiplication (0x43C87C over 0x43C988).
+    Equal(8, Run("(2*3+1)"));
+    Equal(1, Run("((c+45)>40)"));
+    Equal(10, Run("s(2,3)"));
+    Equal(15, Run("s(1,2,5)"));
+    Equal(1, Run("(b(1,0)==0)"));
+    Equal(1, Run("(S==2)"));
+    // alien08/human09 "(b(1,3)&&==0)": the stray && takes its left operand
+    // from the enclosing chain, so the whole conjunction collapses to 0.
+    Equal(0, Run("((1==1)&&(b(1,3)&&==0))"));
 });
 
 Check("idle armed actors acquire a visible hostile in weapon range", () =>
@@ -2194,6 +2216,51 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(PurchaseEligibility.MissingPrerequisite, economy.Evaluate(rules.Dependencies, 9));
     });
 
+    Check("every installed mission script compiles with its trip map", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var scripts = 0;
+        var triggers = 0;
+        foreach (var file in Directory.GetFiles(install.DataFile("scenario"), "*.scn", SearchOption.AllDirectories))
+        {
+            if (MissionScript.LoadForScenario(file) is not { } script) continue;
+            scripts++;
+            triggers += script.Triggers.Count;
+            if (script.TripMap is { } trips && File.Exists(Path.ChangeExtension(file, ".map")))
+            {
+                var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+                Equal((map.Width, map.Height), (trips.Width, trips.Height));
+            }
+        }
+        if (scripts < 100) throw new InvalidDataException($"Only {scripts} mission scripts compiled.");
+        Console.WriteLine($"  mission scripts: {scripts} scripts / {triggers} triggers compiled");
+    });
+
+    Check("human01 opens with the beacon landing: message 1, reinforcements, no passive income", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var (simulation, _) = DeterminismHarness.Load(install, rules, "human/human01");
+        var script = MissionScript.LoadForScenario(install.DataFile("scenario", "human", "human01") + ".scn")!;
+        // Trigger 8 "(c>0)": its actions run in reverse source order.
+        Equal(MissionActionType.Message, script.Triggers.Single(trigger => trigger.Slot == 8).Actions[0].Type);
+        Equal(true, script.TripMap!.TriggerAt(new CellCoordinate(54, 19)) == 1);
+        var before = simulation.Actors.Count(actor => actor.Seed.Team == 0);
+        var messages = new List<MissionMessageEvent>();
+        for (var tick = 0; tick < 17; tick++)
+        {
+            simulation.Step([]);
+            messages.AddRange(simulation.LastMissionMessages);
+        }
+        // c = ticks >> 4 first exceeds 0 at the norm pass of tick 16.
+        Equal(1, messages.Single().Index);
+        Equal(before + 5, simulation.Actors.Count(actor => actor.Seed.Team == 0));
+        Equal(0, simulation.MissionLives[8]);
+        var p7 = simulation.ResourceForTeam(0);
+        for (var tick = 0; tick < 48; tick++) simulation.Step([]);
+        Equal(p7, simulation.ResourceForTeam(0));
+    });
+
     Check("native target rings decode whole-distance rings 0 through 16", () =>
     {
         var rings = NativeTargetRings.Load(GameInstallation.Open(dataPath).ExecutablePath).Rings;
@@ -3218,4 +3285,17 @@ static byte[] SpriteFixture(byte[] payload, ushort width, ushort height, bool co
 
     payload.CopyTo(data, position);
     return data;
+}
+
+sealed class FakeTriggerContext : ITriggerExpressionContext
+{
+    public int Clock => 3;
+    public int NextRandom() => 0;
+    public (int EntityType, int Team)? Unit => (0, 2);
+    public int SlotHealth(int player, int slot) => player == 1 && slot == 3 ? 5 : 0;
+    public bool CellVisible(int x, int z, int player) => false;
+    public int PlayerStat(int player, int stat) => player * 10 + stat - 13;
+    public int TypeStat(int player, int stat, int entityType) => player * 10 + entityType;
+    public bool MineAlive(int x, int z) => false;
+    public int ScriptWord(int byteOffset) => 0;
 }

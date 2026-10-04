@@ -11,6 +11,7 @@ using DarkColony.Engine.Time;
 using DarkColony.Engine.Scenario;
 using DarkColony.Engine.World;
 using DarkColony.Engine.Commands;
+using DarkColony.Engine.Missions;
 using DarkColony.Engine.Movement;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -192,7 +193,9 @@ public sealed partial class MainForm
             _weaponCatalog ??= rules.Weapons;
             _areaEffects ??= rules.AreaEffects;
             _dependencyCatalog ??= rules.Dependencies;
-            _scenarioSimulation = ScenarioSimulation.Create(definition, _gameplayPath, rules);
+            var missionScript = MissionScript.LoadForScenario(_installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.scn"));
+            _scenarioSimulation = ScenarioSimulation.Create(definition, _gameplayPath, rules, missionScript);
+            _missionOutcomeReported = false;
             _previousActorRenderPositions.Clear();
             _groundOccupancy = _scenarioSimulation.GroundOccupancy;
             _alternateOccupancy = _scenarioSimulation.AlternateOccupancy;
@@ -209,7 +212,7 @@ public sealed partial class MainForm
                 _cameraY = CellPixelTop(localActor.Movement.OccupiedCell.Z) - 229;
             }
             ClampGameplayCamera();
-            _status = $"Loaded {scenario.Directory}\\{scenario.Name}: {_scenarioSimulation.Actors.Count} actors / {_scenarioTriggers.Count} triggers (not executing).";
+            _status = $"Loaded {scenario.Directory}\\{scenario.Name}: {_scenarioSimulation.Actors.Count} actors / {missionScript?.Triggers.Count ?? 0} triggers.";
             return true;
         }
         catch (Exception error) when (error is IOException or InvalidDataException or FormatException)

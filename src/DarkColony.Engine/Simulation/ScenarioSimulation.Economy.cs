@@ -216,10 +216,11 @@ public sealed partial class ScenarioSimulation
             }
             // World update 0x419B2E: every 16 ticks each player whose slot-0
             // headquarters stands earns its passive rate (default 3).
-            if (citiesDeclared && teamId is >= 0 and < 8 && CanEarnP7(teamId))
+            if (citiesDeclared && teamId is >= 0 and < 8 && CanEarnP7(teamId) && passiveRates[teamId] > 0)
             {
-                economy.AddP7(NativePassiveP7Rate);
-                income.Add(new P7IncomeEvent(teamId, NativePassiveP7Rate, null));
+                economy.AddP7(passiveRates[teamId]);
+                RecordP7Earned(teamId, passiveRates[teamId]);
+                income.Add(new P7IncomeEvent(teamId, passiveRates[teamId], null));
             }
         }
         foreach (var vent in PetraVents.OrderBy(vent => vent.Id))
@@ -241,13 +242,14 @@ public sealed partial class ScenarioSimulation
             // subtracts the credited source amount at 0x413bdf. The exact
             // authored rate is still unrecovered, so the explicit port pulse
             // amount remains the replaceable base rate here.
-            var attachedIncome = petraFlowRules.EffectiveAttachedP7;
+            var attachedIncome = vent.ScriptedRate ?? petraFlowRules.EffectiveAttachedP7;
             if (!petraFlowRules.CanCreditReservoir(vent.RemainingReservoir, attachedIncome)) continue;
             vent.RemainingReservoir -= attachedIncome;
             var thief = FindPetraThief(harvester);
             var stolen = thief is null ? 0 : petraStealRules.StolenAmount(attachedIncome);
             var retained = attachedIncome - stolen;
             economy.AddP7(retained);
+            RecordP7Earned(harvester.Seed.Team, retained);
             if (retained > 0) income.Add(new P7IncomeEvent(harvester.Seed.Team, retained, vent.Id));
             if (thief is null || stolen <= 0 || !teamEconomies.TryGetValue(thief.Seed.Team, out var thiefEconomy)) continue;
             thiefEconomy.AddP7(stolen);

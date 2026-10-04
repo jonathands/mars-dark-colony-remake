@@ -1,5 +1,6 @@
 using DarkColony.Engine.Commands;
 using DarkColony.Engine.Assets;
+using DarkColony.Engine.Missions;
 using DarkColony.Engine.Combat;
 using DarkColony.Engine.Data;
 using DarkColony.Engine.Economy;
@@ -95,6 +96,16 @@ public sealed partial class ScenarioSimulation
     // Player troop queues, ordered by (team, queue).
     private readonly SortedDictionary<(int Team, int Queue), CityProductionQueue> productionQueues = [];
     private TroopBuildTimings? buildTimings;
+    // Mission runtime (trigger.c): compiled script, trigger table, statistics.
+    private MissionScript? missionScript;
+    private readonly MissionTrigger?[] missionTriggers = new MissionTrigger?[MissionScript.TriggerSlots];
+    private readonly byte[] missionLives = new byte[MissionScript.TriggerSlots];
+    private readonly int[,] playerStats = new int[8, PlayerStatCount];
+    private readonly int[,,] typeStats = new int[8, TypeStatEntities, 4];
+    // Player +0x19B4: passive P7 per 16 ticks, set to 3 by the SCN loader and by exomoney.
+    private readonly int[] passiveRates = [3, 3, 3, 3, 3, 3, 3, 3];
+    private readonly List<MissionMessageEvent> pendingMissionMessages = [];
+    private readonly List<MissionUnmodeledActionEvent> pendingUnmodeledMissionActions = [];
 
     private ScenarioSimulation(
         PathRegionMap path,
@@ -180,10 +191,11 @@ public sealed partial class ScenarioSimulation
     public ulong TickCount => simulationTicks;
 
     /// <summary>Creates a simulation with every installed rule table, as the game host does.</summary>
-    public static ScenarioSimulation Create(ScenarioDefinition scenario, PathRegionMap path, SimulationRules rules)
+    public static ScenarioSimulation Create(ScenarioDefinition scenario, PathRegionMap path, SimulationRules rules, MissionScript? missionScript = null)
     {
         ArgumentNullException.ThrowIfNull(rules);
         return Create(scenario, rules.Entities, path, rules.Footprints,
+            missionScript: missionScript,
             weaponCatalog: rules.Weapons,
             damageMatrix: rules.DamageMatrix,
             dependencyCatalog: rules.Dependencies,
@@ -208,7 +220,8 @@ public sealed partial class ScenarioSimulation
         AreaEffectCatalog? areaEffects = null,
         NativeRandomTable? randomTable = null,
         NativeTargetRings? targetRings = null,
-        TroopBuildTimings? buildTimings = null)
+        TroopBuildTimings? buildTimings = null,
+        MissionScript? missionScript = null)
     {
         var seeds = scenario.Placements.Where(placement => placement.Team != -1).Select((placement, index) =>
         {
@@ -263,6 +276,9 @@ public sealed partial class ScenarioSimulation
         simulation.citiesDeclared = scenario.Teams.Any(team => team.CityOrigin is not null);
         foreach (var city in cityBuildings) simulation.cityBuildings[(city.Team, city.Slot)] = city.InstanceId;
         simulation.buildTimings = buildTimings;
+        // 0x41BDFD counts each team's starting money as earned P7 (stat 1).
+        foreach (var (team, resource) in resources) simulation.RecordP7Earned(team, resource);
+        simulation.InitializeMission(missionScript);
         foreach (var team in scenario.Teams.Where(team => team.Enabled && team.TeamId is >= 0 and < 8 && team.HasCity))
         {
             simulation.cityOrigins[team.TeamId] = team.CityOrigin!.Value;
@@ -379,6 +395,9 @@ public sealed partial class ScenarioSimulation
 
     public void Step(IEnumerable<ScheduledWorldCommand> commands)
     {
+        RecountMissionStatistics();
+        pendingMissionMessages.Clear();
+        pendingUnmodeledMissionActions.Clear();
         var events = new TickEvents(UpdateInspireState());
         UpdateAbilityCharge();
         events.MineDeployments.AddRange(UpdateMineDeploymentState());
@@ -412,6 +431,9 @@ public sealed partial class ScenarioSimulation
         LastAttackMoveAcquisitions = events.AttackMoveAcquisitions;
         LastIdleAcquisitions = events.IdleAcquisitions;
         LastDayNightChanges = DayNight.Step() ? [new DayNightChangedEvent(DayNight.Phase)] : [];
+        RunNormTriggers(pendingMissionMessages, pendingUnmodeledMissionActions);
+        LastMissionMessages = pendingMissionMessages.ToArray();
+        LastUnmodeledMissionActions = pendingUnmodeledMissionActions.ToArray();
         LastP7Income = ApplyPetraFlow();
         simulationTicks++;
     }
@@ -596,7 +618,7 @@ public sealed partial class ScenarioSimulation
         var harvesterDeployments = events.HarvesterDeployments;
         scanVisibility.Clear();
         UpdateCityProduction(events);
-        foreach (var actor in Actors)
+        foreach (var actor in actors.ToArray())
         {
             if (actor.IsDestroyed) continue;
             UpdateIdleCommand(actor, events);
@@ -644,6 +666,11 @@ public sealed partial class ScenarioSimulation
                     var remaining = actor.Playback.RemainingSteps();
                     actor.Playback = null;
                     HandleBlockedStep(actor, remaining);
+                }
+                else if (status == PackedPathPlaybackStatus.ReservedStep)
+                {
+                    // 0x415E6E: entering a cell runs its trip trigger with this unit.
+                    RunTripTrigger(actor, actor.Movement.ReservedDestination);
                 }
                 else if (actor.Playback.CompletedTransitionLastStep)
                 {

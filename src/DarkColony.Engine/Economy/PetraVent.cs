@@ -24,6 +24,11 @@ public sealed class PetraVent
     public int RemainingReservoir { get; internal set; }
     public int? HarvesterInstanceId { get; internal set; }
     /// <summary>
+    /// Per-pulse amount set by a mission's <c>newrate</c>/<c>newrate2</c>
+    /// (vent word <c>+0x32</c>); null keeps the port's default attached rate.
+    /// </summary>
+    public int? ScriptedRate { get; internal set; }
+    /// <summary>
     /// Harvester currently completing the executable-recovered vent handshake.
     /// Native <c>dc.exe</c> keeps this delay on the vent actor before changing
     /// EXPL/SLUG into EDPLY/SDPL.

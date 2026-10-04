@@ -30,7 +30,7 @@ public sealed partial class ScenarioSimulation
             if (actor.Seed.Team == source.Seed.Team) percent = percent * 0x40 / 0x100;
             if (percent <= 0) continue;
             var baseDamage = damageMatrix is null ? weapon.Damage : damageMatrix.CalculateBaseDamage(weapon.Damage, weapon.WeaponClass, EffectiveDefinition(actor).ArmorClass);
-            ApplyDamage(actor, checked(baseDamage * percent / 100), destroyed);
+            ApplyDamage(actor, checked(baseDamage * percent / 100), destroyed, source.Seed.Team);
         }
     }
 
@@ -78,10 +78,12 @@ public sealed partial class ScenarioSimulation
         return null;
     }
 
-    private void ApplyDamage(SimulatedActor target, int damage, ICollection<DestroyedActorEvent> destroyed)
+    private void ApplyDamage(SimulatedActor target, int damage, ICollection<DestroyedActorEvent> destroyed, int? attackerTeam)
     {
         target.Health = Math.Max(0, target.Health - damage);
-        if (target.Health == 0) Destroy(target, destroyed);
+        if (target.Health != 0) return;
+        RecordMissionKill(target, attackerTeam);
+        Destroy(target, destroyed);
     }
 
     /// <summary>
@@ -422,7 +424,8 @@ public sealed partial class ScenarioSimulation
                     if (weaponClass >= 0) impacts.Add(new ProjectileImpactEvent(projectile.SourceActorInstanceId, collision.Seed.InstanceId, projectile.WeaponId, weaponClass, projectile.Position));
                     if (weapon is { HasAreaEffect: true } && areaEffects?.TryGet(weapon.AreaEffectTemplateId, out var collisionEffect) == true)
                         ApplyAreaDamage(projectile, weapon, projectile.Position.Cell, collisionEffect, destroyed);
-                    else ApplyDamage(collision, ResolveProjectileDamage(projectile, collision), destroyed);
+                    else ApplyDamage(collision, ResolveProjectileDamage(projectile, collision), destroyed,
+                        actorsById.TryGetValue(projectile.SourceActorInstanceId, out var shooter) ? shooter.Seed.Team : null);
                     resolved = true;
                     continue;
                 }

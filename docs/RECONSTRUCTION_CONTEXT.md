@@ -605,6 +605,10 @@ one harvester may own or prepare on a vent.
   starting balance. Purchase costs, the native headquarters-gated passive
   pulse, and deployed harvester pulses mutate this engine-owned balance; the
   storage/multiplier handling remains unrecovered.
+- Mission scripts run (2026-10-04). The `.tro` triggers are compiled the
+  way the executable does and run every eighth update. Trip triggers fire
+  from the `.mtg` map when a unit steps on a marked cell. See
+  [`reverse-engineering/mission-triggers.md`](reverse-engineering/mission-triggers.md).
 - Each player's city is built at load from `%AISlots` line 2 (the origin) and
   `%City`. The slot entity comes from the executable build table, and the
   position and footprint from the slot tables. Every built slot lies on MAP
