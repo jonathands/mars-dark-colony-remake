@@ -129,6 +129,13 @@ public sealed class SimulatedActor
     /// <summary>The target the idle command started attacking; the idle record stays below the attack.</summary>
     internal int? IdleIssuedAttackTarget { get; set; }
     /// <summary>
+    /// The <c>waypoint</c> points (actor <c>+0xA6</c>, count <c>+0xC6</c>) that
+    /// command 9 cycles through, or null when the actor does not patrol.
+    /// </summary>
+    public IReadOnlyList<CellCoordinate>? PatrolPoints { get; internal set; }
+    /// <summary>Command 9's word: the point the next leg heads for.</summary>
+    public int PatrolIndex { get; internal set; }
+    /// <summary>
     /// An artifact site's (entity 37) idle record word (<c>0x4131BC</c>):
     /// updates left before the harvester standing on it digs out the next item.
     /// </summary>

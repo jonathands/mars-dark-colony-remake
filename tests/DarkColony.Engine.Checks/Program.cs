@@ -2682,6 +2682,35 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         }
     });
 
+    Check("waypoint makes the actor patrol its points in a loop until it gets an order", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        const string source = "desert.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
+            "2 1 0 0 0 0\n";
+        var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+        bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        var script = MissionScript.Compile(ScenarioTriggers.Parse("1 norm 1 (1)\nwaypoint 2 1 2 6 1 2 1\nend\n"));
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), PathRegionMap.Parse(bytes, 16, 4), rules, script);
+        var unit = simulation.Actors.Single();
+        // The norm pass of update 8 runs the trigger (0x43E08D -> 0x43D764).
+        for (var tick = 0; tick < 8; tick++) simulation.Step([]);
+        Equal(2, unit.PatrolPoints!.Count);
+        Equal(1, unit.PatrolIndex);
+        var visits = new List<CellCoordinate>();
+        for (var tick = 0; tick < 600 && visits.Count < 4; tick++)
+        {
+            var before = unit.PatrolIndex;
+            simulation.Step([]);
+            if (unit.PatrolIndex != before) visits.Add(unit.Movement.OccupiedCell);
+        }
+        // Command 9 (0x416198) wraps to the first point after the last.
+        Equal(new[] { new CellCoordinate(6, 1), new CellCoordinate(2, 1), new CellCoordinate(6, 1), new CellCoordinate(2, 1) },
+            visits.ToArray());
+        simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new StopIntent(unit.Seed.InstanceId))]);
+        Equal(false, unit.PatrolPoints is not null);
+    });
+
     Check("losing the mining colony ends human01 in defeat with outcome text 4", () =>
     {
         var install = GameInstallation.Open(dataPath);

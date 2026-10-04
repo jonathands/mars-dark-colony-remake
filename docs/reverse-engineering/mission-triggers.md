@@ -107,7 +107,7 @@ their line as an expression. Command → action type:
 | `setlifes i e` | 7 | trigger i lives = e |
 | `ally a b v` | 8 | relation [a][b] = v, plus alliance bits (`0x41E7D8`) |
 | `dfiddle p i v` | 9 | player +0x193C + i: depend item i disabled |
-| `waypoint x z n ...` | 10 | the actor on (x, z) gets up to 8 points, state 9 (`0x43D764`) |
+| `waypoint x z n ...` | 10 | the first actor slot whose position cell is (x, z) gets up to 8 points and pending state 9 (`0x43E08D`, `0x43D764`) |
 | `msg a b c d e` | 11 | queue line c of the `.msg` text (`0x44D918`) |
 | `exomoney p r` | 12 | player passive rate +0x19B4 = r |
 | `setmoney x z e` | 13 | the vent at (x, z) holds e × multiplier >> 8; creates one if absent |
@@ -219,7 +219,7 @@ checks without declared cities skip the slot 4 test.
 | Lobby options in stat 0 | confirmed: session start `0x40123C` sets them, and this build never changes the defaults. Players 1/2 hold the vent rate/money multipliers (4 << 6 = 256); players 3-6 hold 0, so the multiplayer vent-respawn scripts (`s(3,0)==1`) never fire |
 | `reinforce` transport flight | implemented: `0x418F4C` picks DROP (92) or, for a race-1 team, SAUC (93) on team 8, starting one cell off the target per axis (shared stream bit 0). The payload words are `type << 8 | count`. The transport descends, then unloads one unit per update on the target cell or the nearest free ring cell (`0x418D5F`, `0x41B4A0`), then leaves. A first word with high byte 0xff (abduct) collects actors instead. The eight per-team transport slots (`+0xE13`) are not limited |
 | Vent rate/reservoir multipliers | confirmed: `newrate` uses stat (1,0) and `setmoney` stat (2,0) (`0x41A538` with AL = 0), both 256 = x1 |
-| `waypoint` state 9 | provisional: one pass through the points |
+| `waypoint` state 9 | implemented: state 9 (`0x416094`) drops an entity without speed; command 9 (`0x416198`) sends the actor to each point in turn as a move in mode 1 (attacking hostiles that come into range) and wraps to the first point, so the patrol never ends by itself. A unit order replaces it. The port runs each leg as an attack-move and retries a leg whose route fails instead of skipping to the next point |
 | `ally` alliance bits and `vision` | implemented: both write mutual bit pairs (`0x41E7D8`). Relations and vision masks follow the mutual bits on every update (see city-and-economy.md) |
 | Commander slots | implemented (`ScenarioSimulation.Commanders.cs`). Player `+0xD98` counts and `+0xD9C` holds four commander actor indices (-1 when empty, `0x41C2BD`). The actor constructor (`0x41B223`) puts each commander (entities 69-76) into the next slot; the count never decreases. The constructor also turns 69-72 into 69 + rank and 73-76 into 73 + rank (player `+0x19BC`); the port leaves that to the War launcher. Each update right after the statistics recount (`0x4197B4`), a player whose stat 6 is at least the troop cap (`world + 0x528`, still last update's value) has every slotted commander's ability charge set to 230; the original does not check that the commander is alive. Every 8 updates after the norm triggers (`0x419AB5`), a dead commander's slot becomes -1, and statistic 11 of the player whose index equals the slot index is zeroed (an apparent bug in the original, kept) |
 | `abduct s d` | implemented: when player d's first commander slot holds a live actor, a transport of team s's race carries it off. The payload is the header 0xff01 plus the actor (`0x43E2A0` -> `0x418F4C`) |

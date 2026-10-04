@@ -253,24 +253,51 @@ public sealed partial class ScenarioSimulation
     private int Evaluate(MissionAction action) => TriggerExpression.Evaluate(action.Expression!, new MissionContext(this, null));
 
     /// <summary>
-    /// <c>waypoint x z n ...</c> (<c>0x43D764</c>): the first actor standing on
-    /// (x, z) gets up to eight points and native state 9. The port gives it
-    /// a move order through the points in turn.
+    /// <c>waypoint x z n (x z)xn</c> (<c>0x43E08D</c>): the first actor slot
+    /// whose position cell is (x, z), dead or alive, gets the points (actor
+    /// <c>+0xA6</c>, count <c>+0xC6</c>) and pending state 9 (<c>0x43D764</c>).
+    /// State 9 (<c>0x416094</c>) drops it for an entity without speed, and a
+    /// dying actor never reads its pending state. Otherwise command 9 patrols.
     /// </summary>
     private void AssignScriptWaypoints(IReadOnlyList<int> values)
     {
         var cell = new CellCoordinate(values[0], values[1]);
-        var actor = actors.FirstOrDefault(candidate => !candidate.IsDestroyed && candidate.Movement.OccupiedCell == cell &&
-                                                       EffectiveDefinition(candidate).MovementSpeed > 0);
-        if (actor is null) return;
-        var order = new ActiveMoveOrder(new CellCoordinate(values[3], values[4]));
-        for (var point = 1; point < values[2]; point++)
-            order.TryAppendWaypoint(new CellCoordinate(values[3 + point * 2], values[4 + point * 2]));
+        var actor = actors.FirstOrDefault(candidate => candidate.Movement.VisualPosition.Cell == cell);
+        if (actor is null || actor.IsDestroyed || EffectiveDefinition(actor).MovementSpeed <= 0) return;
+        var points = new CellCoordinate[values[2]];
+        for (var point = 0; point < points.Length; point++)
+            points[point] = new CellCoordinate(values[3 + point * 2], values[4 + point * 2]);
         StopAfterCurrentStep(actor);
+        actor.MoveOrder = null;
         actor.AttackTargetInstanceId = null;
-        actor.MoveOrder = order;
+        actor.AttackMoveDestination = null;
+        actor.GroundSpecialAttackTarget = null;
+        actor.PatrolPoints = points;
+        actor.PatrolIndex = 0;
+        BeginPatrolLeg(actor);
+    }
+
+    /// <summary>
+    /// Command 9 (<c>0x416198</c>): the next point, wrapping to the first after
+    /// the last, becomes a move in mode 1 (<c>0x414CE4</c>), which attacks
+    /// hostiles that come into weapon range. The patrol never ends by itself.
+    /// The port runs each leg as an attack-move (a plain move for an unarmed
+    /// actor), and retries a leg whose route fails instead of skipping it.
+    /// </summary>
+    private void BeginPatrolLeg(SimulatedActor actor)
+    {
+        var points = actor.PatrolPoints!;
+        if (actor.PatrolIndex >= points.Count) actor.PatrolIndex = 0;
+        var target = points[actor.PatrolIndex++];
+        if (TryGetWeapon(actor, out _)) actor.AttackMoveDestination = target;
+        actor.MoveOrder = new ActiveMoveOrder(target);
         _ = StartSegment(actor);
     }
+
+    /// <summary>Whether a patrolling actor finished its leg and command 9 runs again.</summary>
+    private static bool PatrolLegEnded(SimulatedActor actor) =>
+        actor.PatrolPoints is not null && actor.MoveOrder is null && actor.Playback is null && actor.FinishingStep is null &&
+        actor.AttackTargetInstanceId is null && actor.AttackMoveDestination is null;
 
     /// <summary>
     /// <c>reinforce2 team x z (type count) x5</c> (<c>0x43E349</c>): each unit

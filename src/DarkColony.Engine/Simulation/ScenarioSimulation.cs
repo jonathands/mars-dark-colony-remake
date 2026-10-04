@@ -495,6 +495,22 @@ public sealed partial class ScenarioSimulation
         simulationTicks++;
     }
 
+    private static int? OrderedActorId(WorldCommand command) => command switch
+    {
+        MoveIntent order => order.EntityInstanceId,
+        StopIntent order => order.EntityInstanceId,
+        AttackIntent order => order.EntityInstanceId,
+        GroundSpecialAttackIntent order => order.EntityInstanceId,
+        AttackMoveIntent order => order.EntityInstanceId,
+        HarvestVentIntent order => order.EntityInstanceId,
+        HealAreaIntent order => order.EntityInstanceId,
+        InspireTroopsIntent order => order.EntityInstanceId,
+        DeployMineIntent order => order.EntityInstanceId,
+        DeployTowerIntent order => order.EntityInstanceId,
+        DeployStealIntent order => order.EntityInstanceId,
+        _ => null,
+    };
+
     /// <summary>Native <c>world + 0x94C</c> (and <c>+0x52C</c>) during the current or next step.</summary>
     private ulong WorldUpdateCounter => simulationTicks + 1;
 
@@ -543,6 +559,9 @@ public sealed partial class ScenarioSimulation
         var inspires = events.Inspires;
         foreach (var scheduled in commands.OrderBy(command => command.Sequence))
         {
+            // A unit order replaces the command stack, patrol included.
+            if (OrderedActorId(scheduled.Command) is { } orderedId && actorsById.TryGetValue(orderedId, out var ordered))
+                ordered.PatrolPoints = null;
             if (scheduled.Command is PurchaseIntent purchase)
             {
                 var eligibility = !teamEconomies.TryGetValue(purchase.TeamId, out var economy)
@@ -729,6 +748,7 @@ public sealed partial class ScenarioSimulation
                     _ = StartSegment(actor);
                 }
             }
+            if (PatrolLegEnded(actor)) BeginPatrolLeg(actor);
             // The idle fidget turns its actor itself, once per update.
             if (actor.IdleFidgetFacing is null && actor.Facing.Current != actor.Facing.Target && EffectiveDefinition(actor).TurnSpeed > 0)
                 actor.Facing.Step(EffectiveDefinition(actor).TurnSpeed);
