@@ -205,6 +205,9 @@ public sealed partial class MainForm
             // msg: line N of the scenario's .msg text.
             _status = _missionText?.Messages.TryGetValue(message.Index, out var line) == true ? line : $"Mission message {message.Index}.";
         }
+        if (ForcedOutcomeAfterSeconds is { } forcedAfter && _scenarioSimulation.Outcome is null &&
+            Environment.TickCount64 - _missionStartedAtMilliseconds >= forcedAfter * 1000L)
+            _scenarioSimulation.EndMission(ForcedVictory ? 0 : 1, ForcedVictory ? 1 : 2);
         if (_scenarioSimulation.Outcome is { } outcome && !ReferenceEquals(outcome, _bailOutcome))
         {
             // Each bail restarts the 10 s wall-clock countdown (0x43D973).

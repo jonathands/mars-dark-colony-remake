@@ -33,7 +33,17 @@ internal static class Program
             : MenuScreenId.Main;
         // --reveal-map starts with the Ctrl+F12 diagnostic on (no fog, every actor drawn).
         var revealMap = arguments.Any(argument => argument.Equals("--reveal-map", StringComparison.OrdinalIgnoreCase));
-        Application.Run(new MainForm(installation, initialScreen) { RevealMap = revealMap });
+        // --outcome-after N victory|defeat ends every mission N seconds after it loads.
+        var outcomeIndex = Array.FindIndex(arguments, argument => argument.Equals("--outcome-after", StringComparison.OrdinalIgnoreCase));
+        int? outcomeAfter = outcomeIndex >= 0 && outcomeIndex + 1 < arguments.Length && int.TryParse(arguments[outcomeIndex + 1], out var seconds) ? seconds : null;
+        var forcedVictory = outcomeIndex >= 0 && outcomeIndex + 2 < arguments.Length &&
+                            arguments[outcomeIndex + 2].Equals("victory", StringComparison.OrdinalIgnoreCase);
+        Application.Run(new MainForm(installation, initialScreen)
+        {
+            RevealMap = revealMap,
+            ForcedOutcomeAfterSeconds = outcomeAfter,
+            ForcedVictory = forcedVictory,
+        });
         RuntimeLog.Info("Exited normally.");
         return 0;
     }

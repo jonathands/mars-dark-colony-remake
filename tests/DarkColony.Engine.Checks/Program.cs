@@ -1173,6 +1173,12 @@ Check("alliance and vision bits count only when both players set them", () =>
     Equal(true, simulation.SharesVision(0, 1));
     // Team 1's unit at (8,1) now shows its surroundings to team 0.
     Equal(true, simulation.IsCellVisibleToTeam(0, farCell));
+    // The Allies packet as a command: team 0 withdraws in the command phase,
+    // after this update's relation refresh, so the next update applies it.
+    simulation.Step([new ScheduledWorldCommand(0, 0, new AllianceIntent(0, 1, false))]);
+    Equal((false, false), (simulation.TeamRelations.IsHostile(0, 1), simulation.OffersAlliance(0, 1)));
+    simulation.Step([]);
+    Equal((true, false), (simulation.TeamRelations.IsHostile(0, 1), simulation.SharesVision(0, 1)));
 });
 
 Check("attack-move excludes a team marked cooperative in the relation matrix", () =>
@@ -3074,6 +3080,27 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var guarded = brain.Groups[1].Tasks.Skip(1).Where(task => task.Active).Select(task => task.Target).ToHashSet();
         Equal(true, vents.All(actor => guarded.Contains(actor.KrustyZone)));
         Equal(true, attacked);
+    });
+
+    Check("a saved game replays its command journal to the same state", () =>
+    {
+        // Scripted orders on human05, whose Krusty enemy acts too, saved at
+        // 900 ticks and restored on a fresh simulation through the JSON format.
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var (simulation, path) = DeterminismHarness.Load(install, rules, "human/human05");
+        var commander = new ScriptedCommander(simulation, path, rules, DeterminismHarness.StableSeed("human/human05"));
+        var journal = new CommandJournal();
+        for (ulong tick = 1; tick <= 900; tick++) journal.Step(simulation, commander.CommandsFor(tick));
+        var json = journal.Save(simulation, "human", "human05", campaign: new SavedCampaign(false, false, 5)).ToJson();
+        var saved = SavedGame.FromJson(json);
+        Equal((900UL, 5, true), (saved.Ticks, saved.Campaign!.Mission, saved.Steps.Count > 10));
+        var (restored, _) = DeterminismHarness.Load(install, rules, "human/human05");
+        Equal(true, saved.Replay(restored));
+        Equal(SimulationDigest.Describe(simulation), SimulationDigest.Describe(restored));
+        // A journal missing a step does not reproduce the saved state.
+        var (tampered, _) = DeterminismHarness.Load(install, rules, "human/human05");
+        Equal(false, (saved with { Steps = saved.Steps.Skip(1).ToArray() }).Replay(tampered));
     });
 
     Check("every campaign and training mission reaches its script's outcome in the campaign smoke", () =>

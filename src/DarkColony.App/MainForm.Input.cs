@@ -360,6 +360,8 @@ public sealed partial class MainForm
         {
             QueueDiagnosticMove(eventArgs.Location);
         }
+        if (button is null && _screen == MenuScreenId.LoadGame && eventArgs.Button == MouseButtons.Left)
+            SelectSaveAt(eventArgs.Location);
         if (button is null && _screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left)
         {
             if (HandleWarLobbyClick(eventArgs.Location))
@@ -622,8 +624,7 @@ public sealed partial class MainForm
                     // alliance and vision bits; they take effect once the other
                     // player sets theirs too (0x41E820).
                     var offer = !simulation.OffersAlliance(_localPlayerTeam, otherTeam);
-                    simulation.SetAllianceBit(_localPlayerTeam, otherTeam, offer);
-                    simulation.SetVisionBit(_localPlayerTeam, otherTeam, offer);
+                    _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new AllianceIntent(_localPlayerTeam, otherTeam, offer));
                     _status = !offer
                         ? $"Alliance with team {otherTeam + 1} withdrawn."
                         : simulation.OffersAlliance(otherTeam, _localPlayerTeam)
@@ -645,7 +646,7 @@ public sealed partial class MainForm
             }
             if (_gameplayHudLayout.SaveGame.Bounds.Contains(point))
             {
-                _status = "Save games have not been decoded yet.";
+                SaveCurrentGame();
                 return true;
             }
             if (_gameplayHudLayout.Allies.Bounds.Contains(point))

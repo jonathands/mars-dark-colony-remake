@@ -34,7 +34,11 @@ public sealed partial class MainForm
     [
         Button(0, 138, 314, 179, 25, "NEW CAMPAIGN", () => OpenNewGame(false)),
         Button(1, 138, 340, 179, 25, "TRAINING", () => OpenNewGame(true)),
-        Button(2, 138, 366, 179, 25, "LOAD GAME", () => ShowScreen(MenuScreenId.LoadGame)),
+        Button(2, 138, 366, 179, 25, "LOAD GAME", () =>
+        {
+            RefreshSaveFiles();
+            ShowScreen(MenuScreenId.LoadGame);
+        }),
         Button(3, 318, 314, 179, 25, "MULTI PLAYER WAR", () => ShowScreen(MenuScreenId.NetworkOptions)),
         Button(4, 318, 340, 179, 25, "SINGLE PLAYER WAR", () => ShowScreen(MenuScreenId.SinglePlayer)),
         Button(5, 318, 366, 179, 25, "ENCYCLOPEDIA", () => ShowScreen(MenuScreenId.Encyclopedia)),
@@ -53,7 +57,7 @@ public sealed partial class MainForm
     private IReadOnlyList<MenuButton> LoadButtons() =>
     [
         Button(4, 313, 447, 90, 26, "BACK", () => ShowScreen(MenuScreenId.Main)),
-        Button(5, 403, 447, 90, 26, "LOAD", () => _status = "Save-game decoding is not implemented yet."),
+        Button(5, 403, 447, 90, 26, "LOAD", LoadSelectedSave),
     ];
 
     private IReadOnlyList<MenuButton> SinglePlayerButtons() =>

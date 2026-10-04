@@ -1,8 +1,29 @@
+using System.Text.Json.Serialization;
 using DarkColony.Engine.World;
 
 namespace DarkColony.Engine.Commands;
 
 /// <summary>External deterministic intent; distinct from the native six-slot actor queue.</summary>
+/// <remarks>The JSON names are part of the saved-game format; never rename one.</remarks>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(MoveIntent), "move")]
+[JsonDerivedType(typeof(StopIntent), "stop")]
+[JsonDerivedType(typeof(AttackIntent), "attack")]
+[JsonDerivedType(typeof(GroundSpecialAttackIntent), "groundSpecial")]
+[JsonDerivedType(typeof(HealAreaIntent), "heal")]
+[JsonDerivedType(typeof(InspireTroopsIntent), "inspire")]
+[JsonDerivedType(typeof(AttackMoveIntent), "attackMove")]
+[JsonDerivedType(typeof(PurchaseIntent), "purchase")]
+[JsonDerivedType(typeof(HarvestVentIntent), "harvest")]
+[JsonDerivedType(typeof(RetractHarvesterIntent), "retractHarvester")]
+[JsonDerivedType(typeof(DeployMineIntent), "deployMine")]
+[JsonDerivedType(typeof(DeployTowerIntent), "deployTower")]
+[JsonDerivedType(typeof(DeployStealIntent), "deploySteal")]
+[JsonDerivedType(typeof(RetractStealIntent), "retractSteal")]
+[JsonDerivedType(typeof(PlaceBuildingIntent), "placeBuilding")]
+[JsonDerivedType(typeof(ProduceUnitIntent), "produce")]
+[JsonDerivedType(typeof(ResearchIntent), "research")]
+[JsonDerivedType(typeof(AllianceIntent), "alliance")]
 public abstract record WorldCommand;
 
 public sealed record MoveIntent(int EntityInstanceId, CellCoordinate TargetCell, bool AppendWaypoint = false) : WorldCommand;
@@ -71,5 +92,12 @@ public sealed record ProduceUnitIntent(int TeamId, int DependencyItemId, int Sou
 
 /// <summary>Completes a paid upgrade from one of its required research structures.</summary>
 public sealed record ResearchIntent(int TeamId, int DependencyItemId, int SourceBuildingInstanceId) : WorldCommand;
+
+/// <summary>
+/// The Allies panel packet (<c>0x41D7B3</c>): the player sets or clears its
+/// alliance and vision bits toward another player. An alliance holds once
+/// both sides have set theirs.
+/// </summary>
+public sealed record AllianceIntent(int Player, int Other, bool Offer) : WorldCommand;
 
 public readonly record struct ScheduledWorldCommand(ulong Tick, ulong Sequence, WorldCommand Command);

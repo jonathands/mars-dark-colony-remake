@@ -601,6 +601,12 @@ public sealed partial class ScenarioSimulation
                     buildingPlacements.Add(built);
                 continue;
             }
+            if (command is AllianceIntent alliance)
+            {
+                SetAllianceBit(alliance.Player, alliance.Other, alliance.Offer);
+                SetVisionBit(alliance.Player, alliance.Other, alliance.Offer);
+                continue;
+            }
             if (command is HarvestVentIntent harvest)
             {
                 harvesterDeployments.Add(RequestHarvesterDeployment(harvest.EntityInstanceId, harvest.VentId));

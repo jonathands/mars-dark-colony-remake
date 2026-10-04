@@ -189,9 +189,7 @@ public sealed partial class ScenarioSimulation
                     if ((uint)v[0] < PlayerCount) aiProfiles[v[0]] = v[1];
                     break;
                 case MissionActionType.Bail:
-                    playerStats[0, 0] = v[0];
-                    playerStats[7, 0] = v[1];
-                    Outcome = new MissionOutcome(v[0], v[1], simulationTicks);
+                    EndMission(v[0], v[1]);
                     break;
                 case MissionActionType.SetLifes:
                     if ((uint)v[0] < MissionScript.TriggerSlots)
@@ -284,6 +282,18 @@ public sealed partial class ScenarioSimulation
         var message = values.Skip(2).Take(values[1]).ToArray();
         aiInboxes[player].Add(new AiMessage(simulationTicks, message));
         DeliverAiMessage(player, message);
+    }
+
+    /// <summary>
+    /// <c>bail result text</c>: player 0 stat 0 takes the result (0 victory),
+    /// player 7 stat 0 the outcome text number, and the mission ends. Hosts may
+    /// also call it as a diagnostic.
+    /// </summary>
+    public void EndMission(int result, int outcomeText)
+    {
+        playerStats[0, 0] = result;
+        playerStats[7, 0] = outcomeText;
+        Outcome = new MissionOutcome(result, outcomeText, simulationTicks);
     }
 
     private int Evaluate(MissionAction action) => TriggerExpression.Evaluate(action.Expression!, new MissionContext(this, null));

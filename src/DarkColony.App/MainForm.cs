@@ -95,6 +95,7 @@ public sealed partial class MainForm : Form
     private ScenarioMissionText? _missionText;
     private bool _missionOutcomeReported;
     private MissionOutcome? _bailOutcome;
+    private long _missionStartedAtMilliseconds;
     private long _bailRequestedAtMilliseconds;
     private int _campaignMission = 1;
     private MissionOutcome? _debriefOutcome;
@@ -182,6 +183,13 @@ public sealed partial class MainForm : Form
     private string? _lastLoggedStatus;
     private ulong _screenStartedAtTick;
 
+    /// <summary>
+    /// Diagnostic (<c>--outcome-after seconds victory|defeat</c>): every mission
+    /// ends this long after it loads, as <c>bail 0 1</c> or <c>bail 1 2</c> would.
+    /// </summary>
+    public int? ForcedOutcomeAfterSeconds { get; init; }
+    public bool ForcedVictory { get; init; }
+
     /// <summary>The map reveal diagnostic (Ctrl+F12).</summary>
     public bool RevealMap
     {
@@ -263,7 +271,7 @@ public sealed partial class MainForm : Form
                 {
                     CapturePreviousActorRenderPositions();
                     _world.Step();
-                    _scenarioSimulation?.Step(_world.LastCommands);
+                    if (_scenarioSimulation is not null) _journal.Step(_scenarioSimulation, _world.LastCommands);
                     CaptureDeathEffects();
                     CaptureCombatSounds();
                     CaptureCombatAnimations();
@@ -419,7 +427,7 @@ public sealed partial class MainForm : Form
 
         if (_screen == MenuScreenId.LoadGame)
         {
-            DrawPanelText(graphics, "NO RECOVERED SAVE GAMES", new Rectangle(75, 105, 430, 250));
+            DrawSaveList(graphics);
         }
 
         else if (_screen == MenuScreenId.Encyclopedia)

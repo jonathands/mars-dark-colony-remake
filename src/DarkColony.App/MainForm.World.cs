@@ -198,8 +198,10 @@ public sealed partial class MainForm
             _dependencyCatalog ??= rules.Dependencies;
             var missionScript = MissionScript.LoadForScenario(_installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.scn"));
             _scenarioSimulation = ScenarioSimulation.Create(definition, _gameplayPath, rules, missionScript, _gameplayMap);
+            RestorePendingSave();
             _missionOutcomeReported = false;
             _bailOutcome = null;
+            _missionStartedAtMilliseconds = Environment.TickCount64;
             _previousActorRenderPositions.Clear();
             _groundOccupancy = _scenarioSimulation.GroundOccupancy;
             _alternateOccupancy = _scenarioSimulation.AlternateOccupancy;
