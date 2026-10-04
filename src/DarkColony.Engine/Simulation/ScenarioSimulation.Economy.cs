@@ -250,7 +250,9 @@ public sealed partial class ScenarioSimulation
             // subtracts the credited source amount at 0x413bdf. The exact
             // authored rate is still unrecovered, so the explicit port pulse
             // amount remains the replaceable base rate here.
-            var attachedIncome = vent.ScriptedRate ?? petraFlowRules.EffectiveAttachedP7;
+            // 0x413A26: the vent's +0x32 rate; a computer player's +0x19B8 8.8
+            // multiplier (session percentage, not decoded: x1) would apply here.
+            var attachedIncome = petraFlowRules.UseVentRates ? vent.Rate : petraFlowRules.EffectiveAttachedP7;
             if (!petraFlowRules.CanCreditReservoir(vent.RemainingReservoir, attachedIncome)) continue;
             vent.RemainingReservoir -= attachedIncome;
             var thief = FindPetraThief(harvester);

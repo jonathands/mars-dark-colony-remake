@@ -290,15 +290,24 @@ public sealed partial class ScenarioSimulation
         return null;
     }
 
-    /// <summary><c>newrate</c>/<c>newrate2</c>: the vent at (x, z) pays this amount per pulse.</summary>
+    /// <summary>
+    /// <c>newrate</c>/<c>newrate2</c>: the vent at (x, z) pays rate times the
+    /// session rate option (player 1 stat 0) &gt;&gt; 8 per pulse.
+    /// </summary>
     private void SetVentRate(CellCoordinate cell, int rate)
     {
-        if (PetraVents.FirstOrDefault(vent => vent.Position == cell) is { } vent) vent.ScriptedRate = rate;
+        if (PetraVents.FirstOrDefault(vent => vent.Position == cell) is { } vent)
+            vent.Rate = PetraFlowRules.NativeSigned8_8Multiply(rate, playerStats[1, 0]);
     }
 
-    /// <summary><c>setmoney</c>: the vent at (x, z) holds this reservoir; one is created if none is there.</summary>
+    /// <summary>
+    /// <c>setmoney</c>: the vent at (x, z) holds reservoir times the session
+    /// money option (player 2 stat 0) &gt;&gt; 8; a vent with rate 0 is created if
+    /// none is there.
+    /// </summary>
     private void SetVentReservoir(CellCoordinate cell, int reservoir)
     {
+        reservoir = PetraFlowRules.NativeSigned8_8Multiply(reservoir, playerStats[2, 0]);
         var vent = PetraVents.FirstOrDefault(candidate => candidate.Position == cell);
         if (vent is null)
         {

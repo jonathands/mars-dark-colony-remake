@@ -177,9 +177,9 @@ Per-type statistics (4 per player and entity type):
 | Expression grammar and evaluator | confirmed (corpus compiles: 101 scripts, 2465 triggers) |
 | Norm cadence (every 8 updates, after critter groups and before passive income and actors), lives, trip map | confirmed |
 | Statistics 1, 2, 3, 6, 10 and per-type 0, 1, 2 | confirmed writers; stats 5, 8, 9, 11 and per-type 3 not modeled |
-| Lobby options in stat 0 | not modeled (all 0) |
+| Lobby options in stat 0 | confirmed: session start `0x40123C` sets them, and this build never changes the defaults. Players 1/2 hold the vent rate/money multipliers (4 << 6 = 256); players 3-6 hold 0, so the multiplayer vent-respawn scripts (`s(3,0)==1`) never fire |
 | `reinforce` transport flight | provisional: cargo placed at once like `reinforce2` |
-| Vent rate/reservoir multipliers | provisional (× 1) |
+| Vent rate/reservoir multipliers | confirmed: `newrate` uses stat (1,0) and `setmoney` stat (2,0) (`0x41A538` with AL = 0), both 256 = x1 |
 | `waypoint` state 9 | provisional: one pass through the points |
 | `ally` alliance bits, `vision`, `abduct`, `artifact`, `aimsg`, `nopickup` | not modeled; reported as `LastUnmodeledMissionActions` |
 | `newtype` | provisional through the deployed-form override |

@@ -57,6 +57,26 @@ after the placements, which keeps placement instance IDs stable. It claims
 only the footprint cells no placement took, and seeds critter groups after
 the cities.
 
+## Vent rates
+
+An SCN vent record has five fields, `x z 40 a b`. The loader reads it with
+the six-field placement format, so `a` lands in the team column and `b` in
+the health column. The vent becomes a team-8 actor with:
+
+- reservoir (`+0x0C`) = `b` x stat (2,0) >> 8;
+- per-pulse rate (`+0x32`) = `a` x stat (1,0) >> 8;
+
+and the map's live-mine bit is set. Both session stats are 256, so the SCN
+values apply unchanged. The corpus rates are 0 (437 vents, idle until a
+script's `newrate`), 15, 20, 25, and a few others.
+
+The producer `0x413A26` pays the rate when the strict `remaining - rate > 0`
+test passes. It multiplies the rate by the owner's `+0x19B8` (8.8) when
+`+0xBBC` marks a computer player. That multiplier is `session[0x14C4 + p *
+4] << 8 / 100` (`0x401799`) and is not decoded, so the port uses x1. This
+explains the original's +23 per pulse observed with one Exploiter on a
+rate-20 vent (j4play01): 20 from the vent plus the passive 3.
+
 ## Income gates
 
 - **Passive income.** The world update `0x419B2E` runs every 16 ticks

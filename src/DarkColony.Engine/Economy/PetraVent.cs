@@ -12,22 +12,27 @@ public sealed class PetraVent
         InitialState = initialState;
         InitialReservoir = Math.Max(0, initialReservoir);
         RemainingReservoir = InitialReservoir;
+        Rate = initialState;
     }
 
     public int Id { get; }
     public CellCoordinate Position { get; }
-    /// <summary>SCN fourth field; native vent-side initial state.</summary>
+    /// <summary>
+    /// SCN fourth field. The SCN loader reads it from the placement's team
+    /// column and stores it, times the session rate option (player 1 stat 0,
+    /// 256 = x1) &gt;&gt; 8, as the vent's per-pulse amount (<c>+0x32</c>).
+    /// </summary>
     public int InitialState { get; }
+    /// <summary>
+    /// Per-pulse amount (vent word <c>+0x32</c>): the SCN rate, later changed by
+    /// a mission's <c>newrate</c>/<c>newrate2</c>. Zero pays nothing.
+    /// </summary>
+    public int Rate { get; internal set; }
     /// <summary>SCN fifth field, initialized into the native source actor's <c>+0x0c</c> reservoir.</summary>
     public int InitialReservoir { get; }
     /// <summary>Authoritative remaining source quantity; a native pulse requires a strictly positive remainder.</summary>
     public int RemainingReservoir { get; internal set; }
     public int? HarvesterInstanceId { get; internal set; }
-    /// <summary>
-    /// Per-pulse amount set by a mission's <c>newrate</c>/<c>newrate2</c>
-    /// (vent word <c>+0x32</c>); null keeps the port's default attached rate.
-    /// </summary>
-    public int? ScriptedRate { get; internal set; }
     /// <summary>
     /// Harvester currently completing the executable-recovered vent handshake.
     /// Native <c>dc.exe</c> keeps this delay on the vent actor before changing
@@ -46,7 +51,8 @@ public sealed record PetraFlowRules(
     int PassiveP7PerPulse,
     int AttachedP7PerPulse,
     int OwnerP7Multiplier8_8 = 0x100,
-    bool ApplyOwnerP7Multiplier = false)
+    bool ApplyOwnerP7Multiplier = false,
+    bool UseVentRates = false)
 {
     public const int NativeHarvesterPulseTicks = 16;
     // dc.exe 0x4139d7 tests the low four bits of the authoritative world
@@ -54,7 +60,11 @@ public sealed record PetraFlowRules(
     // every sixteen fixed steps. That path has no global per-team payout:
     // income is conditional on an attached source. The attached amount remains
     // provisional until source initialization is recovered.
-    public static PetraFlowRules ProvisionalDefault => new(NativeHarvesterPulseTicks, 0, 4);
+    /// <summary>
+    /// The native rules: 16-tick pulses paying each vent's own rate. The 4
+    /// stays only as the synthetic amount for rules without vent rates.
+    /// </summary>
+    public static PetraFlowRules ProvisionalDefault => new(NativeHarvesterPulseTicks, 0, 4, UseVentRates: true);
     public bool IsValid => TicksPerPulse > 0 && PassiveP7PerPulse >= 0 &&
         AttachedP7PerPulse >= 0;
 
@@ -78,7 +88,7 @@ public sealed record PetraFlowRules(
     /// Matches the executable's signed multiply followed by the corrective
     /// arithmetic shift used at <c>0x413a36</c>--<c>0x413a4a</c>.
     /// </summary>
-    private static int NativeSigned8_8Multiply(int value, int multiplier)
+    internal static int NativeSigned8_8Multiply(int value, int multiplier)
     {
         var product = checked((long)value * multiplier);
         if (product >= 0) return checked((int)(product >> 8));

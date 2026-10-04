@@ -276,6 +276,11 @@ public sealed partial class ScenarioSimulation
         simulation.citiesDeclared = scenario.Teams.Any(team => team.CityOrigin is not null);
         foreach (var city in cityBuildings) simulation.cityBuildings[(city.Team, city.Slot)] = city.InstanceId;
         simulation.buildTimings = buildTimings;
+        // Session start 0x40123C/0x401848: players 1-6 stat 0 hold the lobby
+        // options; this build never changes their defaults (vent rate and
+        // vent money multipliers 4 << 6 = 256, the rest 0).
+        simulation.playerStats[1, 0] = 256;
+        simulation.playerStats[2, 0] = 256;
         // 0x41BDFD counts each team's starting money as earned P7 (stat 1).
         foreach (var (team, resource) in resources) simulation.RecordP7Earned(team, resource);
         simulation.InitializeMission(missionScript);
@@ -287,7 +292,9 @@ public sealed partial class ScenarioSimulation
         }
         simulation.SeedScenarioBuildingDependencies();
         foreach (var (team, slot) in simulation.cityBuildings.Keys.ToArray()) simulation.SyncCitySlotItems(team, slot);
-        simulation.PetraVents = scenario.Vents.Select((vent, index) => new PetraVent(index, new CellCoordinate(vent.X, vent.Z), vent.InitialState, vent.InitialReservoir)).ToArray();
+        simulation.PetraVents = scenario.Vents.Select((vent, index) => new PetraVent(index, new CellCoordinate(vent.X, vent.Z),
+            PetraFlowRules.NativeSigned8_8Multiply(vent.InitialState, simulation.PlayerStatistic(1, 0)),
+            PetraFlowRules.NativeSigned8_8Multiply(vent.InitialReservoir, simulation.PlayerStatistic(2, 0)))).ToArray();
         simulation.autonomousGroups.AddRange(scenario.AutonomousSpawnGroups.Select(group => new AutonomousGroupRuntime(
             group, autonomous.EntitiesByGroup.GetValueOrDefault(group.GroupId, []).Select(entity => entity.InstanceId))));
         return simulation;

@@ -134,8 +134,9 @@ of the source actor's `+0x30`, and when the owning player has flag `+0xbbc`,
 `0x413a36` multiplies that amount by player field `+0x19b8` as signed 8.8.
 `0x413b6a` credits an eligible 0x4d/0x4e interceptor with the signed half, then
 `0x413ba3` credits the owner and `0x413bdf` subtracts the unscaled/scaled
-source amount from runtime `+0x0c`. The initialization provenance of those
-source fields and the multiplier remain a live-capture target.
+source amount from runtime `+0x0c`. The source fields come from the SCN vent
+record (see [city-and-economy.md](city-and-economy.md), "Vent rates"); only
+the computer-player multiplier's session percentage remains undecoded.
 
 ## Controlled `dc.exe` observations (2026-08-22)
 

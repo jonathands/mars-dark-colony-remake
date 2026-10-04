@@ -1230,6 +1230,34 @@ Check("Cyborg stealing stance deploys and retracts through recovered forms", () 
     Equal(true, simulation.LastMoveOutcomes.Single().StepCount > 0);
 });
 
+Check("vents pay their own SCN rate per pulse, and a zero-rate vent pays nothing", () =>
+{
+    // The SCN vent record "x z 40 rate reservoir": the loader stores the
+    // team column as the vent's +0x32 rate (x the session option, 256 = x1).
+    var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    int Earned(int rate)
+    {
+        var source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 1 0 0 100 0\n" +
+            $"1 1 40 {rate} 100\n";
+        var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+        bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 16, 4));
+        simulation.Step([new ScheduledWorldCommand(1, 0, new HarvestVentIntent(1, 0))]);
+        var earned = 0;
+        for (var tick = 0; tick < 64; tick++)
+        {
+            simulation.Step([]);
+            earned += simulation.LastP7Income.Where(income => income.VentId == 0).Sum(income => income.Amount);
+        }
+        Equal(100 - earned, simulation.PetraVents[0].RemainingReservoir);
+        return earned;
+    }
+    var paid = Earned(20);
+    Equal(0, paid % 20);
+    Equal(true, paid >= 20);
+    Equal(0, Earned(0));
+});
+
 Check("deployed SARGE intercepts half of nearby hostile miner income without visibility", () =>
 {
     var catalog = EntityCatalog.Parse("4\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nSARG 0 10 45 1 1 -1 -1 -1 1 1 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 3 0\nSARGSTL 0 10 0 1 1 -1 -1 -1 1 1 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 2 0\n");
