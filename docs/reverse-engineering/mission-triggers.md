@@ -175,7 +175,7 @@ Per-type statistics (4 per player and entity type):
 | --- | --- |
 | Parser, action layout, reverse order | confirmed |
 | Expression grammar and evaluator | confirmed (corpus compiles: 101 scripts, 2465 triggers) |
-| Norm cadence (every 8 updates), lives, trip map | confirmed |
+| Norm cadence (every 8 updates, after critter groups and before passive income and actors), lives, trip map | confirmed |
 | Statistics 1, 2, 3, 6, 10 and per-type 0, 1, 2 | confirmed writers; stats 5, 8, 9, 11 and per-type 3 not modeled |
 | Lobby options in stat 0 | not modeled (all 0) |
 | `reinforce` transport flight | provisional: cargo placed at once like `reinforce2` |

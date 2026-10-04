@@ -15,8 +15,9 @@ public sealed partial class ScenarioSimulation
     private List<InspireEvent> UpdateInspireState()
     {
         var events = new List<InspireEvent>();
-        // 0x4192F0 gates actor byte +0xd6 on the low four world-counter bits.
-        if ((simulationTicks & (NativeInspireCountdownCadence - 1)) == 0)
+        // 0x4192F0 gates actor byte +0xd6 on the low four bits of the
+        // day/night phase counter world+0x530.
+        if ((DayNight.PhaseTicks & (NativeInspireCountdownCadence - 1)) == 0)
         {
             foreach (var actor in Actors.Where(actor => actor.InspirationTicksRemaining > 0))
             {
@@ -38,9 +39,10 @@ public sealed partial class ScenarioSimulation
 
     private void UpdateAbilityCharge()
     {
-        // Common actor update 0x4192C0 runs this only when the low five world
-        // counter bits are zero. Runtime +0xf8 is gamestat source value 25.
-        if ((simulationTicks & (NativeAbilityChargeCadence - 1)) != 0) return;
+        // Common actor update 0x4192C0 runs this only when the low five bits
+        // of the day/night phase counter world+0x530 are zero. Runtime +0xf8
+        // is gamestat source value 25.
+        if ((DayNight.PhaseTicks & (NativeAbilityChargeCadence - 1)) != 0) return;
         foreach (var actor in Actors.Where(actor => !actor.IsDestroyed))
         {
             var recovery = Math.Max(0, EffectiveDefinition(actor).AbilityChargeRecovery);

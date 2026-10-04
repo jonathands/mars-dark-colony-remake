@@ -185,28 +185,22 @@ public sealed partial class ScenarioSimulation
         actor.DeployedEntityId = null;
     }
 
-    private IReadOnlyList<P7IncomeEvent> ApplyPetraFlow()
+    /// <summary>
+    /// Engine checks may inject a non-native pulse length; passive and vent
+    /// income then share this one counter.
+    /// </summary>
+    private bool SyntheticPetraPulse()
     {
-        LastP7Thefts = [];
-        // The native producer does not own an independent interval counter:
-        // 0x4139D7 tests world+0x530 directly with `& 0x0f`.  Retaining that
-        // phase matters when a harvester attaches between two global updates.
-        // Alternate rules are intentionally still supported for narrow engine
-        // checks that inject a synthetic cadence.
-        if (petraFlowRules.TicksPerPulse == PetraFlowRules.NativeHarvesterPulseTicks)
-        {
-            if ((simulationTicks & (PetraFlowRules.NativeHarvesterPulseTicks - 1)) != 0) return [];
-        }
-        else if (++petraPulseTicks < petraFlowRules.TicksPerPulse)
-        {
-            return [];
-        }
-        else
-        {
-            petraPulseTicks = 0;
-        }
+        if (++petraPulseTicks < petraFlowRules.TicksPerPulse) return false;
+        petraPulseTicks = 0;
+        return true;
+    }
+
+    /// <summary>Passive income (world update <c>0x419B31</c>, <c>world + 0x94C &amp; 15</c>).</summary>
+    private List<P7IncomeEvent> ApplyPassiveIncome(bool pulse)
+    {
         var income = new List<P7IncomeEvent>();
-        var thefts = new List<P7TheftEvent>();
+        if (!pulse) return income;
         foreach (var (teamId, economy) in teamEconomies.OrderBy(pair => pair.Key))
         {
             if (petraFlowRules.PassiveP7PerPulse > 0)
@@ -223,6 +217,20 @@ public sealed partial class ScenarioSimulation
                 income.Add(new P7IncomeEvent(teamId, passiveRates[teamId], null));
             }
         }
+        return income;
+    }
+
+    /// <summary>
+    /// Vent income: the producer <c>0x4139D7</c> pays on
+    /// <c>world + 0x530 &amp; 15</c>, the day/night phase counter, so the pulse
+    /// phase shifts at every day/night change.
+    /// </summary>
+    private List<P7IncomeEvent> ApplyVentIncome(bool pulse)
+    {
+        LastP7Thefts = [];
+        var income = new List<P7IncomeEvent>();
+        if (!pulse) return income;
+        var thefts = new List<P7TheftEvent>();
         foreach (var vent in PetraVents.OrderBy(vent => vent.Id))
         {
             if (vent.HarvesterInstanceId is not { } harvesterId || !actorsById.TryGetValue(harvesterId, out var harvester) || harvester.IsDestroyed)

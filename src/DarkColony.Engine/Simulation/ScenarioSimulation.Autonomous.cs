@@ -20,7 +20,8 @@ public sealed partial class ScenarioSimulation
 
     private IReadOnlyList<AutonomousWanderEvent> UpdateAutonomousActors()
     {
-        if ((simulationTicks & 7) != 0 || autonomousGroups.Count == 0) return [];
+        // Called as 0x43FEAC from the world update's every-eighth-update block.
+        if (autonomousGroups.Count == 0) return [];
         var events = new List<AutonomousWanderEvent>();
         foreach (var group in autonomousGroups.OrderBy(group => group.Definition.GroupId))
         {

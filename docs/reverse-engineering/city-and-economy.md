@@ -66,11 +66,28 @@ the cities.
   exists. The 1500 → 1506 step in the native War capture matches two pulses.
 - **Vent income.** The vent producer also requires `+0xBD4 != 0` for the
   harvester's owner (`0x413B31`).
-- The port applies both gates only when the SCN declares cities, so synthetic
-  engine scenarios keep their configured `PetraFlowRules`. Both pulses
-  currently share the port's `simulationTicks & 15` phase. The native passive
-  counter is `world + 0x94C` and the vent counter is `world + 0x530`; their
-  relative phase is provisional.
+- The port applies both gates only when the SCN declares cities, so
+  synthetic engine scenarios keep their configured `PetraFlowRules`. The
+  passive pulse follows `world + 0x94C` and the vent pulse the day/night phase
+  counter `world + 0x530`; see "World update order" below.
+
+## World update order
+
+`0x4196F4` runs once per world update, and the port's `Step` follows its
+order. Its caller (`0x41E1F9`) increments the update counter `world + 0x94C`
+first. The update increments the clock `+0x52C` and the day/night phase
+counter `+0x530` before anything reads them, so the update counter and the
+clock equal `TickCount + 1` during a step. The order is:
+
+1. Statistics recount.
+2. Troop cap (`0x41E6AC`).
+3. Relation rows from alliance bits.
+4. Day/night phase change.
+5. Every 8 updates: critter groups (`0x43FEAC`), then norm triggers.
+6. Every 16 updates: passive income.
+7. Actors, including vents (`+0x530 & 15`), production, Inspire countdown
+   (`+0x530 & 15`), and ability charge (`+0x530 & 31`).
+8. Projectiles.
 
 ## Team relations
 
@@ -102,7 +119,7 @@ cannot direct-attack critters, and their projectiles pass through critters.
 | Passive +3 per 16 ticks while the HQ stands | confirmed (`0x419B2E`, War capture) |
 | Vent income requires the HQ | confirmed (`0x413B31`) |
 | Players ↔ team 9 cooperative | confirmed (`0x41C00E`) |
-| Passive vs vent pulse phase | provisional (shared port phase) |
+| Passive vs vent pulse phase | confirmed: passive on `world+0x94C & 15` (the update counter, incremented by `0x41E1F9` before each update); vents on `+0x530 & 15` (the day/night phase counter, reset at each phase change) |
 | Script rate changes (action 12) | not implemented (mission scripts) |
 | Network-session slot gating, placement race substitution | not implemented |
 | Role of `%AISlots` line 1 | unknown |

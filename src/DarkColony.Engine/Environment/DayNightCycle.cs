@@ -44,6 +44,8 @@ public sealed class DayNightCycle
     /// <summary>Compatibility duration for synthetic clocks.</summary>
     public int TicksPerPhase => ticksBeforeTransition + 1;
     public int PhaseTicks => phaseTicks;
+    /// <summary>Native <c>world + 0x534</c>: the SCN cycle-tick limit.</summary>
+    public int CycleTickLimit => ticksBeforeTransition;
     /// <summary>
     /// Native world field <c>+0x540</c>: an 8.8 lighting ramp over the first
     /// configured transition ticks. It remains at its end value afterward.

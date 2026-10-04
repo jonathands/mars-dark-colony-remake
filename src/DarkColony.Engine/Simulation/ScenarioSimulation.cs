@@ -393,11 +393,27 @@ public sealed partial class ScenarioSimulation
         return dx * dx + dz * dz < range * range;
     }
 
+    /// <summary>
+    /// One world update in the order of <c>0x4196F4</c>. Its caller
+    /// (<c>0x41E1F9</c>) increments the update counter <c>world + 0x94C</c> first,
+    /// and the update increments the clock <c>+0x52C</c> before anything reads
+    /// it, so both equal <see cref="TickCount"/> + 1 during the step. The
+    /// order is: statistics recount, troop cap, day/night (the phase counter
+    /// <c>+0x530</c>), critter groups and norm triggers every 8 updates, passive
+    /// income every 16, then the actors (vents among them) and projectiles.
+    /// </summary>
     public void Step(IEnumerable<ScheduledWorldCommand> commands)
     {
+        var update = WorldUpdateCounter;
         RecountMissionStatistics();
         pendingMissionMessages.Clear();
         pendingUnmodeledMissionActions.Clear();
+        LastDayNightChanges = DayNight.Step() ? [new DayNightChangedEvent(DayNight.Phase)] : [];
+        var nativeIncomeCadence = petraFlowRules.TicksPerPulse == PetraFlowRules.NativeHarvesterPulseTicks;
+        var syntheticPulse = !nativeIncomeCadence && SyntheticPetraPulse();
+        LastAutonomousWanders = (update & 7) == 0 ? UpdateAutonomousActors() : [];
+        RunNormTriggers(pendingMissionMessages, pendingUnmodeledMissionActions);
+        var passiveIncome = ApplyPassiveIncome(nativeIncomeCadence ? (update & 15) == 0 : syntheticPulse);
         var events = new TickEvents(UpdateInspireState());
         UpdateAbilityCharge();
         events.MineDeployments.AddRange(UpdateMineDeploymentState());
@@ -417,10 +433,12 @@ public sealed partial class ScenarioSimulation
         LastBuildingPlacements = events.BuildingPlacements;
         LastUnitProductions = events.UnitProductions;
         LastResearchCompletions = events.ResearchCompletions;
-        LastAutonomousWanders = UpdateAutonomousActors();
 
         UpdateActors(events);
         UpdateHarvesterDeploymentOrders(events.HarvesterDeployments);
+        // The vent producer (0x4139D7) runs in the vents' own actor updates,
+        // after their attach handshake, gated on the phase counter +0x530.
+        var ventIncome = ApplyVentIncome(nativeIncomeCadence ? (DayNight.PhaseTicks & 15) == 0 : syntheticPulse);
         FireMines(events);
         FireAttackers(events);
         UpdateProjectiles(events);
@@ -430,13 +448,14 @@ public sealed partial class ScenarioSimulation
         LastBattlefieldTransports = events.BattlefieldTransports;
         LastAttackMoveAcquisitions = events.AttackMoveAcquisitions;
         LastIdleAcquisitions = events.IdleAcquisitions;
-        LastDayNightChanges = DayNight.Step() ? [new DayNightChangedEvent(DayNight.Phase)] : [];
-        RunNormTriggers(pendingMissionMessages, pendingUnmodeledMissionActions);
         LastMissionMessages = pendingMissionMessages.ToArray();
         LastUnmodeledMissionActions = pendingUnmodeledMissionActions.ToArray();
-        LastP7Income = ApplyPetraFlow();
+        LastP7Income = [.. passiveIncome, .. ventIncome];
         simulationTicks++;
     }
+
+    /// <summary>Native <c>world + 0x94C</c> (and <c>+0x52C</c>) during the current or next step.</summary>
+    private ulong WorldUpdateCounter => simulationTicks + 1;
 
     /// <summary>Event lists filled during one <see cref="Step"/> and then published.</summary>
     private sealed class TickEvents(List<InspireEvent> inspires)

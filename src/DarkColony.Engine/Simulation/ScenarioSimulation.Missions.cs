@@ -113,10 +113,11 @@ public sealed partial class ScenarioSimulation
     /// <summary>The trigger block of the world update (<c>0x419A4E</c>), every eighth tick.</summary>
     private void RunNormTriggers(List<MissionMessageEvent> messages, List<MissionUnmodeledActionEvent> unmodeled)
     {
-        if (missionScript is null || (simulationTicks & 7) != 0) return;
-        // 0x419A5B: player 0 stat 10 holds 1 - night, player 1 stat 10 the day fraction * 256.
+        if (missionScript is null || (WorldUpdateCounter & 7) != 0) return;
+        // 0x419A5B: player 0 stat 10 holds 1 - night (+0x53C), player 1 stat 10
+        // the phase counter * 256 / the cycle limit (+0x530 << 8 / +0x534).
         playerStats[0, 10] = DayNight.Phase == DayNightPhase.Night ? 0 : 1;
-        playerStats[1, 10] = (DayNight.PhaseTicks << 8) / Math.Max(1, DayNight.TicksPerPhase);
+        playerStats[1, 10] = (DayNight.PhaseTicks << 8) / Math.Max(1, DayNight.CycleTickLimit);
         for (var slot = 0; slot < MissionScript.TriggerSlots; slot++)
         {
             if (missionTriggers[slot] is not { Trip: false } trigger || missionLives[slot] == 0) continue;
@@ -321,7 +322,7 @@ public sealed partial class ScenarioSimulation
 
     private sealed class MissionContext(ScenarioSimulation simulation, SimulatedActor? unit) : ITriggerExpressionContext
     {
-        public int Clock => (int)(simulation.simulationTicks >> 4);
+        public int Clock => (int)(simulation.WorldUpdateCounter >> 4);
         public int NextRandom() => (int)simulation.NextNativeRandom();
         public (int EntityType, int Team)? Unit => unit is null ? null : (simulation.EffectiveDefinition(unit).Id, unit.Seed.Team);
         public int SlotHealth(int player, int slot) => simulation.CityBuilding(player, slot)?.Health ?? 0;
