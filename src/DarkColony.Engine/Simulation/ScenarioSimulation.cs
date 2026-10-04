@@ -279,6 +279,7 @@ public sealed partial class ScenarioSimulation
         simulation.nativeRandomTable = randomTable ?? NativeRandomTable.Synthetic;
         simulation.targetRings = targetRings;
         simulation.visionTrees = visionTrees ?? NativeVisionTrees.Flat;
+        simulation.LoadAlliances(scenario);
         simulation.LoadTerrainSight(terrain);
         simulation.computerTeams = scenario.Teams.Where(team => team.Enabled && team.AiProfile > 0).Select(team => team.TeamId).ToHashSet();
         simulation.citiesDeclared = scenario.Teams.Any(team => team.CityOrigin is not null);
@@ -412,6 +413,7 @@ public sealed partial class ScenarioSimulation
         var update = WorldUpdateCounter;
         RecountMissionStatistics();
         TroopCap = ComputeTroopCap();
+        RecomputeAlliances();
         pendingMissionMessages.Clear();
         pendingUnmodeledMissionActions.Clear();
         pendingMissionTransports.Clear();

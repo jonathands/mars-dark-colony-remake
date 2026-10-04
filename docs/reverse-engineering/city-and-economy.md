@@ -137,7 +137,26 @@ means hostile. The matrix has these readers:
 - `0x41AEB4` (interface) treats every actor above team 7 as friendly to the
   local player.
 - `0x4196F4` recomputes rows and columns 0-7 from the alliance bits on every
-  world update. Script action `0x43D9ED` (ally) writes the matrix.
+  world update (`0x4198D3`, after the troop cap and before day/night).
+
+**Alliance and vision bits.** Two 8×8 bit matrices hold one byte per player:
+alliance at `world + 0x471A0`, vision at `+0x471A4`. `0x41E7D8` sets or
+clears one bit (set only when the value is 1). `0x41E820` answers true only
+when both players have set each other's bit. Each update writes relation
+[p][q] = mutual alliance for p, q < 8. It also sets the player's vision mask
+(`player + 0x19C0`) to its own bit plus every mutual vision bit. Writers:
+
+- the SCN loader (`0x41BF63`): a team's first eight `%TeamAllies` values set
+  its alliance bits, and its own bit is set in both matrices. Every shipped
+  SCN has all eight TEAM blocks and no alliance flags;
+- `ally a b v` (`0x43D9ED`): relation [a][b] = v, then both alliance bits;
+- `vision a b v`: both vision bits;
+- the Allies panel packet (`0x41D7B3`): one bit, in one direction, of either
+  matrix.
+
+`ScenarioSimulation.Alliances.cs` implements these rules. Visibility queries
+OR the stamps of every player in the viewer's mask (see
+[vision.md](vision.md)).
 
 `TeamRelationMatrix.CreateDefault` reproduces the loader's initial state.
 Because critters are cooperative, team 9 now runs the idle command (its

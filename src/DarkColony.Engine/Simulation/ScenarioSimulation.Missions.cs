@@ -181,6 +181,10 @@ public sealed partial class ScenarioSimulation
                 case MissionActionType.Ally:
                     if ((uint)v[0] < TeamRelationMatrixSize && (uint)v[1] < TeamRelationMatrixSize)
                         TeamRelations.SetRelation(v[0], v[1], (byte)v[2]);
+                    SetMutualBits(allianceBits, v[0], v[1], v[2]);
+                    break;
+                case MissionActionType.Vision:
+                    SetMutualBits(visionBits, v[0], v[1], v[2]);
                     break;
                 case MissionActionType.DependFiddle:
                     if (teamEconomies.TryGetValue(v[0], out var fiddled)) fiddled.SetItemDisabled(v[1], v[2] != 0);
@@ -215,9 +219,12 @@ public sealed partial class ScenarioSimulation
                 case MissionActionType.NoUndeploy:
                     NoUndeploy = true;
                     break;
-                case MissionActionType.NoPickup:
-                case MissionActionType.Vision:
                 case MissionActionType.Abduct:
+                    // 0x43E2A0 abducts player v[1]'s commander slot (player
+                    // +0xD9C), which this build never fills: the loader sets
+                    // -1 and nothing else writes it, so nothing happens.
+                    break;
+                case MissionActionType.NoPickup:
                 case MissionActionType.Artifact:
                 case MissionActionType.AiMessage:
                     unmodeled.Add(new MissionUnmodeledActionEvent(trigger.Slot, action.Type, v));

@@ -186,7 +186,9 @@ Per-type statistics (4 per player and entity type):
 | `reinforce` transport flight | implemented: `0x418F4C` picks DROP (92) or, for a race-1 team, SAUC (93) on team 8, starting one cell off the target per axis (shared stream bit 0). The payload words are `type << 8 | count`. The transport descends, then unloads one unit per update on the target cell or the nearest free ring cell (`0x418D5F`, `0x41B4A0`), then leaves. A first word with high byte 0xff (abduct) collects actors instead. The eight per-team transport slots (`+0xE13`) are not limited |
 | Vent rate/reservoir multipliers | confirmed: `newrate` uses stat (1,0) and `setmoney` stat (2,0) (`0x41A538` with AL = 0), both 256 = x1 |
 | `waypoint` state 9 | provisional: one pass through the points |
-| `ally` alliance bits, `vision`, `abduct`, `artifact`, `aimsg`, `nopickup` | not modeled; reported as `LastUnmodeledMissionActions` |
+| `ally` alliance bits and `vision` | implemented: both write mutual bit pairs (`0x41E7D8`). Relations and vision masks follow the mutual bits on every update (see city-and-economy.md) |
+| `abduct s d` | no effect in this build. It reads player d's commander slot (`player + 0xD9C`), which the loader sets to -1 (`0x41C2BD`) and nothing else writes; only saves copy it. Statistic 11 and the 230-charge refresh (`0x4197D2`) read the same slots, so they never apply either |
+| `artifact`, `aimsg`, `nopickup` | not modeled; reported as `LastUnmodeledMissionActions` |
 | `newtype` | provisional through the deployed-form override |
 | Bail delay | provisional: 152 ticks for the native 10,000 ms |
 | Malformed-condition stack floor | provisional (reads 0 below the stack) |

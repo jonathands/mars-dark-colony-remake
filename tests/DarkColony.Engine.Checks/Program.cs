@@ -1032,12 +1032,15 @@ Check("attack orders honor the recovered team relation matrix", () =>
     Equal(false, simulation.Actor(1)!.AttackTargetInstanceId.HasValue);
 
     const string opposingTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n2 1 1 1 100 0\n";
-    var relations = TeamRelationMatrix.CreateDefault();
-    relations.SetRelation(0, 1, 1);
-    simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(opposingTeams), catalog, PathRegionMap.Parse(bytes, 4, 3), weaponCatalog: weapons, teamRelations: relations);
+    // Relations among players follow the mutual alliance bits, recomputed at
+    // the start of every update (0x4198D3).
+    simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(opposingTeams), catalog, PathRegionMap.Parse(bytes, 4, 3), weaponCatalog: weapons);
+    simulation.SetAllianceBit(0, 1, true);
+    simulation.SetAllianceBit(1, 0, true);
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
     Equal(AttackOrderOutcome.NonHostile, simulation.LastAttackOrders.Single().Outcome);
-    relations.SetRelation(0, 1, 0);
+    // One side withdrawing ends the alliance.
+    simulation.SetAllianceBit(1, 0, false);
     simulation.Step([new ScheduledWorldCommand(2, 0, new AttackIntent(1, 2))]);
     Equal(AttackOrderOutcome.Acquired, simulation.LastAttackOrders.Single().Outcome);
 });
@@ -1122,6 +1125,30 @@ Check("attack-move acquires a visible hostile then resumes its destination", () 
     Equal(false, simulation.Actor(1)!.AttackMoveDestination.HasValue);
 });
 
+Check("alliance and vision bits count only when both players set them", () =>
+{
+    var catalog = EntityCatalog.Parse("1\nSCOUT 0 255 25 2 2 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n8 1 0 1 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3));
+    var farCell = new CellCoordinate(8, 1);
+    Equal(false, simulation.IsCellVisibleToTeam(0, farCell));
+    // One direction does nothing (0x41E820 needs both).
+    simulation.SetAllianceBit(0, 1, true);
+    simulation.SetVisionBit(0, 1, true);
+    simulation.Step([]);
+    Equal(true, simulation.TeamRelations.IsHostile(0, 1));
+    Equal(false, simulation.SharesVision(0, 1));
+    simulation.SetAllianceBit(1, 0, true);
+    simulation.SetVisionBit(1, 0, true);
+    simulation.Step([]);
+    Equal(false, simulation.TeamRelations.IsHostile(0, 1));
+    Equal(true, simulation.SharesVision(0, 1));
+    // Team 1's unit at (8,1) now shows its surroundings to team 0.
+    Equal(true, simulation.IsCellVisibleToTeam(0, farCell));
+});
+
 Check("attack-move excludes a team marked cooperative in the relation matrix", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
@@ -1129,9 +1156,9 @@ Check("attack-move excludes a team marked cooperative in the relation matrix", (
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n2 1 1 1 100 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
-    var relations = TeamRelationMatrix.CreateDefault();
-    relations.SetRelation(0, 1, 1);
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3), weaponCatalog: weapons, teamRelations: relations);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3), weaponCatalog: weapons);
+    simulation.SetAllianceBit(0, 1, true);
+    simulation.SetAllianceBit(1, 0, true);
 
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackMoveIntent(1, new CellCoordinate(8, 1)))]);
 

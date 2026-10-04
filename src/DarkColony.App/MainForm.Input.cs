@@ -612,13 +612,17 @@ public sealed partial class MainForm
                 if (slot > 0 && slot - 1 < teams.Count && _scenarioSimulation is { } simulation)
                 {
                     var otherTeam = teams[slot - 1];
-                    var ally = simulation.TeamRelations.IsHostile(_localPlayerTeam, otherTeam);
-                    // The original table is directional. A local UI alliance is
-                    // intentionally reciprocal so combat behavior is clear in
-                    // this single-player port before diplomacy is recovered.
-                    simulation.TeamRelations.SetRelation(_localPlayerTeam, otherTeam, ally ? (byte)1 : (byte)0);
-                    simulation.TeamRelations.SetRelation(otherTeam, _localPlayerTeam, ally ? (byte)1 : (byte)0);
-                    _status = $"Team {_localPlayerTeam + 1} and team {otherTeam + 1} are now {(ally ? "allies" : "hostile")}.";
+                    // The Allies packet (0x41D7B3) sets only the local player's
+                    // alliance and vision bits; they take effect once the other
+                    // player sets theirs too (0x41E820).
+                    var offer = !simulation.OffersAlliance(_localPlayerTeam, otherTeam);
+                    simulation.SetAllianceBit(_localPlayerTeam, otherTeam, offer);
+                    simulation.SetVisionBit(_localPlayerTeam, otherTeam, offer);
+                    _status = !offer
+                        ? $"Alliance with team {otherTeam + 1} withdrawn."
+                        : simulation.OffersAlliance(otherTeam, _localPlayerTeam)
+                            ? $"Team {_localPlayerTeam + 1} and team {otherTeam + 1} are now allies."
+                            : $"Alliance offered to team {otherTeam + 1}; it holds once they agree.";
                 }
                 return true;
             }

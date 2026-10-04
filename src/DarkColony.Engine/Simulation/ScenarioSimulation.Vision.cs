@@ -25,6 +25,7 @@ public sealed partial class ScenarioSimulation
     // original keeps it for the local player's display only; it never feeds
     // back into the simulation.
     private bool[][]? teamExplored;
+    private bool[][]? teamReached;
 
     /// <summary>
     /// The sight radius <c>0x44A7B9</c> stamps: day and night sight blended by
@@ -43,10 +44,12 @@ public sealed partial class ScenarioSimulation
         if (teamId < 0 || (uint)cell.X >= (uint)path.Width || (uint)cell.Z >= (uint)path.Height) return false;
         var vision = EnsureVision();
         var index = cell.Z * path.Width + cell.X;
-        if (teamId < 8) return vision[teamId][index];
-        // Teams 8 and 9 have no bit of their own; their scans use the union.
+        // A player tests the grid word against its mask (player + 0x19C0): its
+        // own bit plus the players it shares vision with. Teams 8 and 9 have
+        // no mask; their scans use the union.
+        var mask = teamId < 8 ? visionMasks[teamId] : 0xff;
         for (var player = 0; player < 8; player++)
-            if (vision[player][index]) return true;
+            if ((mask & (1 << player)) != 0 && vision[player][index]) return true;
         return false;
     }
 
@@ -107,7 +110,9 @@ public sealed partial class ScenarioSimulation
         var cells = path.Width * path.Height;
         teamVision ??= Enumerable.Range(0, 8).Select(_ => new bool[cells]).ToArray();
         teamExplored ??= Enumerable.Range(0, 8).Select(_ => new bool[cells]).ToArray();
+        teamReached ??= Enumerable.Range(0, 8).Select(_ => new bool[cells]).ToArray();
         foreach (var grid in teamVision) Array.Clear(grid);
+        foreach (var grid in teamReached) Array.Clear(grid);
         foreach (var actor in actors) actor.RevealedTeamMask = 0;
         var expands = new bool[512];
         foreach (var viewer in actors)
@@ -122,7 +127,7 @@ public sealed partial class ScenarioSimulation
             var detects = definition.DetectsMines;
             var team = viewer.Seed.Team;
             var seen = teamVision[team];
-            var explored = teamExplored[team];
+            var reached = teamReached[team];
             var origin = viewer.Movement.VisualPosition.Cell;
             for (var index = 0; index < nodes.Count; index++)
             {
@@ -135,12 +140,23 @@ public sealed partial class ScenarioSimulation
                 var cellIndex = z * path.Width + x;
                 var sight = terrainSight?[cellIndex] ?? TerrainSightPasses;
                 if ((sight & TerrainSightShaded) == 0 || node.Depth < 2) seen[cellIndex] = true;
-                explored[cellIndex] = true;
+                reached[cellIndex] = true;
                 if (detects && MineOccupancy.TryGetOwner(new CellCoordinate(x, z), out var mineId) &&
                     actorsById.TryGetValue(mineId, out var mine))
                     mine.RevealedTeamMask |= 1 << team;
                 expands[index] = flies || (sight & TerrainSightPasses) != 0;
             }
+        }
+        // Bit 31 is set by every stamp of a player the viewer shares vision
+        // with (stamping flag bit 0), shaded cells included.
+        for (var player = 0; player < 8; player++)
+        for (var owner = 0; owner < 8; owner++)
+        {
+            if ((visionMasks[player] & (1 << owner)) == 0) continue;
+            var reached = teamReached[owner];
+            var explored = teamExplored[player];
+            for (var index = 0; index < cells; index++)
+                if (reached[index]) explored[index] = true;
         }
     }
 }
