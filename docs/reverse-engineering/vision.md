@@ -82,7 +82,7 @@ checks), and bit 3 a flier (no opacity test).
 | Mine detectors and the `+0xCA` revealed bits | implemented (`RevealedTeamMask`) |
 | Dying actors' shrinking radius | implemented (see combat-damage.md, Dying state) |
 | Placements waiting for contact (`+0xCB` 1 or 2) | implemented: they do not stamp |
-| Allied vision in `player + 0x19C0` | pending (A3 `vision` / `ally`) |
+| Allied vision in `player + 0x19C0` | implemented (`ScenarioSimulation.Alliances.cs`; `vision`/`ally` set the bits, both players must agree) |
 | Explored memory (bit 31) for the display | implemented as cells the local team has ever seen; the main view blacks out unexplored cells |
 | Explored-edge look | not recovered. The minimap (`0x439FF8`) draws unexplored cells black, cell by cell, as the port does. The native main view instead fades into black over roughly 40-60 px (`pedestal-exploiter-stationary.png`, lower left). Bit 31 is only tested by the minimap and the actor code, and bits 10-17 are not that fade, so its source is still unknown. The port keeps hard 32-px cells |
 | Remembered overlays (bits 10-17) | not modelled |

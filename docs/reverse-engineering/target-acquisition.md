@@ -150,8 +150,9 @@ Before each step of a move, the word at command +8 selects a mode:
   which matches the native filter.
 - Computer teams are those with a nonzero SCN `%AI` profile; Single Player War
   marks every enabled non-local team as computer.
-- Allied vision bits (`player + 0x19C0`) are not modeled yet: a scanner sees
-  only its own team's bits.
+- Allied vision bits (`player + 0x19C0`) are modeled
+  (`ScenarioSimulation.Alliances.cs`, `SharesVision`). A scanner also sees
+  the cells of players whose vision it shares.
 - The mode-2 approach targets the closest free cell within weapon range of the
   hostile (the pursuit helper), because the port's local search has no partial
   routes to an occupied cell.
