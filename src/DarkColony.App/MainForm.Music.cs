@@ -9,16 +9,19 @@ public sealed partial class MainForm
 {
     private readonly CdMusicPoll _cdMusicPoll = new();
     private IReadOnlyList<CueTrack>? _cdMusicPass;
-    private CdAudioStream? _cdMusic;
+    private WaveOutStream? _cdMusic;
 
-    /// <summary>The CUE sheet of the CD image, or null for no music.</summary>
+    /// <summary>The CUE sheet of the CD image (music and the disc's files), or null.</summary>
     public string? CdImagePath { get; init; }
+
+    /// <summary>Keep the CD soundtrack off (unattended runs).</summary>
+    public bool NoMusic { get; init; }
 
     private IReadOnlyList<CueTrack> CdMusicPass()
     {
         if (_cdMusicPass is not null) return _cdMusicPass;
         _cdMusicPass = [];
-        if (CdImagePath is null) return _cdMusicPass;
+        if (CdImagePath is null || NoMusic) return _cdMusicPass;
         try
         {
             _cdMusicPass = CdMusic.Pass(CueSheet.Load(CdImagePath));
@@ -37,7 +40,7 @@ public sealed partial class MainForm
         var pass = CdMusicPass();
         if (pass.Count == 0) return;
         _cdMusic?.Dispose();
-        _cdMusic = new CdAudioStream(pass);
+        _cdMusic = WaveOutStream.ForCdTracks(pass);
         RuntimeLog.Info($"CD music: track {pass[0].Number} playing.");
     }
 

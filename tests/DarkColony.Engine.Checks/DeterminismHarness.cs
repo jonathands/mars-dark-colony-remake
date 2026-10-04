@@ -8,6 +8,7 @@ using DarkColony.Engine.Scenario;
 using DarkColony.Engine.Simulation;
 using DarkColony.Engine.Terrain;
 using DarkColony.Engine.World;
+using DarkColony.Engine.Video;
 
 /// <summary>
 /// Deterministic stand-in for players: it issues every kind of world command
@@ -374,8 +375,25 @@ internal static class DeterminismCli
         var update = args.Contains("--update-goldens");
         var dump = Array.IndexOf(args, "--dump-digest");
         var summary = Array.IndexOf(args, "--event-summary");
-        string[] modes = ["--dump-fin", "--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke"];
+        string[] modes = ["--dump-fin", "--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke", "--decode-avi"];
         if (!args.Any(modes.Contains)) return false;
+
+        // --decode-avi <file.avi> [frame ...]: SHA-256 prefixes of decoded RGB24 frames (compare with ffmpeg -pix_fmt rgb24).
+        var decodeAvi = Array.IndexOf(args, "--decode-avi");
+        if (decodeAvi >= 0)
+        {
+            var avi = AviFile.Parse(File.ReadAllBytes(args[decodeAvi + 1]));
+            var wanted = args.Skip(decodeAvi + 2).TakeWhile(argument => !argument.StartsWith("--", StringComparison.Ordinal)).Select(int.Parse).ToHashSet();
+            var decoder = new CinepakDecoder(avi.Width, avi.Height);
+            Console.WriteLine($"{avi.VideoHandler} {avi.Width}x{avi.Height} {avi.VideoFrames.Count} frames, {avi.MicrosecondsPerFrame} us, audio {avi.AudioFormat} {avi.Audio.Length} bytes");
+            for (var frame = 0; frame < avi.VideoFrames.Count; frame++)
+            {
+                decoder.Decode(avi.VideoFrames[frame]);
+                if (wanted.Contains(frame) || (wanted.Contains(-1) && frame == avi.VideoFrames.Count - 1))
+                    Console.WriteLine($"  {frame} {Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(decoder.Frame))[..16].ToLowerInvariant()}");
+            }
+            return true;
+        }
 
         var dataIndex = Array.IndexOf(args, "--data");
         var installation = GameInstallation.Open(dataIndex >= 0 ? args[dataIndex + 1] : Path.Combine("..", "Dark Colony"));

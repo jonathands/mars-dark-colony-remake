@@ -1,17 +1,16 @@
 namespace DarkColony.Engine.Audio;
 
 /// <summary>
-/// Finds the user's CD image for the music: <c>--cd-image &lt;cue&gt;</c>, then
+/// Finds the user's CD image, the source of the music and of the disc files
+/// the installation lacks: <c>--cd-image &lt;cue&gt;</c>, then
 /// <c>DARKCOLONY_CD_IMAGE</c>, then a CUE sheet with audio from track 2 on, in
-/// the installation folder or the folder above it. <c>--no-music</c> turns
-/// the music off.
+/// the installation folder or the folder above it.
 /// </summary>
 public static class CdImageLocator
 {
     public static string? Locate(IReadOnlyList<string> arguments, string? installationRoot)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (arguments.Any(argument => argument.Equals("--no-music", StringComparison.OrdinalIgnoreCase))) return null;
         for (var index = 0; index < arguments.Count - 1; index++)
         {
             if (arguments[index].Equals("--cd-image", StringComparison.OrdinalIgnoreCase)) return arguments[index + 1];

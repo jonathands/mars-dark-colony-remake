@@ -45,6 +45,8 @@ internal static class Program
             ForcedOutcomeAfterSeconds = outcomeAfter,
             ForcedVictory = forcedVictory,
             CdImagePath = CdImageLocator.Locate(arguments, installation?.RootPath),
+            NoMusic = arguments.Any(argument => argument.Equals("--no-music", StringComparison.OrdinalIgnoreCase)),
+            NoVideo = arguments.Any(argument => argument.Equals("--no-video", StringComparison.OrdinalIgnoreCase)),
         });
         RuntimeLog.Info("Exited normally.");
         return 0;

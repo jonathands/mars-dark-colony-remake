@@ -4,36 +4,53 @@ using DarkColony.Engine.Audio;
 namespace DarkColony.App.Audio;
 
 /// <summary>
-/// Streams Red Book audio (44.1 kHz, 16-bit stereo, little-endian PCM) from
-/// raw CD image tracks through winmm waveOut, which Windows mixes with the
-/// effect sounds. It stands in for the MCI <c>cdaudio</c> device the original
-/// plays the disc with.
+/// Streams PCM through winmm waveOut, which Windows mixes with the effect
+/// sounds. It carries:
+/// <list type="bullet">
+/// <item><description>the CD soundtrack (44.1 kHz, 16-bit stereo, read from the
+/// image's tracks), standing in for MCI <c>cdaudio</c>;</description></item>
+/// <item><description>the videos' 8-bit mono sound, which the original plays
+/// through DirectSound.</description></item>
+/// </list>
 /// </summary>
-internal sealed partial class CdAudioStream : IDisposable
+internal sealed partial class WaveOutStream : IDisposable
 {
-    private const int SampleRate = 44100;
-    private const int BytesPerSecond = SampleRate * 4;
-    private const int BufferBytes = BytesPerSecond / 4;
     private const int BufferCount = 4;
     private const int WaveMapper = -1;
     private const int CallbackEvent = 0x50000;
     private const int HeaderDone = 1;
 
-    private readonly IReadOnlyList<CueTrack> _tracks;
+    private readonly short _channels;
+    private readonly int _samplesPerSecond;
+    private readonly short _bitsPerSample;
+    private readonly Func<Stream> _openSource;
     private readonly AutoResetEvent _bufferDone = new(false);
     private readonly Thread _thread;
     private volatile bool _stopping;
     private volatile bool _finished;
     private long _playedBytes;
 
-    public CdAudioStream(IReadOnlyList<CueTrack> tracks)
+    private WaveOutStream(int channels, int samplesPerSecond, int bitsPerSample, Func<Stream> openSource, string name)
     {
-        _tracks = tracks;
-        _thread = new Thread(Run) { IsBackground = true, Name = "CD audio" };
+        _channels = (short)channels;
+        _samplesPerSecond = samplesPerSecond;
+        _bitsPerSample = (short)bitsPerSample;
+        _openSource = openSource;
+        _thread = new Thread(Run) { IsBackground = true, Name = name };
         _thread.Start();
     }
 
-    /// <summary>The disc stopped: the last track ended, or the device failed.</summary>
+    /// <summary>Red Book audio from the image's tracks, played one after another as a disc does.</summary>
+    public static WaveOutStream ForCdTracks(IReadOnlyList<CueTrack> tracks) =>
+        new(2, 44100, 16, () => new TrackStream(tracks), "CD audio");
+
+    public static WaveOutStream ForPcm(int channels, int samplesPerSecond, int bitsPerSample, byte[] samples) =>
+        new(channels, samplesPerSecond, bitsPerSample, () => new MemoryStream(samples, writable: false), "Video audio");
+
+    private int BlockAlign => _channels * _bitsPerSample / 8;
+    private int BytesPerSecond => _samplesPerSecond * BlockAlign;
+
+    /// <summary>The source ran out and the device played it all, or the device failed.</summary>
     public bool Finished => _finished;
 
     /// <summary>Audio the device has finished playing, in seconds.</summary>
@@ -51,32 +68,34 @@ internal sealed partial class CdAudioStream : IDisposable
     {
         var format = new WaveFormat
         {
-            FormatTag = 1, Channels = 2, SamplesPerSecond = SampleRate,
-            AverageBytesPerSecond = BytesPerSecond, BlockAlign = 4, BitsPerSample = 16,
+            FormatTag = 1, Channels = _channels, SamplesPerSecond = _samplesPerSecond,
+            AverageBytesPerSecond = BytesPerSecond, BlockAlign = (short)BlockAlign, BitsPerSample = _bitsPerSample,
         };
-        if (waveOutOpen(out var device, WaveMapper, ref format, _bufferDone.SafeWaitHandle.DangerousGetHandle(), IntPtr.Zero, CallbackEvent) != 0)
+        if (BlockAlign <= 0 || waveOutOpen(out var device, WaveMapper, ref format, _bufferDone.SafeWaitHandle.DangerousGetHandle(), IntPtr.Zero, CallbackEvent) != 0)
         {
             _finished = true;
             return;
         }
 
+        var bufferBytes = Math.Max(BlockAlign, BytesPerSecond / 4 / BlockAlign * BlockAlign);
         var headerSize = Marshal.SizeOf<WaveHeader>();
         var flagsOffset = (int)Marshal.OffsetOf<WaveHeader>(nameof(WaveHeader.Flags));
+        var lengthOffset = (int)Marshal.OffsetOf<WaveHeader>(nameof(WaveHeader.BufferLength));
         var headers = new IntPtr[BufferCount];
         var buffers = new IntPtr[BufferCount];
         var queued = new bool[BufferCount];
-        var chunk = new byte[BufferBytes];
+        var chunk = new byte[bufferBytes];
         try
         {
             for (var index = 0; index < BufferCount; index++)
             {
-                buffers[index] = Marshal.AllocHGlobal(BufferBytes);
+                buffers[index] = Marshal.AllocHGlobal(bufferBytes);
                 headers[index] = Marshal.AllocHGlobal(headerSize);
-                Marshal.StructureToPtr(new WaveHeader { Data = buffers[index], BufferLength = BufferBytes }, headers[index], false);
+                Marshal.StructureToPtr(new WaveHeader { Data = buffers[index], BufferLength = bufferBytes }, headers[index], false);
                 waveOutPrepareHeader(device, headers[index], headerSize);
             }
 
-            using var source = new TrackReader(_tracks);
+            using var source = _openSource();
             var exhausted = false;
             while (!_stopping)
             {
@@ -88,17 +107,18 @@ internal sealed partial class CdAudioStream : IDisposable
                         pending = true;
                         continue;
                     }
-                    if (queued[index]) Interlocked.Add(ref _playedBytes, Marshal.ReadInt32(headers[index], (int)Marshal.OffsetOf<WaveHeader>(nameof(WaveHeader.BufferLength))));
+                    if (queued[index]) Interlocked.Add(ref _playedBytes, Marshal.ReadInt32(headers[index], lengthOffset));
                     queued[index] = false;
                     if (exhausted) continue;
-                    var read = source.Read(chunk);
+                    var read = source.ReadAtLeast(chunk, chunk.Length, throwOnEndOfStream: false);
+                    read -= read % BlockAlign;
                     if (read == 0)
                     {
                         exhausted = true;
                         continue;
                     }
                     Marshal.Copy(chunk, 0, buffers[index], read);
-                    Marshal.WriteInt32(headers[index], (int)Marshal.OffsetOf<WaveHeader>(nameof(WaveHeader.BufferLength)), read);
+                    Marshal.WriteInt32(headers[index], lengthOffset, read);
                     Marshal.WriteInt32(headers[index], flagsOffset, Marshal.ReadInt32(headers[index], flagsOffset) & ~HeaderDone);
                     if (waveOutWrite(device, headers[index], headerSize) != 0)
                     {
@@ -114,7 +134,7 @@ internal sealed partial class CdAudioStream : IDisposable
         }
         catch (IOException)
         {
-            // An unreadable image ends the disc, as a failed MCI request would.
+            // An unreadable source ends the stream, as a failed MCI request would.
         }
         finally
         {
@@ -131,29 +151,37 @@ internal sealed partial class CdAudioStream : IDisposable
         }
     }
 
-    /// <summary>Reads the tracks' byte ranges one after another, as a disc plays on.</summary>
-    private sealed class TrackReader(IReadOnlyList<CueTrack> tracks) : IDisposable
+    /// <summary>The tracks' byte ranges one after another, as a disc plays on.</summary>
+    private sealed class TrackStream(IReadOnlyList<CueTrack> tracks) : Stream
     {
         private int _track = -1;
         private FileStream? _file;
         private long _remaining;
 
-        public int Read(byte[] buffer)
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
         {
-            var total = 0;
-            while (total < buffer.Length)
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            while (true)
             {
-                if (_remaining == 0 && !Advance()) break;
-                var read = _file!.Read(buffer, total, (int)Math.Min(buffer.Length - total, _remaining));
-                if (read == 0)
+                if (_remaining == 0 && !Advance()) return 0;
+                var read = _file!.Read(buffer, offset, (int)Math.Min(count, _remaining));
+                if (read > 0)
                 {
-                    _remaining = 0;
-                    continue;
+                    _remaining -= read;
+                    return read;
                 }
-                total += read;
-                _remaining -= read;
+                _remaining = 0;
             }
-            return total - total % 4;
         }
 
         private bool Advance()
@@ -163,14 +191,23 @@ internal sealed partial class CdAudioStream : IDisposable
             if (_file is null || !string.Equals(_file.Name, Path.GetFullPath(track.FilePath), StringComparison.OrdinalIgnoreCase))
             {
                 _file?.Dispose();
-                _file = new FileStream(track.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, BufferBytes);
+                _file = new FileStream(track.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16);
             }
             _file.Position = track.Offset;
             _remaining = track.Length;
             return true;
         }
 
-        public void Dispose() => _file?.Dispose();
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _file?.Dispose();
+            base.Dispose(disposing);
+        }
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 2)]

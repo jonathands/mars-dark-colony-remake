@@ -230,6 +230,12 @@ public sealed partial class MainForm : Form
 
         KeyDown += (_, eventArgs) =>
         {
+            if (_video is not null)
+            {
+                EndVideo();
+                eventArgs.Handled = true;
+                return;
+            }
             if (HandleNewGameKey(eventArgs.KeyCode))
             {
                 eventArgs.Handled = true;
@@ -262,8 +268,18 @@ public sealed partial class MainForm : Form
         };
 
         ShowScreen(initialScreen);
+        // 0x404FE4: the intro plays before the main menu opens. It waits for
+        // Shown so the init-only media options are set.
+        if (initialScreen == MenuScreenId.Main)
+            Shown += (_, _) => PlayVideo("avi/intro.avi", () => ShowScreen(MenuScreenId.Main));
         _timer.Tick += (_, _) =>
         {
+            if (_video is not null)
+            {
+                AdvanceVideo();
+                _surface.RenderAndPresent();
+                return;
+            }
             _clock.Advance(Environment.TickCount64, () =>
             {
                 UpdateGameplayEdgeScroll();
@@ -401,6 +417,12 @@ public sealed partial class MainForm : Form
     private void RenderFrame(Graphics graphics, GameCanvas canvas)
     {
         _activeCanvas = canvas;
+        if (_video is { } video)
+        {
+            DrawVideo(canvas, video);
+            _activeCanvas = null;
+            return;
+        }
         var background = Background();
         if (_screen == MenuScreenId.Gameplay)
         {

@@ -218,7 +218,7 @@ public sealed partial class MainForm
             Environment.TickCount64 - _bailRequestedAtMilliseconds >= ScenarioSimulation.BailDelayMilliseconds)
         {
             _missionOutcomeReported = true;
-            ShowMissionDebrief(bail);
+            PlayMissionEndVideo(bail, () => ShowMissionDebrief(bail));
         }
         foreach (var production in _scenarioSimulation.LastUnitProductions)
         {

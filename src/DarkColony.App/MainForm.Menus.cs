@@ -42,7 +42,8 @@ public sealed partial class MainForm
         Button(3, 318, 314, 179, 25, "MULTI PLAYER WAR", () => ShowScreen(MenuScreenId.NetworkOptions)),
         Button(4, 318, 340, 179, 25, "SINGLE PLAYER WAR", () => ShowScreen(MenuScreenId.SinglePlayer)),
         Button(5, 318, 366, 179, 25, "ENCYCLOPEDIA", () => ShowScreen(MenuScreenId.Encyclopedia)),
-        Button(16, 138, 392, 179, 25, "PLAY INTRO", () => _status = "Intro playback will be connected after media-source detection."),
+        // 0x404DF8: PLAY INTRO replays avi/intro.avi, then the menu reopens.
+        Button(16, 138, 392, 179, 25, "PLAY INTRO", () => PlayVideo("avi/intro.avi", () => ShowScreen(MenuScreenId.Main))),
         Button(12, 318, 392, 179, 25, "QUIT", Close),
     ];
 

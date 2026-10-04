@@ -217,6 +217,7 @@ public sealed partial class MainForm
 
     private void SurfaceMouseMove(object? sender, MouseEventArgs eventArgs)
     {
+        if (_video is not null) return;
         if (_screen == MenuScreenId.Gameplay)
         {
             _gameplayPointer = eventArgs.Location;
@@ -263,6 +264,7 @@ public sealed partial class MainForm
     private void SurfaceMouseDown(object? sender, MouseEventArgs eventArgs)
     {
         _surface.Focus();
+        if (_video is not null) return;
         if (_screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left &&
             new Rectangle(596, 227, 10, 61).Contains(eventArgs.Location))
         {
@@ -307,6 +309,7 @@ public sealed partial class MainForm
 
     private void SurfaceMouseUp(object? sender, MouseEventArgs eventArgs)
     {
+        if (_video is not null) return;
         var wasMapDrag = _mapDragged;
         var wasMinimapDrag = _minimapDragging;
         var wasSinglePlayerScrollDrag = _singlePlayerScrollDragging;

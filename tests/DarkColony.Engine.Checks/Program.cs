@@ -12,6 +12,7 @@ using DarkColony.Engine.Scenario;
 using DarkColony.Engine.Commands;
 using DarkColony.Engine.Interface;
 using DarkColony.Engine.Audio;
+using DarkColony.Engine.Video;
 using System.Buffers.Binary;
 
 if (DeterminismCli.TryRun(args, out var determinismExitCode)) return determinismExitCode;
@@ -4209,13 +4210,86 @@ Check("faction-selected War rosters complete a local movement order", () =>
             File.WriteAllText(Path.Combine(folder, "disc.cue"), cue);
             File.WriteAllBytes(Path.Combine(folder, "disc.bin"), new byte[300 * CueSheet.SectorBytes]);
             Equal(Path.Combine(folder, "disc.cue"), CdImageLocator.Locate([], install) ?? "");
-            Equal(true, CdImageLocator.Locate(["--no-music"], install) is null);
             Equal("x.cue", CdImageLocator.Locate(["--cd-image", "x.cue"], install) ?? "");
         }
         finally
         {
             Directory.Delete(folder, recursive: true);
         }
+    });
+
+    Check("Cinepak decodes V1, V4 and inter-coded blocks", () =>
+    {
+        static byte[] Frame(params byte[][] strips)
+        {
+            var body = strips.SelectMany(strip => strip).ToArray();
+            var length = 10 + body.Length;
+            return [0, (byte)(length >> 16), (byte)(length >> 8), (byte)length, 0, 4, 0, 4, 0, (byte)strips.Length, .. body];
+        }
+        static byte[] Strip(byte id, params byte[][] chunks)
+        {
+            var body = chunks.SelectMany(chunk => chunk).ToArray();
+            var length = 12 + body.Length;
+            // y1 = 0: the strip starts below the previous one, y2 its height.
+            return [id, (byte)(length >> 16), (byte)(length >> 8), (byte)length, 0, 0, 0, 0, 0, 4, 0, 4, .. body];
+        }
+        static byte[] Chunk(byte id, params byte[] data) =>
+            [id, (byte)((data.Length + 4) >> 16), (byte)((data.Length + 4) >> 8), (byte)(data.Length + 4), .. data];
+        string Pixels(CinepakDecoder decoder) => string.Join(' ', Enumerable.Range(0, 16).Select(pixel =>
+            $"{decoder.Frame[pixel * 3]},{decoder.Frame[pixel * 3 + 1]},{decoder.Frame[pixel * 3 + 2]}"));
+
+        var decoder = new CinepakDecoder(4, 4);
+        // One colour V1 entry: Y 100..130, U 10, V -20 -> (Y - 40, Y + 15, Y + 20), scaled to 4x4.
+        decoder.Decode(Frame(Strip(0x10, Chunk(0x22, 100, 110, 120, 130, 10, unchecked((byte)-20)), Chunk(0x32, 0))));
+        var p0 = "60,115,120"; var p1 = "70,125,130"; var p2 = "80,135,140"; var p3 = "90,145,150";
+        Equal($"{p0} {p0} {p1} {p1} {p0} {p0} {p1} {p1} {p2} {p2} {p3} {p3} {p2} {p2} {p3} {p3}", Pixels(decoder));
+        // An inter chunk whose block bit is clear keeps the picture.
+        decoder.Decode(Frame(Strip(0x11, Chunk(0x31, 0, 0, 0, 0))));
+        Equal($"{p0} {p0} {p1} {p1} {p0} {p0} {p1} {p1} {p2} {p2} {p3} {p3} {p2} {p2} {p3} {p3}", Pixels(decoder));
+        // Grey V4 entries k = (10k .. 10k + 3); flag bit set picks V4, one entry per 2x2 quadrant.
+        decoder.Decode(Frame(Strip(0x10,
+            Chunk(0x24, 0, 1, 2, 3, 10, 11, 12, 13, 20, 21, 22, 23, 30, 31, 32, 33),
+            Chunk(0x30, 0x80, 0, 0, 0, 0, 1, 2, 3))));
+        static string Grey(int value) => $"{value},{value},{value}";
+        Equal(string.Join(' ', new[] { 0, 1, 10, 11, 2, 3, 12, 13, 20, 21, 30, 31, 22, 23, 32, 33 }.Select(Grey)), Pixels(decoder));
+    });
+
+    Check("scene lists name each campaign mission's victory and defeat videos", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        Equal("gtscene.txt", SceneList.FileName(gray: true, training: true));
+        var human = SceneList.Load(install.DataFile("gamestat", SceneList.FileName(gray: false, training: false)));
+        Equal(8, human.Names.Count);
+        Equal(15, human.Missions.Count);
+        var first = human.Find("human/human01.scn") ?? throw new InvalidOperationException("human01 record missing.");
+        Equal("RED LANDING", first.Title);
+        Equal("scenario/human/human01", first.ScenarioPath);
+        Equal(true, first.VictoryVideo.StartsWith("avi/", StringComparison.OrdinalIgnoreCase));
+        Equal(3, first.Remaining.Count);
+        Equal(7, SceneList.Load(install.DataFile("gamestat", SceneList.FileName(gray: false, training: true))).Missions.Count);
+
+        // The disc's own videos, when the user's CD image is beside the installation (ffmpeg hashes).
+        var cue = CdImageLocator.Locate([], install.RootPath);
+        if (cue is null)
+        {
+            Console.WriteLine("  CD image: none found; the disc video decode is not compared.");
+            return;
+        }
+        var files = CdImageFiles.Open(CueSheet.Load(cue)) ?? throw new InvalidOperationException("CD image has no ISO 9660 track.");
+        using var stream = files.OpenFile("dc/avi/htran3.avi") ?? throw new InvalidOperationException("dc/avi/htran3.avi missing from the CD image.");
+        var avi = AviFile.Read(stream);
+        Equal("cvid 320x180 89 66667", $"{avi.VideoHandler} {avi.Width}x{avi.Height} {avi.VideoFrames.Count} {avi.MicrosecondsPerFrame}");
+        Equal(new AviAudioFormat(1, 11025, 8), avi.AudioFormat ?? throw new InvalidOperationException("No audio."));
+        Equal(65411, avi.Audio.Length);
+        var video = new CinepakDecoder(avi.Width, avi.Height);
+        var hashes = new List<string>();
+        for (var frame = 0; frame < avi.VideoFrames.Count; frame++)
+        {
+            video.Decode(avi.VideoFrames[frame]);
+            if (frame is 0 or 44 or 88) hashes.Add(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(video.Frame))[..16].ToLowerInvariant());
+        }
+        Equal("32725a91154c0fd5 08f238c60e45f950 24593bb7d99275f5", string.Join(' ', hashes));
+        Console.WriteLine($"  CD image: {cue}");
     });
 
     Check("native colour remap reproduces dc16 interface text", () =>

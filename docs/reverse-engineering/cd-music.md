@@ -39,7 +39,8 @@ The image is found in this order:
 2. `DARKCOLONY_CD_IMAGE`;
 3. a CUE sheet in the installation folder or the folder above it.
 
-`--no-music` turns the music off, and `tools/Run-Port.ps1` passes it unless `-Music` is given.
+The image also supplies the disc files the installation lacks (see video.md).
+`--no-music` turns the music off, and `tools/Run-Port.ps1` passes it and `--no-video` unless `-Media` is given.
 
 The user's `DCUK.bin` has data track 1 and audio tracks 2-5 (195, 80, 137 and 198 s).
 A War game started the stream from track 2 and played it in real time: 18.8 s of audio in 19.35 s.
