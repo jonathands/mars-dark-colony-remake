@@ -13,7 +13,8 @@ public sealed record DirectionalAnimationSelection(
     EntityAnimationCandidate Candidate,
     int RequestedSector,
     int AnimationSector,
-    bool ExactSector);
+    bool ExactSector,
+    int NativeSelector);
 
 public sealed class EntityAnimationCatalog
 {
@@ -179,12 +180,7 @@ public sealed class EntityAnimationCatalog
         orderedKeys.AddRange(variants.Keys.Where(key => !orderedKeys.Contains(key, StringComparer.OrdinalIgnoreCase))
             .OrderBy(key => key, StringComparer.OrdinalIgnoreCase));
         var key = orderedKeys[Math.Abs(variantRoll % orderedKeys.Count)];
-        var selected = variants[key]
-            .OrderBy(item => CircularDistance(item.Sector, sector))
-            .ThenBy(item => item.Candidate.ExactFileStem ? 0 : 1)
-            .ThenBy(item => item.Sector)
-            .First();
-        return new DirectionalAnimationSelection(selected.Candidate, sector, selected.Sector, selected.Sector == sector);
+        return PreferredDirectional(variants[key], sector);
     }
 
     public DirectionalAnimationSelection? PreferredHit(int entityId, int sector)
@@ -204,22 +200,52 @@ public sealed class EntityAnimationCatalog
         int sector)
     {
         if (sector is < 0 or > 15) throw new ArgumentOutOfRangeException(nameof(sector));
-        var candidates = source.GetValueOrDefault(entityId, []);
-        if (candidates.Count == 0) return null;
-        var selected = candidates.OrderBy(item => CircularDistance(item.Sector, sector))
-            .ThenBy(item => item.Candidate.ExactFileStem ? 0 : 1)
-            .ThenBy(item => item.Sector)
-            .First();
-        return new DirectionalAnimationSelection(selected.Candidate, sector, selected.Sector, selected.Sector == sector);
+        return PreferredDirectional(source.GetValueOrDefault(entityId, []), sector);
     }
 
     public EntityAnimationCandidate? PreferredDeath(int entityId) => deathCandidates.GetValueOrDefault(entityId, []).FirstOrDefault();
 
-    private static int CircularDistance(int left, int right)
+    /// <summary>
+    /// Mirrors <c>0x4260a8</c>. The loader first resolves suffixes in its
+    /// rotated <c>(12 - index) &amp; 15</c> order, then fills a 32-entry doubled
+    /// selector array by trying the offsets at <c>0x47950c</c>. This is the
+    /// native sparse-sector/mirroring policy: it is not a nearest-angle
+    /// fallback and it applies to every directional animation family.
+    /// </summary>
+    private static DirectionalAnimationSelection? PreferredDirectional(
+        IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)> candidates,
+        int sector)
     {
-        var distance = Math.Abs(left - right);
-        return Math.Min(distance, 16 - distance);
+        if (sector is < 0 or > 15) throw new ArgumentOutOfRangeException(nameof(sector));
+        if (candidates.Count == 0) return null;
+        var bySector = candidates
+            .GroupBy(item => item.Sector)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(item => item.Candidate.ExactFileStem ? 0 : 1)
+                    .ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase)
+                    .First().Candidate);
+        var selector = sector * 2;
+        for (var attempt = 0; attempt < NativeDirectionalFallbackOffsets.Length; attempt++)
+        {
+            var candidateIndex = ((selector + NativeDirectionalFallbackOffsets[attempt]) & 0x1f) >> 1;
+            var animationSector = (12 - candidateIndex) & 0x0f;
+            if (!bySector.TryGetValue(animationSector, out var candidate)) continue;
+            return new DirectionalAnimationSelection(candidate, sector, animationSector, attempt == 0, selector);
+        }
+        // Some one-direction action families (notably FIRE/HIT) are loaded by
+        // the same object constructor but do not expose any of the numbered
+        // selector slots. Their resolved base frame remains the native action
+        // fallback; this is intentionally after, never instead of, the slot
+        // table used by MOVE and genuinely directional families.
+        var baseCandidate = bySector.GetValueOrDefault(0) ?? bySector.OrderBy(pair => pair.Key).First().Value;
+        return new DirectionalAnimationSelection(baseCandidate, sector, 0, false, selector);
     }
+
+    // Executable dwords at 0x47950c, consumed in sequence by 0x42624a.
+    private static readonly int[] NativeDirectionalFallbackOffsets =
+    [3, -2, 3, -2, 3, -2, 3, 0, 0, -1, 0, -1, -1, 0, -1, 0,
+     0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, -1, -1, 0, -1, 0];
 
     private static int FireVariantPriority(string entityCode, string animationName)
     {

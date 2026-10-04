@@ -362,10 +362,11 @@
 - Actor facing is persistent 8-bit state. Turn helper `0x4120FC` uses wrapped
   target-current difference, advances by gamestat turn speed on the shorter
   arc, and snaps only when the remainder is smaller than that step. Rendering
-  derives 16 sectors with `((facing+8)&255)>>4`. Full MOVE families resolve
-  exact sectors; incomplete/even-only families currently use a documented
-  nearest-sector presentation fallback because the native doubled selector and
-  mirroring policy remain unresolved.
+  derives 16 sectors with `((facing+8)&255)>>4`. The directional loader at
+  `0x4260a8` resolves a rotated 16-suffix table and fills all 32 doubled
+  selector slots from its fallback-offset table at `0x47950c`; MOVE, deploy,
+  retract, fire, and hit presentation now use that exact sparse-sector policy
+  instead of nearest-sector selection.
 - Firing presentation now selects a named animation family deterministically:
   plain `FIRE` takes precedence, followed by `FIREA`, then `FIREB` and `FIREC`.
   The installed Cyborg `SARG` asset has both A and B families; the map’s
