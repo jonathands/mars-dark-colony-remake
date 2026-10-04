@@ -13,6 +13,7 @@ using DarkColony.Engine.World;
 using DarkColony.Engine.Commands;
 using DarkColony.Engine.Movement;
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Media;
@@ -22,10 +23,19 @@ namespace DarkColony.App;
 /// <summary>The gameplay HUD: unit, structure, build, research, options, and allies panels.</summary>
 public sealed partial class MainForm
 {
+    // The world view: 0x41ec1e gives the gameplay view object the rectangle
+    // (4,6) 512x448. The HUD picture's black is see-through only here; the
+    // panels' black (the empty command slots, for example) stays black.
+    private static readonly Rectangle GameplayViewport = new(4, 6, 512, 448);
+
     private void DrawGameplayHud(Graphics graphics, Image hud)
     {
         if (_activeCanvas is { } canvas)
         {
+            canvas.Fill(new Rectangle(0, 0, 640, GameplayViewport.Top), Color.Black);
+            canvas.Fill(new Rectangle(0, GameplayViewport.Bottom, 640, 480 - GameplayViewport.Bottom), Color.Black);
+            canvas.Fill(new Rectangle(0, GameplayViewport.Top, GameplayViewport.Left, GameplayViewport.Height), Color.Black);
+            canvas.Fill(new Rectangle(GameplayViewport.Right, GameplayViewport.Top, 640 - GameplayViewport.Right, GameplayViewport.Height), Color.Black);
             canvas.Draw(GpuColorKeyImage("gameplay-hud", hud), new Rectangle(0, 0, 640, 480));
             return;
         }
@@ -42,8 +52,14 @@ public sealed partial class MainForm
             attributes);
     }
 
+    // UI 79's texts for this frame; DrawGameplayPanelIdentityStrip picks one.
+    private string? _panelIdentityText;
+    private string? _hoveredHudText;
+
     private void DrawGameplayUnitHud(Graphics graphics)
     {
+        _panelIdentityText = null;
+        _hoveredHudText = null;
         DrawGameplayTabs(graphics);
         if (_scenarioSimulation is not null)
         {
@@ -56,11 +72,14 @@ public sealed partial class MainForm
             DrawGameplayIconButton(graphics, _gameplayHudLayout.LastMessage.Bounds, _gameplayHudLayout.LastMessage.Frame, false, _gameplayMessageIndex > 0);
             DrawGameplayIconButton(graphics, _gameplayHudLayout.NextMessage.Bounds, _gameplayHudLayout.NextMessage.Frame, false,
                 _gameplayMessageIndex >= 0 && _gameplayMessageIndex < _gameplayMessageHistory.Count - 1);
+            NoteHoveredHudControl(_gameplayHudLayout.LastMessage, _gameplayHudLayout.NextMessage);
             var message = GameplayMessageText();
             DrawGameplayHudText(graphics, FitGameplayReadout(message, _gameplayHudLayout.MessageStatus.CharacterCapacity),
                 new Rectangle(_gameplayHudLayout.MessageStatus.Origin, new Size(427, 14)));
             // maine in_text 234: the original HUD's days counter at 613,433.
-            DrawMenuText(graphics, _scenarioSimulation.DayNight.CompletedDays.ToString(), new Rectangle(604, 427, 30, 14), remap: Color.FromArgb(205, 225, 190));
+            // 0x43abb0 formats it with "%3.3d" ("000"); remap 0 draws it red.
+            DrawMenuText(graphics, _scenarioSimulation.DayNight.CompletedDays.ToString("000", CultureInfo.InvariantCulture),
+                new Rectangle(604, 427, 30, 14), remap: Color.FromArgb(255, 31, 31));
         }
         var inspected = SelectedInspectableGameplayEntities().ToArray();
         var selected = inspected.Where(IsLocallyControllable).ToArray();
@@ -142,15 +161,22 @@ public sealed partial class MainForm
         var name = selected.Length == 1 && definition is not null
             ? definition.DisplayName
             : $"{selected.Length} Units";
-        DrawGameplayPanelIdentity(graphics, name);
+        SetGameplayPanelIdentity(name);
         DrawGameplaySelectionDiagnostics(graphics, actor, definition);
     }
 
     private void DrawGameplayTabs(Graphics graphics)
     {
-        DrawGameplayIconButton(graphics, _gameplayHudLayout.BuildTab.Bounds, _gameplayHudLayout.BuildTab.Frame, _gameplayHudTab == GameplayHudTab.Build, true);
-        DrawGameplayIconButton(graphics, _gameplayHudLayout.ResearchTab.Bounds, _gameplayHudLayout.ResearchTab.Frame, _gameplayHudTab == GameplayHudTab.Research, true);
-        DrawGameplayIconButton(graphics, _gameplayHudLayout.OptionsTab.Bounds, _gameplayHudLayout.OptionsTab.Frame, _gameplayHudTab == GameplayHudTab.Options, true);
+        // `maine` draws the three tabs as one 110x12 picture: frame 77, 78
+        // or 79 shows the build, research or options tab pressed.
+        var active = _gameplayHudTab switch
+        {
+            GameplayHudTab.Research => _gameplayHudLayout.ResearchTab,
+            GameplayHudTab.Options => _gameplayHudLayout.OptionsTab,
+            _ => _gameplayHudLayout.BuildTab,
+        };
+        DrawGameplayHudPicture(graphics, _gameplayHudLayout.TabStrip.Location, active.Frame);
+        NoteHoveredHudControl(_gameplayHudLayout.BuildTab, _gameplayHudLayout.ResearchTab, _gameplayHudLayout.OptionsTab);
     }
 
     private void DrawSelectedUnitCommands(Graphics graphics, IReadOnlyList<WorldEntity> selected)
@@ -186,10 +212,9 @@ public sealed partial class MainForm
         var definition = GameplayDefinition(lead);
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
         var name = selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Units";
-        DrawGameplayPanelIdentity(graphics, name);
+        SetGameplayPanelIdentity(name);
         DrawGameplaySelectionDiagnostics(graphics, actor, definition);
-        if (HoveredGameplayCommandLabel(displayedButtons) is { } hoveredCommand)
-            DrawGameplayPanelIdentity(graphics, hoveredCommand);
+        NoteHoveredHudControl(displayedButtons);
     }
 
     private void DrawObservedEntityHud(Graphics graphics, IReadOnlyList<WorldEntity> selected)
@@ -200,7 +225,7 @@ public sealed partial class MainForm
         var name = selected.Count == 1 && definition is not null
             ? definition.DisplayName
             : $"{selected.Count} Units";
-        DrawGameplayPanelIdentity(graphics, name);
+        SetGameplayPanelIdentity(name);
         var relation = lead.Team == _localPlayerTeam
             ? "LOCAL / NOT CONTROLLABLE"
             : _scenarioSimulation?.TeamRelations.IsHostile(_localPlayerTeam, lead.Team) == true
@@ -220,7 +245,7 @@ public sealed partial class MainForm
         var definition = _entityCatalog is not null && (uint)lead.EntityId < (uint)_entityCatalog.Entities.Count
             ? _entityCatalog[lead.EntityId] : null;
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
-        DrawGameplayPanelIdentity(graphics,
+        SetGameplayPanelIdentity(
             selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Structures");
         // A selected completed structure is a production source, not a
         // generic faction palette.  `depend.txt` records the prerequisite
@@ -248,10 +273,9 @@ public sealed partial class MainForm
         var definition = GameplayDefinition(lead);
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
         var name = selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Static";
-        DrawGameplayPanelIdentity(graphics, name);
+        SetGameplayPanelIdentity(name);
         DrawGameplaySelectionDiagnostics(graphics, actor, definition);
-        if (HoveredGameplayCommandLabel([_gameplayHudLayout.Stop, _gameplayHudLayout.MoveAndAttack]) is { } hoveredCommand)
-            DrawGameplayPanelIdentity(graphics, hoveredCommand);
+        NoteHoveredHudControl(_gameplayHudLayout.Stop, _gameplayHudLayout.MoveAndAttack);
     }
 
     private void DrawSelectedStealStanceHud(Graphics graphics, IReadOnlyList<WorldEntity> selected)
@@ -262,10 +286,9 @@ public sealed partial class MainForm
         var definition = GameplayDefinition(lead);
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
         var name = selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Stealing";
-        DrawGameplayPanelIdentity(graphics, name);
+        SetGameplayPanelIdentity(name);
         DrawGameplaySelectionDiagnostics(graphics, actor, definition, "STEALING: 50% NEARBY MINER P7");
-        if (HoveredGameplayCommandLabel([_gameplayHudLayout.Contextual with { Frame = 75, Label = "STEAL MONEY" }]) is { } hoveredCommand)
-            DrawGameplayPanelIdentity(graphics, hoveredCommand);
+        NoteHoveredHudControl(_gameplayHudLayout.Contextual with { Frame = 75, Label = "STEAL MONEY" });
     }
 
     private void DrawSelectedHarvesterHud(Graphics graphics, IReadOnlyList<WorldEntity> selected)
@@ -276,11 +299,10 @@ public sealed partial class MainForm
         var definition = GameplayDefinition(lead);
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
         var name = selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Miners";
-        DrawGameplayPanelIdentity(graphics, name);
+        SetGameplayPanelIdentity(name);
         DrawGameplaySelectionDiagnostics(graphics, actor, definition,
             actor?.HarvestVentId is { } ventId ? $"P7 VENT {ventId + 1}: ATTACHED" : "P7 MINER: DEPLOYED");
-        if (HoveredGameplayCommandLabel([_gameplayHudLayout.Contextual with { Frame = 74, Label = "DEPLOY" }]) is { } hoveredCommand)
-            DrawGameplayPanelIdentity(graphics, hoveredCommand);
+        NoteHoveredHudControl(_gameplayHudLayout.Contextual with { Frame = 74, Label = "DEPLOY" });
     }
 
     private void DrawSelectedMineHud(Graphics graphics, IReadOnlyList<WorldEntity> selected)
@@ -289,7 +311,7 @@ public sealed partial class MainForm
         var definition = GameplayDefinition(lead);
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
         var name = selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Mines";
-        DrawGameplayPanelIdentity(graphics, name);
+        SetGameplayPanelIdentity(name);
         var triggerCount = actor is null ? 0 : _scenarioSimulation?.MineTriggersRemainingFor(actor) ?? 0;
         var readiness = actor?.CooldownTicks > 0 ? $"REARM {actor.CooldownTicks}" : "READY";
         DrawGameplaySelectionDiagnostics(graphics, actor, definition,
@@ -299,28 +321,27 @@ public sealed partial class MainForm
     private void DrawBuildCatalog(Graphics graphics)
     {
         DrawBuildCatalogButtons(graphics);
-        DrawGameplayPanelIdentity(graphics, "Build");
+        SetGameplayPanelIdentity("Build");
     }
 
     private void DrawBuildCatalogButtons(Graphics graphics)
     {
         foreach (var item in AvailableTroopItems())
             if (TroopSlots().TryGetValue(item.UiId, out var position))
-                DrawMappedCatalogButton(graphics, CatalogBounds(item.UiId, position), item.UiId, TroopLabel(item), PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
+                DrawCatalogButton(graphics, item.UiId, position, PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
         foreach (var item in AvailableBuildingItems().GroupBy(item => BuildingSlots().GetValueOrDefault(item.UiId)).Select(group => group
                      .OrderByDescending(item => PurchaseEligibilityFor(item) == PurchaseEligibility.Available)
                      .ThenByDescending(item => item.Id)
                      .First()))
             if (BuildingSlots().TryGetValue(item.UiId, out var position))
-                DrawMappedCatalogButton(graphics, CatalogBounds(item.UiId, position), item.UiId, BuildingLabel(item), PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
+                DrawCatalogButton(graphics, item.UiId, position, PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
     }
 
     private void DrawProductionButtons(Graphics graphics, WorldEntity structure)
     {
         foreach (var item in TroopItemsForStructure(structure))
             if (TroopSlots().TryGetValue(item.UiId, out var position))
-                DrawMappedCatalogButton(graphics, CatalogBounds(item.UiId, position), item.UiId,
-                    TroopLabel(item), PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
+                DrawCatalogButton(graphics, item.UiId, position, PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
     }
 
     private IReadOnlyDictionary<int, Point> TroopSlots() => _grayRace ? GrayTroopSlots : HumanTroopSlots;
@@ -549,17 +570,16 @@ public sealed partial class MainForm
         {
             var upgrades = ResearchButtonsForStructure(structure);
             foreach (var (item, position) in upgrades)
-                DrawMappedCatalogButton(graphics, CatalogBounds(item.UiId, position), item.UiId, UpgradeLabel(item), PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
-            DrawGameplayPanelIdentity(graphics, upgrades.Count == 0 ? "NO RESEARCH" : "RESEARCH");
+                DrawCatalogButton(graphics, item.UiId, position, PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
+            SetGameplayPanelIdentity(upgrades.Count == 0 ? "NO RESEARCH" : "RESEARCH");
             return;
         }
-        var entries = _grayRace
-            ? new[] { ("WEAPON +1", 84), ("ARMOR +1", 55), ("PSYCH +", 89), ("VIRUS SAC", 45) }
-            : new[] { ("WEAPON +1", 47), ("ARMOR +1", 48), ("WEAPON +2", 27), ("ARMOR +2", 90) };
-        var slots = new[] { new Point(518,112), new Point(577,112), new Point(518,194), new Point(577,194) };
-        for (var index = 0; index < entries.Length; index++)
-            DrawMappedCatalogButton(graphics, new Rectangle(slots[index], new Size(59, 41)), entries[index].Item2, entries[index].Item1);
-        DrawGameplayPanelIdentity(graphics, "UPGRADES");
+        // A preview of the race's upgrade gadgets (maine ids), until a
+        // structure is selected to research at.
+        foreach (var preview in _grayRace ? new[] { 56, 99, 60 } : new[] { 110, 112 })
+            if ((_grayRace ? GrayResearchSlots : HumanResearchSlots).TryGetValue(preview, out var position))
+                DrawCatalogButton(graphics, preview, position, available: false);
+        SetGameplayPanelIdentity("UPGRADES");
     }
 
     private void DrawOptionsCatalog(Graphics graphics)
@@ -579,8 +599,9 @@ public sealed partial class MainForm
             _gameplayHudLayout.Objectives,
         };
         foreach (var entry in entries)
-            DrawMappedCatalogButton(graphics, entry.Bounds, entry.Frame, entry.Label, entry.UiId is 62 or 196);
-        DrawGameplayPanelIdentity(graphics, _gameplayPaused ? "PAUSED" : "GAME OPTIONS");
+            DrawGameplayCommandButton(graphics, entry, entry.UiId is 62 or 196);
+        NoteHoveredHudControl(entries);
+        SetGameplayPanelIdentity(_gameplayPaused ? "PAUSED" : "GAME OPTIONS");
     }
 
     private void DrawAlliesPanel(Graphics graphics)
@@ -598,7 +619,7 @@ public sealed partial class MainForm
                 DrawMappedCatalogButton(graphics, slots[index + 1], 117, $"T{team + 1} {(allied ? "ALLY" : "FOE")}", true);
             }
         }
-        DrawGameplayPanelIdentity(graphics, "ALLIES");
+        SetGameplayPanelIdentity("ALLIES");
     }
 
     private static Rectangle[] AllianceSlots() =>
@@ -614,6 +635,32 @@ public sealed partial class MainForm
         .OrderBy(team => team)
         .Take(AllianceSlots().Length - 1)
         .ToArray() ?? [];
+
+    /// <summary>
+    /// Draws a production or research gadget with its authored <c>mainbut</c>
+    /// picture and no caption: the original names a hovered gadget (name and
+    /// price, its <c>textmsg</c>) in UI 79 instead.
+    /// </summary>
+    private void DrawCatalogButton(Graphics graphics, int uiId, Point fallbackPosition, bool available)
+    {
+        var bounds = CatalogBounds(uiId, fallbackPosition);
+        var hovered = _gameplayPointer is { } pointer && bounds.Contains(pointer);
+        DrawGameplayIconButton(graphics, bounds, _gameplayHudLayout.CatalogFrame(uiId) ?? -1, hovered, available);
+        if (hovered) _hoveredHudText = _gameplayHudLayout.ControlText(uiId);
+    }
+
+    private void DrawGameplayHudPicture(Graphics graphics, Point location, int frame)
+    {
+        if (SpriteFrameBitmap("mainbut", frame) is not { } bitmap) return;
+        if (_activeCanvas is { } canvas) canvas.DrawForeground(GpuBitmap(bitmap), location.X, location.Y);
+        else graphics.DrawImageUnscaled(bitmap, location);
+    }
+
+    /// <summary>Records the hovered control's text for UI 79 (0x4337c8).</summary>
+    private void NoteHoveredHudControl(params GameplayHudButton[] buttons)
+    {
+        if (HoveredGameplayCommandLabel(buttons) is { } label) _hoveredHudText = label;
+    }
 
     private void DrawMappedCatalogButton(Graphics graphics, Rectangle bounds, int frame, string label, bool available = false)
     {
@@ -690,7 +737,26 @@ public sealed partial class MainForm
         graphics.DrawString(text, font, brush, bounds.Location);
     }
 
-    private void DrawGameplayPanelIdentity(Graphics graphics, string text)
+    /// <summary>Sets the idle text of UI 79; a later call replaces an earlier one.</summary>
+    private void SetGameplayPanelIdentity(string text) => _panelIdentityText = text;
+
+    /// <summary>
+    /// Draws UI 79 once per frame. Hovering a control shows its text
+    /// (0x4337c8); otherwise a waypoint/target prompt (0x4096f6), otherwise
+    /// the selection or panel name.
+    /// </summary>
+    private void DrawGameplayPanelIdentityStrip(Graphics graphics)
+    {
+        var prompt = _gameplayCommandMode switch
+        {
+            GameplayCommandMode.Waypoints => _gameplayHudLayout.SetWaypointsMessage,
+            GameplayCommandMode.AttackTarget or GameplayCommandMode.GroundSpecialTarget or GameplayCommandMode.HarvestVent => _gameplayHudLayout.SelectTargetMessage,
+            _ => null,
+        };
+        if ((_hoveredHudText ?? prompt ?? _panelIdentityText) is { Length: > 0 } text) DrawGameplayPanelIdentityText(graphics, text);
+    }
+
+    private void DrawGameplayPanelIdentityText(Graphics graphics, string text)
     {
         var readout = _gameplayHudLayout.PanelIdentity;
         var fitted = FitGameplayReadout(text, readout.CharacterCapacity);
@@ -702,17 +768,6 @@ public sealed partial class MainForm
         using var font = new Font(FontFamily.GenericMonospace, 10, FontStyle.Bold, GraphicsUnit.Pixel);
         using var brush = new SolidBrush(Color.FromArgb(250, 225, 95));
         graphics.DrawString(fitted, font, brush, bounds.Location);
-    }
-
-    private void DrawGameplayPanelPrompt(Graphics graphics)
-    {
-        var prompt = _gameplayCommandMode switch
-        {
-            GameplayCommandMode.Waypoints => _gameplayHudLayout.SetWaypointsMessage,
-            GameplayCommandMode.AttackTarget or GameplayCommandMode.GroundSpecialTarget or GameplayCommandMode.HarvestVent => _gameplayHudLayout.SelectTargetMessage,
-            _ => null,
-        };
-        if (prompt is not null) DrawGameplayPanelIdentity(graphics, prompt);
     }
 
     private void DrawGameplayLowerReadout(Graphics graphics, string text, bool bottom = false)

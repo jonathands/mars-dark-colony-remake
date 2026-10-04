@@ -135,6 +135,7 @@ public sealed partial class MainForm
         _mapDragStart = null;
         _mapDragged = false;
         _minimapDragging = false;
+        _minimapPressed = false;
         _selectionDragStart = null;
         _selectionGestureStartedAtTick = 0;
         _selectionGestureToggle = false;
@@ -222,8 +223,7 @@ public sealed partial class MainForm
         {
             _gameplayPointer = eventArgs.Location;
         }
-        if (_screen == MenuScreenId.Gameplay && _minimapDragging &&
-            (eventArgs.Button & (MouseButtons.Left | MouseButtons.Right)) != 0)
+        if (_screen == MenuScreenId.Gameplay && _minimapDragging && eventArgs.Button.HasFlag(MouseButtons.Right))
         {
             SetGameplayCameraFromMinimap(eventArgs.Location);
             return;
@@ -280,11 +280,19 @@ public sealed partial class MainForm
             _surface.Invalidate();
             return;
         }
+        // 0x409c94: the secondary button moves the view to the minimap point
+        // and keeps following it until release; the primary button orders the
+        // selection there.
         if (_screen == MenuScreenId.Gameplay && eventArgs.Button is MouseButtons.Left or MouseButtons.Right && GameplayMinimapBounds.Contains(eventArgs.Location))
         {
-            _minimapDragging = true;
-            SetGameplayCameraFromMinimap(eventArgs.Location);
-            _surface.Capture = true;
+            _minimapPressed = true;
+            if (eventArgs.Button == MouseButtons.Right)
+            {
+                _minimapDragging = true;
+                SetGameplayCameraFromMinimap(eventArgs.Location);
+                _surface.Capture = true;
+            }
+            else QueueMinimapOrder(eventArgs.Location);
             _pressedButton = null;
             _surface.Invalidate();
             return;
@@ -316,7 +324,7 @@ public sealed partial class MainForm
     {
         if (_video is not null || _optionsDraft is not null) return;
         var wasMapDrag = _mapDragged;
-        var wasMinimapDrag = _minimapDragging;
+        var wasMinimapPress = _minimapPressed;
         var wasSinglePlayerScrollDrag = _singlePlayerScrollDragging;
         var selectionStart = _selectionDragStart;
         var selectionGestureStartedAtTick = _selectionGestureStartedAtTick;
@@ -329,6 +337,7 @@ public sealed partial class MainForm
         _mapDragStart = null;
         _mapDragged = false;
         _minimapDragging = false;
+        _minimapPressed = false;
         _selectionDragStart = null;
         _selectionGestureStartedAtTick = 0;
         _selectionGestureToggle = false;
@@ -341,7 +350,7 @@ public sealed partial class MainForm
             _surface.Invalidate();
             return;
         }
-        if (wasMinimapDrag)
+        if (wasMinimapPress)
         {
             _pressedButton = null;
             _surface.Invalidate();
@@ -399,17 +408,40 @@ public sealed partial class MainForm
         _surface.Invalidate();
     }
 
+    /// <summary>
+    /// The 8.8 world point under a minimap pixel, as 0x409c94 computes it:
+    /// X = ((2(x - 519) + 1) * width / 96) / 2 and Z = ((2(90 - y) + 1) * height / 84) / 2,
+    /// with the map size in 8.8 units and Z rising up the minimap.
+    /// </summary>
+    private (int X, int Z) MinimapWorldPoint(Point point)
+    {
+        var x = Math.Clamp(point.X - GameplayMinimapBounds.X, 0, GameplayMinimapBounds.Width - 1);
+        var z = GameplayMinimapBounds.Bottom - Math.Clamp(point.Y, GameplayMinimapBounds.Y, GameplayMinimapBounds.Bottom - 1);
+        return ((x * 2 + 1) * (_gameplayMap!.Width << 8) / GameplayMinimapBounds.Width / 2,
+            (z * 2 + 1) * (_gameplayMap.Height << 8) / GameplayMinimapBounds.Height / 2);
+    }
+
     private void SetGameplayCameraFromMinimap(Point point)
     {
         if (_gameplayMap is null) return;
-        var x = Math.Clamp(point.X - GameplayMinimapBounds.X, 0, GameplayMinimapBounds.Width - 1);
-        var y = Math.Clamp(point.Y - GameplayMinimapBounds.Y, 0, GameplayMinimapBounds.Height - 1);
-        // Same centred odd-numerator scaling as `0x409c94`; our camera is a
-        // top-left viewport origin, so convert the requested world centre.
-        var worldX = ((x * 2 + 1) * _gameplayMap.Width * TerrainRasterizer.TileSize) / (GameplayMinimapBounds.Width * 2);
-        // The camera is in screen pixels, top-down like the minimap itself.
-        var worldY = ((y * 2 + 1) * _gameplayMap.Height * TerrainRasterizer.TileSize) / (GameplayMinimapBounds.Height * 2);
-        SetGameplayCamera(worldX - 516 / 2, worldY - 458 / 2);
+        // The native camera is the view's centre (0x40a73b draws 16x14 cells
+        // from 8 left and 7 below it); the 512x448 view starts at (4,6), so
+        // the centre is screen pixel (260,230). Our camera is the world pixel
+        // at screen (0,0), with rows running down from the top of the map.
+        var (x, z) = MinimapWorldPoint(point);
+        SetGameplayCamera(x * TerrainRasterizer.TileSize / 256 - 260,
+            ((_gameplayMap.Height << 8) - z) * TerrainRasterizer.TileSize / 256 - 230);
+    }
+
+    // 0x409c94 → 0x4092ac: a primary click on the minimap makes the point a
+    // one-entry waypoint list and orders the selection there, as a move or,
+    // with Move & Attack checked, an attack move. In waypoint mode it appends
+    // the point instead. Nothing else (drops, ground specials) targets it.
+    private void QueueMinimapOrder(Point point)
+    {
+        if (_gameplayMap is null || _selectedEntityInstanceIds.Count == 0) return;
+        var (x, z) = MinimapWorldPoint(point);
+        QueueMoveOrders(new CellCoordinate(Math.Min(x >> 8, _gameplayMap.Width - 1), Math.Min(z >> 8, _gameplayMap.Height - 1)));
     }
 
     private void SetGameplayCursorVisibility(bool visible)
@@ -426,12 +458,27 @@ public sealed partial class MainForm
         }
     }
 
+    // 0x4337c8 times each screen edge the pointer is within 3 pixels of: the
+    // full 640x480 rectangle of the gameplay view object (0x42c4b0), shrunk
+    // by 3 at 0x432e63, so x < 3, x > 637, y < 3 or y > 477. The HUD does not
+    // stop it. The loop at 0x40aa25 scrolls an edge only after the pointer
+    // has stayed there more than 100 ms (timeGetTime). The 16-pixel step per
+    // update is the port's.
+    private readonly long?[] _edgeScrollSince = new long?[4];
+
     private void UpdateGameplayEdgeScroll()
     {
-        if (_screen != MenuScreenId.Gameplay || _gameplayPointer is not { } pointer || _mapDragStart is not null || _selectionDragStart is not null) return;
-        if (pointer.X is < 0 or >= 516 || pointer.Y is < 0 or >= 458) return;
-        var x = pointer.X <= 8 ? -16 : pointer.X >= 507 ? 16 : 0;
-        var y = pointer.Y <= 8 ? -16 : pointer.Y >= 449 ? 16 : 0;
+        var pointer = _screen == MenuScreenId.Gameplay && _mapDragStart is null && _selectionDragStart is null ? _gameplayPointer : null;
+        var now = Environment.TickCount64;
+        bool[] edges = pointer is { } point ? [point.X < 3, point.X > 637, point.Y < 3, point.Y > 477] : [false, false, false, false];
+        int x = 0, y = 0;
+        for (var edge = 0; edge < edges.Length; edge++)
+        {
+            if (!edges[edge]) { _edgeScrollSince[edge] = null; continue; }
+            _edgeScrollSince[edge] ??= now;
+            if (now - _edgeScrollSince[edge] <= 100) continue;
+            if (edge == 0) x = -16; else if (edge == 1) x = 16; else if (edge == 2) y = -16; else y = 16;
+        }
         if (x != 0 || y != 0) MoveGameplayCamera(x, y);
     }
 

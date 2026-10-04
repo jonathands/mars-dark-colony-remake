@@ -94,7 +94,7 @@ Screenshots go to `screenshots/live-<race>-*`, and the log to `artifacts/logs/li
 
 Its first runs found three bugs:
 
-- The Gray HUD crashed on its first frame, because the Gray engineer's button is an empty 0x0 frame (71) in `mainbut.spr`.
+- The Gray HUD crashed on its first frame. The cause was a wrong picture: the HUD drew each catalog button with the frame that has the button's id, and frame 71 (the id of the Gray engineer's button) is an empty 0x0 frame. The buttons now draw their authored frames (`gameplay-hud.md`).
 - An Atril firing drew from `tmp.fin`. That file is not in `anim.dat`, and its plain FIRE family names an `atri.spr` that is not shipped. FIREA takes the plain family's slot (`0x43B970`).
 - The PUS impact resolved to `pust.fin`, whose `pust.spr` is on neither the disk nor the CD.
 

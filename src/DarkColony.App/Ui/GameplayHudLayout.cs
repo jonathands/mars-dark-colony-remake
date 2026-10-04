@@ -22,6 +22,10 @@ internal sealed class GameplayHudLayout
         BuildTab = Tab(source, 0, 3, "BUILD", new Rectangle(518, 92, 40, 20), 77);
         ResearchTab = Tab(source, 1, 4, "RESEARCH", new Rectangle(557, 92, 41, 20), 78);
         OptionsTab = Tab(source, 2, 5, "OPTIONS", new Rectangle(598, 92, 40, 20), 79);
+        // The tab buttons have no picture of their own (frame -1). Pictures
+        // 3-5 draw all three tabs as one strip over them; its frame shows
+        // which tab is pressed.
+        TabStrip = source?.Controls.TryGetValue(3, out var strip) == true ? ToRectangle(strip.Bounds) : new Rectangle(521, 96, 110, 12);
         Stop = Button(source, 150, "STOP", new Rectangle(518, 112, 59, 41), 62);
         MoveOnly = Button(source, 33, "MOVE", new Rectangle(518, 153, 59, 41), 63);
         MoveAndAttack = Button(source, 35, "MOVE & ATTACK", new Rectangle(518, 194, 59, 41), 65);
@@ -60,6 +64,7 @@ internal sealed class GameplayHudLayout
     public GameplayHudButton BuildTab { get; }
     public GameplayHudButton ResearchTab { get; }
     public GameplayHudButton OptionsTab { get; }
+    public Rectangle TabStrip { get; }
     public GameplayHudButton MoveOnly { get; }
     public GameplayHudButton MoveAndAttack { get; }
     public GameplayHudButton Waypoints { get; }
@@ -92,6 +97,17 @@ internal sealed class GameplayHudLayout
         source?.Controls.TryGetValue(uiId, out var control) == true
             ? ToRectangle(control.Bounds)
             : fallback;
+
+    /// <summary>The <c>mainbut</c> frame a production or research gadget draws, if authored.</summary>
+    public int? CatalogFrame(int uiId) =>
+        source?.Controls.TryGetValue(uiId, out var control) == true ? control.Frame : null;
+
+    /// <summary>
+    /// The text a control shows in UI 79 while hovered: the <c>textmsg</c>
+    /// with the control's own number (0x4337c8 → 0x4226a0), for example
+    /// "Exploiter 1500".
+    /// </summary>
+    public string? ControlText(int uiId) => source?.LabelFor(uiId);
 
     public static GameplayHudLayout Load(GameInstallation? installation)
     {

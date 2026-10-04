@@ -96,7 +96,12 @@ public sealed partial class MainForm
     private void DrawGameplayMinimap(Graphics graphics)
     {
         if (_gameplayMap is null || _gameplayTileset is null) return;
-        _minimapPreview ??= BuildGameplayMinimap(_gameplayMap, _gameplayTileset);
+        var simulation = _revealMap ? null : _scenarioSimulation;
+        var stamp = simulation is null ? -1 : (long)(simulation.TickCount / 16);
+        if (_minimapPreview is not null && stamp != _minimapPreviewStamp) DisposeGameplayMinimapPreview();
+        _minimapPreviewStamp = stamp;
+        _minimapPreview ??= BuildGameplayMinimap(_gameplayMap, _gameplayTileset,
+            simulation is null ? null : cell => simulation.IsCellExploredByTeam(_localPlayerTeam, cell));
         var state = graphics.Save();
         graphics.SetClip(GameplayMinimapBounds);
         if (_activeCanvas is { } canvas)
@@ -140,7 +145,11 @@ public sealed partial class MainForm
         graphics.Restore(state);
     }
 
-    private static Bitmap BuildGameplayMinimap(TerrainMap map, BtsTileset tileset)
+    /// <param name="explored">
+    /// The local team's explored memory; cells it has never seen stay black,
+    /// as the native minimap (0x439FF8) draws them.
+    /// </param>
+    private static Bitmap BuildGameplayMinimap(TerrainMap map, BtsTileset tileset, Func<CellCoordinate, bool>? explored)
     {
         var image = new Bitmap(GameplayMinimapBounds.Width, GameplayMinimapBounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         for (var y = 0; y < image.Height; y++)
@@ -150,6 +159,11 @@ public sealed partial class MainForm
             // inversion maps world Z; MAP rows are already in screen order.
             var mapX = Math.Min(map.Width - 1, ((x * 2 + 1) * map.Width) / (image.Width * 2));
             var mapY = Math.Min(map.Height - 1, ((y * 2 + 1) * map.Height) / (image.Height * 2));
+            if (explored is not null && !explored(new CellCoordinate(mapX, map.Height - 1 - mapY)))
+            {
+                image.SetPixel(x, y, Color.Black);
+                continue;
+            }
             var cell = map[mapX, mapY];
             var tileId = cell.OverlayTileId != 0 ? cell.OverlayTileId : cell.BaseTileId;
             if (!tileset.TilesById.TryGetValue(tileId, out var tile)) continue;

@@ -85,6 +85,9 @@ public sealed partial class MainForm : Form
     private int _encyclopediaEntry;
     private readonly Dictionary<(uint FrameId, bool FlipHorizontally, bool TransparentZero), GpuImage> _terrainGpuTiles = [];
     private Bitmap? _minimapPreview;
+    // The simulation tick / 16 the minimap's explored mask was built at
+    // (vision is rebuilt every 16 updates); -1 when it shows the whole map.
+    private long _minimapPreviewStamp = -1;
     private ScenarioWorld? _scenarioWorld;
     private ScenarioSimulation? _scenarioSimulation;
     private IReadOnlyList<ScenarioTrigger> _scenarioTriggers = [];
@@ -161,6 +164,7 @@ public sealed partial class MainForm : Form
     private Point _mapDragCamera;
     private bool _mapDragged;
     private bool _minimapDragging;
+    private bool _minimapPressed;
     private Point? _selectionDragStart;
     private Point _selectionDragCurrent;
     private ulong _selectionGestureStartedAtTick;
@@ -452,7 +456,7 @@ public sealed partial class MainForm : Form
             if (background is not null) DrawGameplayHud(graphics, background);
             DrawGameplayMinimap(graphics);
             DrawGameplayUnitHud(graphics);
-            DrawGameplayPanelPrompt(graphics);
+            DrawGameplayPanelIdentityStrip(graphics);
             DrawGameOptions(graphics);
             DrawGameplayCursor(graphics);
             // Keep the native gameplay viewport clear. The previous

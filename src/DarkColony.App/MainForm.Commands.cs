@@ -100,6 +100,17 @@ public sealed partial class MainForm
             PlayGameplaySound(harvesters[0].EntityId, "ACK");
             return;
         }
+        QueueMoveOrders(target);
+    }
+
+    /// <summary>
+    /// Orders the selected mobile units to a cell: an attack move in Move &amp;
+    /// Attack mode, a waypoint with Shift or in waypoint mode, otherwise a move.
+    /// </summary>
+    private void QueueMoveOrders(CellCoordinate target)
+    {
+        if (_gameplayPath is null || _scenarioSimulation is null || _entityCatalog is null ||
+            _groundOccupancy is null || _alternateOccupancy is null) return;
         var selected = GameplayEntities()
             .Where(entity => _selectedEntityInstanceIds.Contains(entity.InstanceId) && IsLocallyControllable(entity))
             .Where(entity => _scenarioSimulation.Actor(entity.InstanceId) is { } actor &&

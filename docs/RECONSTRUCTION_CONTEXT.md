@@ -37,7 +37,7 @@ one harvester may own or prepare on a vent.
   (see [`reverse-engineering/vision.md`](reverse-engineering/vision.md)). The
   gameplay renderer uses it to black out unseen cells and suppress unseen
   hostile minimap markers. The original keeps explored-terrain memory in
-  grid bit 31; the port does not draw it yet. The
+  grid bit 31; the main view and the minimap leave unexplored cells black. The
   native P7 gain constants remain unrecovered. Day/night is now decoded from
   each SCN header: the phase, cycle limit, initial counter, and transition
   limit populate world fields <c>+0x53c</c>, <c>+0x534</c>, <c>+0x530</c>, and
@@ -327,11 +327,14 @@ one harvester may own or prepare on a vent.
   special repair/dig/confirm cursor transitions are still not implemented.
 - The executable minimap handler `0x409c94` establishes a 96x84 interior at
   `(519,6)` and uses centred odd-numerator coordinates with vertical inversion.
-  The compiled HUD now renders a cached MAP/BTS sampled minimap in that exact
-  well, overlays live local/opposing actors and the camera rectangle, and
-  lets click/drag move only presentation camera state through the same
-  transform. Its simple centre-pixel terrain sample and port-side dot colors
-  are reconstruction aids, not recovered native minimap rasterization.
+  The compiled HUD renders a MAP/BTS sampled minimap in that exact well,
+  black where the local team has explored nothing, and overlays live
+  local/opposing actors and the camera rectangle. As in `0x409c94`, the right
+  button centres the view on the point and follows a drag; the left button
+  orders the selection there (move, attack move, or a waypoint). Its simple
+  centre-pixel terrain sample and port-side dot colors are reconstruction
+  aids, not recovered native minimap rasterization. See
+  `reverse-engineering/gameplay-input.md`.
 - External player/system intents now enter through a future-tick-only queue
   ordered by target tick and stable insertion sequence. This is distinct from
   the recovered six-descriptor native per-actor queue. Right-click input now

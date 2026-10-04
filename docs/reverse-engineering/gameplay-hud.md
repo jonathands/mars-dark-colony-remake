@@ -76,6 +76,38 @@ before later gameplay code and produces false negative xref reports. The fixed
 scan finds direct writers for 79 and 148 but no corresponding direct UI setter
 for 203/204. Their roles therefore remain unresolved.
 
+## Command panel pictures and hover text
+
+Every production and research gadget in `maine` is a `count` control whose
+first number is its id and whose first frame is its picture in `mainbut.spr`.
+For example, the Exploiter (87) is frame 8 and the Barracks (80) frame 20. All
+80 of them are 59x41 pictures. The port used to draw the frame with the same
+number as the id. That put upgrade and blank pictures on the wrong buttons, so
+the panel did not match what each button does. It also wrote a caption over
+each picture.
+
+The original has no captions. On every motion event, `0x4337c8` hit-tests the
+controls (`0x423a6c`). When the hovered control changes, it reads that
+control's `textmsg` (`0x4226a0`, by the control's own number) and writes it to
+UI 79 through `0x4322d8`, so it shows "Exploiter 1500" or "Barracks  1000".
+Leaving all controls writes a blank. Every catalog text fits UI 79's 15
+characters. The port shows the hovered control's text, otherwise a waypoint or
+target prompt, otherwise the selection name, and decides once per frame.
+
+The three tabs (pushb 0-2) have no picture of their own. Pictures 3-5 draw
+them as one 110x12 strip at (521,96): frame 77, 78 or 79 shows the build,
+research or options tab pressed.
+
+The days counter (UI 234) is formatted by `0x43abb0` with `%3.3d`, so day 0
+reads `000`; `remap 0` draws it red.
+
+The world view is (4,6) 512x448 (`0x41ec1e`). The port lets the world show
+through the black of `intrface.gif` only there, so empty command slots stay
+black instead of showing the map.
+
+The check *maine catalog gadgets draw their own picture and name themselves in
+the 15-character strip* covers the data side.
+
 ## Selection command-state projection
 
 `UnitCommandProfiles.DescribeSelection` is the common state source for the

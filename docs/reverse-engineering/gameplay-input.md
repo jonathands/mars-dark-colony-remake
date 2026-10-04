@@ -56,8 +56,48 @@ Shift toggles matching actors. The list begins at gameplay `+0x150`, ends at a
 
 The compiled app now uses normal left drag for this selection gesture and caps
 the deterministic instance-ID selection at 800. Middle drag remains an
-explicit port camera-pan convenience; native edge scrolling, minimap panning,
-and keyboard navigation are unchanged.
+explicit port camera-pan convenience.
+
+## Minimap buttons
+
+The event router (`0x40a044`) sends a pointer event inside the rectangle at
+gameplay `+0x7b4`, which `0x41ed0e` sets to (519,6) 96x84, to the minimap
+handler `0x409c94`. While a minimap drag is active, every event goes there.
+The handler turns the pixel into an 8.8 world point:
+
+```text
+X = ((2 * (x - 519) + 1) * mapWidth8.8 / 96) / 2
+Z = ((2 * (90 - y) + 1) * mapHeight8.8 / 84) / 2
+```
+
+Then it acts by event code:
+
+| Code | Action |
+| --- | --- |
+| 3 (secondary down) | Starts a drag (`+0x7c5`) and puts the camera there |
+| 5 (motion) | While dragging, puts the camera there |
+| `0x103` (secondary up) | Ends the drag |
+| 4 (primary down) | In waypoint mode (`+0x7c6 == 1`), adds the cell centre as the next of up to 8 waypoints. Otherwise `0x4092ac` orders the selection there: order 2 (move), or 7 (attack move) when `+0x46a7` is set |
+
+The camera fields `+0x108/+0x110` hold the view's centre: `0x40a73b` takes the
+16x14 visible cells from 8 cells left of it and 7 below. `0x41ec1e` gives the
+view the rectangle (4,6) 512x448, so the centre is screen pixel (260,230).
+The port follows all of this. Its camera stores the world pixel at screen
+(0,0) instead of the centre.
+
+## Edge scrolling
+
+On every motion event, `0x4337c8` compares the pointer with a rectangle that
+`0x432e48` copies from the view object's `+0x10` field and shrinks by 3 pixels
+(`0x4364ec`). The object's constructor (`0x42c4b0`) sets that field to
+(0,0,640,480). An edge is active at x < 3, x > 637, y < 3 or y > 477, over the
+HUD too. Each edge starts a `timeGetTime` timer, and the loop at `0x40aa25`
+moves the camera one cell (`0x100`) per pass once a timer is more than 100 ms
+old.
+
+The port uses the same edges and the same 100 ms delay. It moves 16 pixels per
+update. The port used to scroll within 8 pixels of the map view's own edges,
+so moving the pointer onto the HUD scrolled the map.
 
 The three scans in `0x436d1c` are now mapped through the construction path at
 `0x41b3f9`: runtime field `+0x68` takes priority and selects grid `+0x1004`,

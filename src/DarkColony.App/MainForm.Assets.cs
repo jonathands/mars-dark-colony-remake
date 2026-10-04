@@ -157,8 +157,8 @@ public sealed partial class MainForm
             var sprite = LoadSprite(spriteName);
             if ((uint)frameIndex >= (uint)sprite.Frames.Count) return null;
             var frame = sprite.Frames[frameIndex];
-            // The shipped mainbut.spr has empty 0x0 frames (3, 70, 71, 122); frame 71 is the
-            // Gray engineer's build button. A bitmap cannot be empty, so draw none.
+            // The shipped mainbut.spr has empty 0x0 frames (3, 70, 71, 122). No maine gadget
+            // draws one, but a bitmap cannot be empty, so draw none.
             if (frame.Width == 0 || frame.Height == 0) return null;
             var bitmap = BitmapFromRgba(frame.Width, frame.Height, sprite.FrameRgba(frameIndex));
             _animationFrames[key] = bitmap;

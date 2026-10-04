@@ -25,6 +25,39 @@ internal static class InterfaceChecks
         var dataPath = suite.DataPath;
         void Check(string name, Action action, CheckTags tags = CheckTags.None) => suite.Add("Interface", name, tags, action);
 
+        Check("maine catalog gadgets draw their own picture and name themselves in the 15-character strip", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var maine = InterfaceDefinition.Load(install.DataFile("intrface", "maine"));
+            var buttons = Sprite.Load(install.DataFile("intrface", "mainbut.spr"));
+            // The picture is the gadget's frame, not its id: the Exploiter
+            // (87) is frame 8, the Barracks (80) frame 20, the Gray Brozaar (46)
+            // frame 15 and Human Weapon +1 (110) frame 47.
+            Equal((8, 20, 15, 47), (maine.Controls[87].Frame, maine.Controls[80].Frame, maine.Controls[46].Frame, maine.Controls[110].Frame));
+            var catalog = maine.Groups[84].Values.Concat(maine.Groups[95].Values).Concat(maine.Groups[53].Values)
+                .Concat(maine.Groups[45].Values).Concat(maine.Groups[96].Values).Concat(maine.Groups[61].Values)
+                .Where(id => maine.Controls.TryGetValue(id, out var control) && control.Kind == InterfaceControlKind.Count)
+                .ToArray();
+            Equal(80, catalog.Length);
+            foreach (var id in catalog)
+            {
+                var control = maine.Controls[id];
+                var frame = buttons.Frames[control.Frame!.Value];
+                if ((frame.Width, frame.Height) != (59, 41)) throw new InvalidOperationException($"gadget {id}: frame {control.Frame} is {frame.Width}x{frame.Height}");
+                // The hovered gadget's textmsg (name and price) fits UI 79.
+                var text = maine.LabelFor(id) ?? throw new InvalidOperationException($"gadget {id} has no textmsg");
+                if (text.Length > maine.Controls[79].Bounds.Width) throw new InvalidOperationException($"gadget {id}: '{text}' exceeds UI 79");
+            }
+            Equal("Exploiter 1500", maine.LabelFor(87) ?? string.Empty);
+
+            // The tabs have no picture of their own; pictures 3-5 are one
+            // 110x12 strip whose frame shows the pressed tab.
+            Equal((null as int?, null as int?, null as int?), (maine.Controls[0].Frame, maine.Controls[1].Frame, maine.Controls[2].Frame));
+            Equal((77, 78, 79), (maine.Controls[3].Frame!.Value, maine.Controls[4].Frame!.Value, maine.Controls[5].Frame!.Value));
+            Equal(new InterfaceRectangle(521, 96, 110, 12), maine.Controls[3].Bounds);
+            Equal((110, 12), (buttons.Frames[77].Width, buttons.Frames[77].Height));
+        }, CheckTags.Data);
+
         Check("native viewport hotkeys resolve the installed Human and Gray unit pairs", () =>
         {
             var install = GameInstallation.Open(dataPath);
