@@ -388,15 +388,21 @@ public sealed partial class ScenarioSimulation
     }
 
     /// <summary>
-    /// <c>newtype x z t</c>: the first ground-class actor on (x, z) becomes
-    /// entity t (byte <c>+6</c>), keeping its health and identity.
+    /// <c>newtype x z t</c> (<c>0x43E0FE</c>): the first actor slot, dead or
+    /// alive, whose position cell is (x, z) and whose entity has movement
+    /// class 0 (runtime byte <c>+0x60</c>) gets type byte <c>+6</c> = t.
+    /// Nothing else changes, so the health stays; the type's own health
+    /// becomes the maximum. The port expresses the type byte through the
+    /// same form override that deployments use.
     /// </summary>
     private void ChangeScriptActorType(CellCoordinate cell, int entityId)
     {
         if ((uint)entityId >= (uint)entityDefinitions.Count) return;
-        var actor = actors.FirstOrDefault(candidate => !candidate.IsDestroyed && candidate.Movement.OccupiedCell == cell &&
+        var actor = actors.FirstOrDefault(candidate => candidate.Movement.VisualPosition.Cell == cell &&
                                                        EffectiveDefinition(candidate).MovementClass == 0);
-        if (actor is not null) actor.DeployedEntityId = entityId;
+        if (actor is null || actor.IsDestroyed) return;
+        actor.DeployedEntityId = entityId;
+        actor.MaximumHealth = EntityDefinitionFor(entityId).Health;
     }
 
     private sealed class MissionContext(ScenarioSimulation simulation, SimulatedActor? unit) : ITriggerExpressionContext

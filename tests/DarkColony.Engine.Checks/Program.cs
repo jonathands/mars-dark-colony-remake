@@ -2711,6 +2711,28 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(false, unit.PatrolPoints is not null);
     });
 
+    Check("newtype changes the first ground-class actor on the cell and keeps its health", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        // A Scout VTOL (flier, entity 5) listed first, then a marine (entity 0), both on (3,1).
+        const string source = "desert.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
+            "3 1 5 0 0 0\n3 1 0 0 0 0\n";
+        var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+        bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        var script = MissionScript.Compile(ScenarioTriggers.Parse("1 norm 1 (1)\nnewtype 3 1 84\nend\n"));
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), PathRegionMap.Parse(bytes, 16, 4), rules, script);
+        var flier = simulation.Actors.Single(actor => actor.Seed.EntityId == 5);
+        var marine = simulation.Actors.Single(actor => actor.Seed.EntityId == 0);
+        var health = marine.Health;
+        for (var tick = 0; tick < 8; tick++) simulation.Step([]);
+        // 0x43E117 skips the flier (movement class 1).
+        Equal(5, simulation.EffectiveDefinition(flier).Id);
+        Equal(84, simulation.EffectiveDefinition(marine).Id);
+        Equal(health, marine.Health);
+        Equal(rules.Entities[84].Health, marine.MaximumHealth);
+    });
+
     Check("losing the mining colony ends human01 in defeat with outcome text 4", () =>
     {
         var install = GameInstallation.Open(dataPath);
