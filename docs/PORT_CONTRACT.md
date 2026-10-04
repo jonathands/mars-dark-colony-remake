@@ -62,6 +62,15 @@ Platform-independent, deterministic code:
 - `Construction`: pedestal delivery, footprints, placement, and production;
 - `Simulation`: the fixed-step scheduler and subsystem orchestration.
 
+`ScenarioSimulation` owns the authoritative per-mission state, so its
+subsystem logic lives in partial files beside it:
+`Simulation/ScenarioSimulation.<Subsystem>.cs` for Combat, Specials,
+Transports, Economy, Construction, Movement, and Autonomous. `Step` lists the
+tick's phases in order. Put new behavior in the matching partial file, keep
+every field in `ScenarioSimulation.cs`, and keep stateless rules, data types,
+and readers in the subsystem folders above. Event records live in
+`SimulationEvents.cs`.
+
 The engine must not reference WinForms, Direct3D, audio APIs, wall-clock frame
 deltas, or screen pixels.
 
@@ -74,6 +83,11 @@ Windows platform and presentation code:
 - `Ui`: reconstructed screen definitions and interaction adapters;
 - `Audio`: playback backend and event-to-sound binding when implemented;
 - host/input code that translates OS events into engine commands.
+
+`MainForm` is likewise split by responsibility: `MainForm.cs` (fields,
+screen switching, frame composition) plus `Menus`, `WarLobby`,
+`Encyclopedia`, `Assets`, `World`, `Feedback`, `Hud`, `Input`, and
+`Commands` partial files.
 
 Presentation can interpolate between completed simulation states but cannot
 mutate authoritative gameplay state.
