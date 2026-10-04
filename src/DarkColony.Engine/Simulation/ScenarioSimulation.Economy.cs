@@ -214,6 +214,13 @@ public sealed partial class ScenarioSimulation
                 economy.AddP7(petraFlowRules.PassiveP7PerPulse);
                 income.Add(new P7IncomeEvent(teamId, petraFlowRules.PassiveP7PerPulse, null));
             }
+            // World update 0x419B2E: every 16 ticks each player whose slot-0
+            // headquarters stands earns its passive rate (default 3).
+            if (citiesDeclared && teamId is >= 0 and < 8 && CanEarnP7(teamId))
+            {
+                economy.AddP7(NativePassiveP7Rate);
+                income.Add(new P7IncomeEvent(teamId, NativePassiveP7Rate, null));
+            }
         }
         foreach (var vent in PetraVents.OrderBy(vent => vent.Id))
         {
@@ -228,7 +235,7 @@ public sealed partial class ScenarioSimulation
                 vent.HarvesterInstanceId = null;
                 continue;
             }
-            if (!teamEconomies.TryGetValue(harvester.Seed.Team, out var economy)) continue;
+            if (!teamEconomies.TryGetValue(harvester.Seed.Team, out var economy) || !CanEarnP7(harvester.Seed.Team)) continue;
             // Native 0x413856 tests the source reservoir with a strict
             // `remaining - baseRate > 0` check before the 16-step payout, then
             // subtracts the credited source amount at 0x413bdf. The exact

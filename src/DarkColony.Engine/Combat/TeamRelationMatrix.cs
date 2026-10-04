@@ -13,9 +13,15 @@ public sealed class TeamRelationMatrix
     private TeamRelationMatrix()
     {
         // An unset native matrix is not evidence that all teams cooperate.
-        // Preserve the existing port policy: a team cooperates with itself and
-        // otherwise is hostile until scenario/mission initialization is traced.
+        // The SCN loader 0x41B920 zeroes the matrix (1 = cooperative, 0 =
+        // hostile), sets each player's own entry through 0x41E7D8, and then
+        // (0x41C00E) marks every player and critter team 9 mutually cooperative.
         for (var team = 0; team < TeamCount; team++) values[team, team] = 1;
+        for (var player = 0; player < 8; player++)
+        {
+            values[player, 9] = 1;
+            values[9, player] = 1;
+        }
     }
 
     public static TeamRelationMatrix CreateDefault() => new();

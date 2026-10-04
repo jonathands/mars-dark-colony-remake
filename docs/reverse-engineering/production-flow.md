@@ -102,8 +102,8 @@ pointer was read from `0x498f6c`; local team from `world + 0x7d1c`; and P7 from
 - Moving a mobile Exploiter onto a geyser caused an automatic transition to
   its deployed form. Leaving the geyser reverses that state. The first two
   observed post-leave samples still yielded +23, after which observed pulses
-  were +3; that +3 residual has an unknown source and must not be treated as a
-  universal passive-income rule.
+  were +3. That +3 is the native passive income: every 16 ticks while the
+  headquarters stands (see [city-and-economy.md](city-and-economy.md)).
 
 The port models the recovered multiplier branch explicitly through
 `PetraFlowRules.ApplyOwnerP7Multiplier` and its signed 8.8

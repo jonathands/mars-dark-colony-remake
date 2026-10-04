@@ -54,9 +54,13 @@ one harvester may own or prepare on a vent.
   credited the signed half before the owner receives the remainder. This
   refutes the prior implied global `+4` model: the SCN-to-runtime source-field
   mapping and the player multiplier's dataflow still require runtime evidence.
-  The default port rule no longer grants a global passive P7 pulse: that is
-  contradicted by the native attached-source path. The former global 900-tick
-  half-day has been replaced by the recovered per-SCN clock.
+  The synthetic `PetraFlowRules` default grants no global passive pulse. The
+  native passive income is per player: +3 P7 every 16 ticks while the city
+  headquarters (slot 0) stands, and vent income needs the same headquarters.
+  The port applies both whenever the SCN declares cities; see
+  [`reverse-engineering/city-and-economy.md`](reverse-engineering/city-and-economy.md).
+  The former global 900-tick half-day has been replaced by the recovered
+  per-SCN clock.
 - Human 10 and Alien 11 campaign text establishes that a deployed S.A.R.G.E.
   or Gorrem near an enemy mining unit intercepts 50% of its resource income,
   has long range, and does not require sight. The deterministic engine now
@@ -591,9 +595,14 @@ one harvester may own or prepare on a vent.
   initialized from the already-decoded postfix `%Money` value. The native HUD
   P7 field renders the local team balance. The 84 selectable Human/Gray War
   roster corpus asserts that each simulation receives its source team’s exact
-  starting balance. Purchase costs, provisional passive pulses, and deployed
-  harvester pulses mutate this engine-owned balance; native gain constants and
-  storage/multiplier handling remain unrecovered.
+  starting balance. Purchase costs, the native headquarters-gated passive
+  pulse, and deployed harvester pulses mutate this engine-owned balance; the
+  storage/multiplier handling remains unrecovered.
+- Each player's city is built at load from `%AISlots` line 2 (the origin) and
+  `%City`. The slot entity comes from the executable build table, and the
+  position and footprint from the slot tables. Every built slot lies on MAP
+  pedestal cells (attribute bit 9). See
+  [`reverse-engineering/city-and-economy.md`](reverse-engineering/city-and-economy.md).
 - An impact reducing health to zero now destroys the actor in simulation: it
   cancels movement/attack state, releases both occupancy grids, clears every
   attacker's target reference, removes the actor from render/selection, and

@@ -11,7 +11,36 @@ public sealed record ScenarioTeam(
     int? AiProfile,
     int? TeamColor,
     IReadOnlyList<int> StartingDependencyFlags,
-    IReadOnlyList<int> AllianceFlags);
+    IReadOnlyList<int> AllianceFlags)
+{
+    /// <summary>
+    /// Second <c>%AISlots</c> pair: the team's city origin, which the SCN loader
+    /// stores at player <c>+0xBC4/+0xBC8</c> (<c>0x41C07E</c>). Every built slot
+    /// footprint around it lies on MAP cells with attribute bit 9 (the
+    /// pedestal; asserted by <c>0x444F14</c>).
+    /// </summary>
+    public CellCoordinate? CityOrigin { get; init; }
+
+    /// <summary>
+    /// First <c>%AISlots</c> pair (player <c>+0xBCC/+0xBD0</c>, <c>0x41C04F</c>);
+    /// the loader replaces (0,0) with the city origin. Multiplayer maps place
+    /// the team's commander here; its gameplay role is not traced yet.
+    /// </summary>
+    public CellCoordinate? CitySecondaryPoint { get; init; }
+
+    /// <summary>
+    /// First <c>%City</c> line: (level, health) for building slots 0-4 (HQ,
+    /// barracks, factory, laboratory, research center). Level 0 means the slot
+    /// is empty; level n builds variant n - 1; health -1 means the entity's
+    /// catalog health.
+    /// </summary>
+    public IReadOnlyList<ScenarioCitySlot> CitySlots { get; init; } = [];
+
+    /// <summary>The loader builds city slots only when the origin X (+0xBC4) is nonzero.</summary>
+    public bool HasCity => CityOrigin is { X: not 0 };
+}
+
+public readonly record struct ScenarioCitySlot(int Level, int Health);
 
 public sealed record ScenarioPlacement(
     int X,
@@ -165,7 +194,38 @@ public sealed class ScenarioDefinition
                 ValueBefore("AI"),
                 ValueBefore("TeamColour"),
                 ValuesAfter("Depend"),
-                ValuesAfter("TeamAllies")));
+                ValuesAfter("TeamAllies"))
+            {
+                CityOrigin = PairAfter("AISlots", 2),
+                CitySecondaryPoint = PairAfter("AISlots", 1) is { X: 0, Z: 0 } ? PairAfter("AISlots", 2) : PairAfter("AISlots", 1),
+                CitySlots = CitySlotsAfter(),
+            });
+
+            // %AISlots and %City own the lines that follow them; the loader
+            // reads them positionally with "%d %d" and five "%d %d" pairs.
+            CellCoordinate? PairAfter(string name, int lineOffset)
+            {
+                for (var index = start + 1; index + lineOffset < end; index++)
+                {
+                    if (!lines[index].Equals($"%{name}", StringComparison.OrdinalIgnoreCase)) continue;
+                    var values = Integers(lines[index + lineOffset]);
+                    return values.Length >= 2 ? new CellCoordinate(values[0], values[1]) : null;
+                }
+                return null;
+            }
+
+            IReadOnlyList<ScenarioCitySlot> CitySlotsAfter()
+            {
+                for (var index = start + 1; index + 1 < end; index++)
+                {
+                    if (!lines[index].Equals("%City", StringComparison.OrdinalIgnoreCase)) continue;
+                    var values = Integers(lines[index + 1]);
+                    return Enumerable.Range(0, Math.Min(5, values.Length / 2))
+                        .Select(slot => new ScenarioCitySlot(values[slot * 2], values[slot * 2 + 1]))
+                        .ToArray();
+                }
+                return [];
+            }
 
             int? ValueBefore(string name)
             {

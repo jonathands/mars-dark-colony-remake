@@ -526,6 +526,18 @@ const string AcquisitionEntities = "5\n" +
     "PROP 0 1 1 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1\n";
 const string AcquisitionWeapons = "2\n1 BULLET 0 0 1 10 90 3 0 0 0 0 0\n2 BULLET 0 0 1 10 90 8 0 0 0 0 0\n";
 
+Check("players and critter team 9 start mutually cooperative", () =>
+{
+    // SCN loader 0x41BFFC: the matrix is zeroed, the diagonal set through
+    // 0x41E7D8, then [player][9] = [9][player] = 1 for players 0-7.
+    var relations = TeamRelationMatrix.CreateDefault();
+    Equal(false, relations.IsHostile(0, 9));
+    Equal(false, relations.IsHostile(9, 7));
+    Equal(false, relations.IsHostile(3, 3));
+    Equal(true, relations.IsHostile(0, 1));
+    Equal(true, relations.IsHostile(8, 0));
+});
+
 Check("idle armed actors acquire a visible hostile in weapon range", () =>
 {
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
@@ -1883,6 +1895,84 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var beforeCadence = simulation.Actor(2)!.InspirationTicksRemaining;
         for (var tick = 0; tick < ScenarioSimulation.NativeInspireCountdownCadence; tick++) simulation.Step([]);
         Equal(beforeCadence - 1, simulation.Actor(2)!.InspirationTicksRemaining);
+    });
+
+    Check("SCN cities seed slot buildings and gate passive P7 on the headquarters", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var file = install.DataFile("scenario", "mplayer", "j4play01") + ".scn";
+        var team0 = ScenarioDefinition.Load(file).Teams.Single(team => team.TeamId == 0);
+        Equal(new CellCoordinate(10, 55), team0.CityOrigin!.Value);
+        Equal(new CellCoordinate(15, 57), team0.CitySecondaryPoint!.Value);
+        Equal(5, team0.CitySlots.Count);
+        Equal(new ScenarioCitySlot(1, -1), team0.CitySlots[0]);
+        Equal(new ScenarioCitySlot(0, -1), team0.CitySlots[1]);
+
+        // Team 0 loses its headquarters; team 1 keeps one with explicit health.
+        var cityLines = 0;
+        var text = System.Text.RegularExpressions.Regex.Replace(File.ReadAllText(file), @"%City(\r?\n)1 -1", match =>
+            ++cityLines switch
+            {
+                1 => $"%City{match.Groups[1].Value}0 -1",
+                2 => $"%City{match.Groups[1].Value}1 2000",
+                _ => match.Value,
+            });
+        var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+        var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(text), path, rules);
+        Equal(true, simulation.CityBuilding(0, 0) is null);
+        var headquarters = simulation.CityBuilding(1, 0)!;
+        Equal(2000, headquarters.Health);
+        var origin = new CellCoordinate(63, 80);
+        Equal(rules.Footprints!.CitySlotPosition(origin, 0), headquarters.Movement.VisualPosition);
+        foreach (var cell in rules.Footprints.CitySlotCells(origin, 0))
+        {
+            Equal(true, simulation.GroundOccupancy.TryGetOwner(cell, out var owner));
+            Equal(headquarters.Seed.InstanceId, owner);
+        }
+        var defaultHeadquarters = simulation.CityBuilding(2, 0)!;
+        Equal(defaultHeadquarters.MaximumHealth, defaultHeadquarters.Health);
+
+        var team0Start = simulation.ResourceForTeam(0);
+        var team1Start = simulation.ResourceForTeam(1);
+        var income = new List<P7IncomeEvent>();
+        for (var tick = 0; tick < 32; tick++)
+        {
+            simulation.Step([]);
+            income.AddRange(simulation.LastP7Income);
+        }
+        Equal(team0Start, simulation.ResourceForTeam(0));
+        Equal(team1Start + 2 * ScenarioSimulation.NativePassiveP7Rate, simulation.ResourceForTeam(1));
+        Equal(0, income.Count(item => item.TeamId == 0));
+    });
+
+    Check("every built SCN city slot lies on MAP pedestal cells", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var footprints = BuildingFootprintCatalog.Load(install.ExecutablePath);
+        var checkedCells = 0;
+        foreach (var file in Directory.GetFiles(install.DataFile("scenario"), "*.scn", SearchOption.AllDirectories))
+        {
+            var mapFile = Path.ChangeExtension(file, ".map");
+            if (!File.Exists(mapFile)) continue;
+            var map = TerrainMap.Load(mapFile);
+            foreach (var team in ScenarioDefinition.Load(file).Teams.Where(team => team.HasCity))
+            for (var slot = 0; slot < team.CitySlots.Count; slot++)
+            {
+                if (team.CitySlots[slot].Level <= 0) continue;
+                foreach (var cell in footprints.CitySlotCells(team.CityOrigin!.Value, slot))
+                {
+                    // 0x444F14 asserts load[ysize - 1 - z][x] bit 31, which the
+                    // MAP loader 0x453320 fills from attribute bit 9.
+                    if ((map[cell.X, map.Height - 1 - cell.Z].Ambient & 0x02) == 0)
+                        throw new InvalidDataException($"{Path.GetFileName(file)} team {team.TeamId} slot {slot} cell {cell} is off the pedestal.");
+                    checkedCells++;
+                }
+            }
+        }
+        if (checkedCells == 0) throw new InvalidDataException("No built city slots found.");
+        Console.WriteLine($"  city pedestals: {checkedCells} built slot cells on attribute bit 9");
     });
 
     Check("native target rings decode whole-distance rings 0 through 16", () =>

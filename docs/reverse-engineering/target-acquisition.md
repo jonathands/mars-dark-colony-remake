@@ -89,10 +89,11 @@ Before each step of a move, the word at command +8 selects a mode:
 
 ## Port implementation and adapters
 
-- Idle acquisition runs for teams 0-7 only. Team 9 critters run the same
-  handler natively, but the relation-matrix row 9 initializer is unrecovered,
-  so enabling it would invent critter aggression. Players never auto-target
-  teams 8/9, which matches the native filter.
+- Idle acquisition runs for teams 0-7 and critter team 9. The SCN loader
+  makes every player and team 9 mutually cooperative (see
+  [city-and-economy.md](city-and-economy.md)), so critter scans find nothing
+  but still draw from the shared stream. Players never auto-target teams 8/9,
+  which matches the native filter.
 - Computer teams are those with a nonzero SCN `%AI` profile; Single Player War
   marks every enabled non-local team as computer.
 - Hostile mines are never auto-targeted because the revealed bit is not

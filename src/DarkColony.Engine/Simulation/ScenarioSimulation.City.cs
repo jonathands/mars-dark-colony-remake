@@ -1,0 +1,70 @@
+using DarkColony.Engine.Data;
+using DarkColony.Engine.Scenario;
+using DarkColony.Engine.World;
+
+namespace DarkColony.Engine.Simulation;
+
+/// <summary>
+/// Player cities: the fixed building slots around each team's city origin
+/// (the pedestal), created by the SCN loader <c>0x41B920</c> through
+/// <c>0x444F14</c>, and the headquarters gate on Petra-7 income.
+/// </summary>
+public sealed partial class ScenarioSimulation
+{
+    /// <summary>Default passive income per player per 16 ticks (loader <c>0x41C3F0</c> sets player +0x19B4 = 3).</summary>
+    public const int NativePassiveP7Rate = 3;
+
+    private sealed record CityBuildingSeed(int Team, int Slot, int InstanceId, FixedPointPosition Position, int Health);
+
+    /// <summary>
+    /// Adds an actor for every %City slot 0-4 with a nonzero level: entity
+    /// from the build table for (race, level - 1, slot), placed at the slot's
+    /// fixed offset from the city origin and claiming the slot's footprint.
+    /// The loader allocates these as actors 0-119 before SCN placements, which
+    /// it then writes into the ground grid without a conflict test (<c>0x41AF14</c>),
+    /// so a placement inside a footprint takes that cell. The port appends the
+    /// buildings after placements to keep placement instance IDs stable and
+    /// claims only the footprint cells no placement took.
+    /// </summary>
+    private static List<CityBuildingSeed> SeedCityBuildings(
+        ScenarioDefinition scenario,
+        EntityCatalog catalog,
+        BuildingFootprintCatalog? footprints,
+        CellOccupancy ground,
+        List<WorldEntity> seeds)
+    {
+        var cities = new List<CityBuildingSeed>();
+        if (footprints is null) return cities;
+        foreach (var team in scenario.Teams.Where(team => team.Enabled && team.TeamId is >= 0 and < 8 && team.HasCity).OrderBy(team => team.TeamId))
+        {
+            if (team.Race is not { } race) continue;
+            var origin = team.CityOrigin!.Value;
+            for (var slot = 0; slot < team.CitySlots.Count; slot++)
+            {
+                var (level, health) = team.CitySlots[slot];
+                if (level <= 0 || !footprints.TryResolveBuildingEntity(race, level - 1, slot, out var entityId) ||
+                    (uint)entityId >= (uint)catalog.Entities.Count) continue;
+                var instanceId = seeds.Count + 1;
+                var position = footprints.CitySlotPosition(origin, slot);
+                var buildingHealth = health == -1 ? catalog[entityId].Health : health;
+                seeds.Add(new WorldEntity(instanceId, entityId, team.TeamId, position.Cell, position, buildingHealth, 0));
+                ground.ReplaceClaims(instanceId, footprints.CitySlotCells(origin, slot).Where(cell => !ground.TryGetOwner(cell, out _)));
+                cities.Add(new CityBuildingSeed(team.TeamId, slot, instanceId, position, buildingHealth));
+            }
+        }
+        return cities;
+    }
+
+    /// <summary>The actor in a team's city slot, if that building exists and is alive.</summary>
+    public SimulatedActor? CityBuilding(int team, int slot) =>
+        cityBuildings.TryGetValue((team, slot), out var instanceId) && actorsById.TryGetValue(instanceId, out var actor) && !actor.IsDestroyed
+            ? actor
+            : null;
+
+    /// <summary>
+    /// Player <c>+0xBD4</c> (slot 0 health) gates both passive income
+    /// (<c>0x419B4C</c>) and vent income (<c>0x413B31</c>). Scenarios without
+    /// declared cities (engine checks) are not gated.
+    /// </summary>
+    private bool CanEarnP7(int team) => !citiesDeclared || CityBuilding(team, 0) is not null;
+}

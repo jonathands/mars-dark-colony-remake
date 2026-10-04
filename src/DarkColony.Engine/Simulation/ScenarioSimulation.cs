@@ -84,6 +84,11 @@ public sealed partial class ScenarioSimulation
     private HashSet<int> computerTeams = [];
     // Per-tick team visibility snapshots used by the target selector.
     private readonly Dictionary<int, bool[]> scanVisibility = [];
+    // City building actor per (team, slot), created from %AISlots/%City.
+    private readonly Dictionary<(int Team, int Slot), int> cityBuildings = [];
+    // True when the SCN declares cities (%AISlots); P7 income then requires a
+    // live slot-0 headquarters, as player +0xBD4 gates it natively.
+    private bool citiesDeclared;
 
     private ScenarioSimulation(
         PathRegionMap path,
@@ -220,10 +225,20 @@ public sealed partial class ScenarioSimulation
             occupancy.ReplaceClaims(seed.InstanceId, cells);
         }
 
+        // Cities precede critter groups so nature spawns see their footprints.
+        var cityBuildings = SeedCityBuildings(scenario, catalog, footprints, ground, seeds);
         var autonomous = AutonomousSpawnSeeder.Seed(
             scenario.AutonomousSpawnGroups, catalog, path, ground, alternate, seeds.Count + 1);
         seeds.AddRange(autonomous.Entities);
         var actors = seeds.Select(seed => new SimulatedActor(seed, catalog[seed.EntityId])).ToArray();
+        foreach (var city in cityBuildings)
+        {
+            // City actors keep the slot's exact native position and %City health.
+            var actor = actors[city.InstanceId - 1];
+            actor.Movement.AdvanceVisual(city.Position.XRaw - actor.Movement.VisualPosition.XRaw,
+                city.Position.ZRaw - actor.Movement.VisualPosition.ZRaw);
+            actor.Health = city.Health;
+        }
         var resources = scenario.Teams.Where(team => team.Enabled)
             .ToDictionary(team => team.TeamId, team => Math.Max(0, team.StartingResource ?? 0));
         var races = scenario.Teams.Where(team => team.Enabled)
@@ -237,6 +252,8 @@ public sealed partial class ScenarioSimulation
         simulation.nativeRandomTable = randomTable ?? NativeRandomTable.Synthetic;
         simulation.targetRings = targetRings;
         simulation.computerTeams = scenario.Teams.Where(team => team.Enabled && team.AiProfile > 0).Select(team => team.TeamId).ToHashSet();
+        simulation.citiesDeclared = scenario.Teams.Any(team => team.CityOrigin is not null);
+        foreach (var city in cityBuildings) simulation.cityBuildings[(city.Team, city.Slot)] = city.InstanceId;
         simulation.SeedScenarioBuildingDependencies();
         simulation.PetraVents = scenario.Vents.Select((vent, index) => new PetraVent(index, new CellCoordinate(vent.X, vent.Z), vent.InitialState, vent.InitialReservoir)).ToArray();
         simulation.autonomousGroups.AddRange(scenario.AutonomousSpawnGroups.Select(group => new AutonomousGroupRuntime(

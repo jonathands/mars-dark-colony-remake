@@ -104,13 +104,12 @@ public sealed partial class ScenarioSimulation
     }
 
     /// <summary>
-    /// An actor whose native command stack is down to the idle command. Only
-    /// player teams 0-7 take part: the internal critter team 9 runs the same
-    /// handler natively, but its relation-matrix row is not recovered, so
-    /// enabling it would invent critter aggression.
+    /// An actor whose native command stack is down to the idle command. Critter
+    /// team 9 runs the same handler; the loader makes it cooperative with every
+    /// player, so its scans find nothing but still draw from the shared stream.
     /// </summary>
     private bool IsIdle(SimulatedActor actor) =>
-        !actor.IsDestroyed && actor.Seed.Team is >= 0 and < 8 &&
+        !actor.IsDestroyed && actor.Seed.Team is >= 0 and <= 9 && actor.Seed.Team != 8 &&
         actor.Playback is null && actor.MoveOrder is null &&
         actor.AttackTargetInstanceId is null && actor.AttackMoveDestination is null &&
         actor.GroundSpecialAttackTarget is null && actor.HarvestVentId is null &&
