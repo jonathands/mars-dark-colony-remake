@@ -6,8 +6,15 @@ using DarkColony.Engine.World;
 
 namespace DarkColony.Engine.Simulation;
 
-/// <summary>A mission's end: <c>bail a b</c> stores a in stat (0,0) and b in stat (7,0).</summary>
-public sealed record MissionOutcome(int Result, int OutcomeText, ulong EndsAtTick);
+/// <summary>
+/// A mission's end: <c>bail a b</c> stores a in stat (0,0) and b in stat (7,0).
+/// In the corpus a = 0 is a victory (text <c>.001</c>) and a = 1 a defeat whose
+/// text is <c>.00b</c>.
+/// </summary>
+public sealed record MissionOutcome(int Result, int OutcomeText, ulong EndsAtTick)
+{
+    public bool Victory => Result == 0;
+}
 
 /// <summary>A <c>msg</c> action: line <c>Index</c> of the scenario's <c>.msg</c> text and its display fields.</summary>
 public sealed record MissionMessageEvent(int Index, int Kind, int Field3, int Field4);
