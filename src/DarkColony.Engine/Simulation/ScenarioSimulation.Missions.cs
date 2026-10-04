@@ -281,7 +281,9 @@ public sealed partial class ScenarioSimulation
     {
         var player = values[0];
         if (!IsComputerPlayer(player)) return;
-        aiInboxes[player].Add(new AiMessage(simulationTicks, values.Skip(2).Take(values[1]).ToArray()));
+        var message = values.Skip(2).Take(values[1]).ToArray();
+        aiInboxes[player].Add(new AiMessage(simulationTicks, message));
+        DeliverAiMessage(player, message);
     }
 
     private int Evaluate(MissionAction action) => TriggerExpression.Evaluate(action.Expression!, new MissionContext(this, null));

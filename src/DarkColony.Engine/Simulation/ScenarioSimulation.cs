@@ -212,7 +212,8 @@ public sealed partial class ScenarioSimulation
             areaEffects: rules.AreaEffects,
             randomTable: rules.RandomTable,
             targetRings: rules.TargetRings,
-            buildTimings: rules.BuildTimings);
+            buildTimings: rules.BuildTimings,
+            krustyTables: rules.KrustyTables);
     }
 
     public static ScenarioSimulation Create(
@@ -232,7 +233,8 @@ public sealed partial class ScenarioSimulation
         TroopBuildTimings? buildTimings = null,
         MissionScript? missionScript = null,
         TerrainMap? terrain = null,
-        NativeVisionTrees? visionTrees = null)
+        NativeVisionTrees? visionTrees = null,
+        NativeKrustyTables? krustyTables = null)
     {
         var teamRaces = scenario.Teams.Where(team => team.Race is not null).ToDictionary(team => team.TeamId, team => team.Race!.Value);
         var seeds = new List<WorldEntity>();
@@ -312,6 +314,8 @@ public sealed partial class ScenarioSimulation
         if (!simulation.petraFlowRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraFlowRules));
         simulation.nativeRandomTable = randomTable ?? NativeRandomTable.Synthetic;
         simulation.targetRings = targetRings;
+        simulation.krustyTables = krustyTables;
+        simulation.RecordKrustyHomes(scenario);
         simulation.visionTrees = visionTrees ?? NativeVisionTrees.Flat;
         simulation.LoadAlliances(scenario);
         simulation.artifactContainers.AddRange(artifactContainers);
@@ -579,13 +583,13 @@ public sealed partial class ScenarioSimulation
         var unitProductions = events.UnitProductions;
         var researchCompletions = events.ResearchCompletions;
         var inspires = events.Inspires;
-        ApplyNativeOrders(events);
-        foreach (var scheduled in commands.OrderBy(command => command.Sequence))
+        var nativeUnitOrders = ApplyNativeOrders(events);
+        foreach (var command in nativeUnitOrders.Concat(commands.OrderBy(scheduled => scheduled.Sequence).Select(scheduled => scheduled.Command)))
         {
             // A unit order replaces the command stack, patrol included.
-            if (OrderedActorId(scheduled.Command) is { } orderedId && actorsById.TryGetValue(orderedId, out var ordered))
+            if (OrderedActorId(command) is { } orderedId && actorsById.TryGetValue(orderedId, out var ordered))
                 ordered.PatrolPoints = null;
-            if (scheduled.Command is PurchaseIntent purchase)
+            if (command is PurchaseIntent purchase)
             {
                 var eligibility = !teamEconomies.TryGetValue(purchase.TeamId, out var economy)
                     ? PurchaseEligibility.UnknownItem
@@ -597,52 +601,52 @@ public sealed partial class ScenarioSimulation
                     buildingPlacements.Add(built);
                 continue;
             }
-            if (scheduled.Command is HarvestVentIntent harvest)
+            if (command is HarvestVentIntent harvest)
             {
                 harvesterDeployments.Add(RequestHarvesterDeployment(harvest.EntityInstanceId, harvest.VentId));
                 continue;
             }
-            if (scheduled.Command is RetractHarvesterIntent retractHarvester)
+            if (command is RetractHarvesterIntent retractHarvester)
             {
                 harvesterDeployments.Add(RetractHarvester(retractHarvester));
                 continue;
             }
-            if (scheduled.Command is DeployMineIntent mine)
+            if (command is DeployMineIntent mine)
             {
                 mineDeployments.Add(BeginMineDeployment(mine));
                 continue;
             }
-            if (scheduled.Command is DeployTowerIntent tower)
+            if (command is DeployTowerIntent tower)
             {
                 towerDeployments.Add(DeployTower(tower));
                 continue;
             }
-            if (scheduled.Command is DeployStealIntent steal)
+            if (command is DeployStealIntent steal)
             {
                 stealDeployments.Add(DeploySteal(steal));
                 continue;
             }
-            if (scheduled.Command is RetractStealIntent retractSteal)
+            if (command is RetractStealIntent retractSteal)
             {
                 stealDeployments.Add(RetractSteal(retractSteal));
                 continue;
             }
-            if (scheduled.Command is PlaceBuildingIntent placement)
+            if (command is PlaceBuildingIntent placement)
             {
                 buildingPlacements.Add(PlaceBuilding(placement));
                 continue;
             }
-            if (scheduled.Command is ProduceUnitIntent production)
+            if (command is ProduceUnitIntent production)
             {
                 unitProductions.Add(ProduceUnit(production));
                 continue;
             }
-            if (scheduled.Command is ResearchIntent research)
+            if (command is ResearchIntent research)
             {
                 researchCompletions.Add(CompleteResearch(research));
                 continue;
             }
-            if (scheduled.Command is StopIntent stop && actorsById.TryGetValue(stop.EntityInstanceId, out var stoppedActor))
+            if (command is StopIntent stop && actorsById.TryGetValue(stop.EntityInstanceId, out var stoppedActor))
             {
                 if (stoppedActor.IsDestroyed) continue;
                 StopAfterCurrentStep(stoppedActor);
@@ -658,32 +662,32 @@ public sealed partial class ScenarioSimulation
                 if (stoppedActor.DeployedEntityId is null) DetachHarvester(stoppedActor);
                 continue;
             }
-            if (scheduled.Command is AttackIntent attack)
+            if (command is AttackIntent attack)
             {
                 attacks.Add(IssueAttackOrder(attack));
                 continue;
             }
-            if (scheduled.Command is GroundSpecialAttackIntent groundSpecial)
+            if (command is GroundSpecialAttackIntent groundSpecial)
             {
                 groundSpecialAttacks.Add(IssueGroundSpecialAttack(groundSpecial));
                 continue;
             }
-            if (scheduled.Command is HealAreaIntent heal)
+            if (command is HealAreaIntent heal)
             {
                 heals.AddRange(IssueAreaHeal(heal));
                 continue;
             }
-            if (scheduled.Command is InspireTroopsIntent inspire)
+            if (command is InspireTroopsIntent inspire)
             {
                 inspires.Add(BeginInspire(inspire));
                 continue;
             }
-            if (scheduled.Command is AttackMoveIntent attackMove)
+            if (command is AttackMoveIntent attackMove)
             {
                 attackMoves.Add(IssueAttackMoveOrder(attackMove));
                 continue;
             }
-            if (scheduled.Command is not MoveIntent move || !actorsById.TryGetValue(move.EntityInstanceId, out var actor)) continue;
+            if (command is not MoveIntent move || !actorsById.TryGetValue(move.EntityInstanceId, out var actor)) continue;
             if (actor.IsDestroyed) continue;
             if (EffectiveDefinition(actor).MovementSpeed <= 0)
             {

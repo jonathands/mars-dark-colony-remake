@@ -4,57 +4,76 @@ using DarkColony.Engine.Data;
 namespace DarkColony.Engine.Simulation;
 
 /// <summary>
-/// Network commands 9 (build, <c>0x41C8D4</c>) and 10 (troop order,
-/// <c>0x41C7F8</c>) as computer players send them (<c>0x40C13C</c>,
-/// <c>0x40C168</c>), and the dependency checks their planner uses. The
-/// sender deducts the price itself when it sends; the command runs at the
-/// next update's command phase.
+/// The network commands a computer player sends: 9 (build, <c>0x41C8D4</c>,
+/// sent by <c>0x40C13C</c>), 10 (troop order, <c>0x41C7F8</c>, <c>0x40C168</c>),
+/// and the unit orders of <c>0x40C414</c> (command 7 waypoints followed by
+/// command 5 per unit). The sender deducts any price itself when it sends;
+/// the commands run at the next update's command phase, in the order sent,
+/// before the local player's commands.
 /// </summary>
 public sealed partial class ScenarioSimulation
 {
-    private readonly List<NativeOrder> pendingNativeOrders = [];
+    private readonly List<object> pendingNativeOrders = [];
 
-    private readonly record struct NativeOrder(int Team, int ItemId, int Count);
+    private readonly record struct NativeBuildOrder(int Team, int ItemId);
 
-    /// <summary>Queues a command 9 or 10 for the next update.</summary>
-    internal void QueueNativeOrder(int team, int itemId, int count = 1) => pendingNativeOrders.Add(new NativeOrder(team, itemId, count));
+    private readonly record struct NativeTroopOrder(int Team, int ItemId, int EntityId, int Count);
 
-    /// <summary>Deducts a price the way <c>0x4566AC</c> and its siblings do: only when the player can pay it.</summary>
+    /// <summary>Queues command 9 for a building item.</summary>
+    internal void QueueNativeBuild(int team, int itemId) => pendingNativeOrders.Add(new NativeBuildOrder(team, itemId));
+
+    /// <summary>Queues command 10: <paramref name="count"/> copies of the troop's entity type.</summary>
+    internal void QueueNativeTroop(int team, int itemId, int entityId, int count = 1) =>
+        pendingNativeOrders.Add(new NativeTroopOrder(team, itemId, entityId, count));
+
+    /// <summary>Queues a unit order (commands 7 and 5) as the equivalent port command.</summary>
+    internal void QueueNativeUnitOrder(WorldCommand command) => pendingNativeOrders.Add(command);
+
+    /// <summary>Deducts a price the way the planner's purchases do: only when the player can pay it.</summary>
     internal bool TrySpendP7(int team, int amount) =>
         teamEconomies.TryGetValue(team, out var economy) && economy.TrySpend(amount);
 
     /// <summary>The player's P7 (<c>+0xBAC</c>).</summary>
     internal int P7(int team) => teamEconomies.TryGetValue(team, out var economy) ? economy.P7 : 0;
 
-    /// <summary>Runs the commands queued during the previous update, in order.</summary>
-    private void ApplyNativeOrders(TickEvents events)
+    /// <summary>
+    /// Runs the purchases queued during the previous update, in order, and
+    /// returns the unit orders, which the caller dispatches like player commands.
+    /// </summary>
+    private List<WorldCommand> ApplyNativeOrders(TickEvents events)
     {
-        if (pendingNativeOrders.Count == 0) return;
+        var unitOrders = new List<WorldCommand>();
+        if (pendingNativeOrders.Count == 0) return unitOrders;
         var orders = pendingNativeOrders.ToArray();
         pendingNativeOrders.Clear();
         foreach (var order in orders)
         {
-            if (dependencyCatalog?.TryGet(order.ItemId, out var item) != true) continue;
-            if (item.IsTroop && item.TroopEntityId is { } entityId)
+            switch (order)
             {
-                // Command 10: count copies join the troop's queue (entity value 21).
-                if (!productionQueues.TryGetValue((order.Team, EntityDefinitionFor(entityId).ProductionQueue), out var queue)) continue;
-                for (var copy = 0; copy < order.Count; copy++) queue.Items.Add((item.Id, entityId));
-            }
-            else if (item.IsBuilding)
-            {
-                // Command 9: a slot that already holds this variant at full
-                // health refunds the price; otherwise the slot is rebuilt.
-                var slot = item.BuildingSlot!.Value;
-                if (CityBuilding(order.Team, slot) is { } current && CitySlotVariant(order.Team, slot) == item.BuildingVariant &&
-                    current.Health >= current.MaximumHealth)
-                {
-                    if (teamEconomies.TryGetValue(order.Team, out var economy)) economy.AddP7(item.Cost);
-                    continue;
-                }
-                if (BuildCitySlot(order.Team, item) is { } built) events.BuildingPlacements.Add(built);
+                case WorldCommand command:
+                    unitOrders.Add(command);
+                    break;
+                case NativeTroopOrder troop:
+                    // Command 10 appends count copies of the type to its queue
+                    // (entity value 20) without any check.
+                    if (!productionQueues.TryGetValue((troop.Team, EntityDefinitionFor(troop.EntityId).ProductionQueue), out var queue)) break;
+                    for (var copy = 0; copy < troop.Count; copy++) queue.Items.Add((troop.ItemId, troop.EntityId));
+                    break;
+                case NativeBuildOrder build when dependencyCatalog?.TryGet(build.ItemId, out var item) == true && item.IsBuilding:
+                    // Command 9: a slot that already holds this variant at full
+                    // health refunds the price; otherwise the slot is rebuilt.
+                    var slot = item.BuildingSlot!.Value;
+                    if (CityBuilding(build.Team, slot) is { } current && CitySlotVariant(build.Team, slot) == item.BuildingVariant &&
+                        current.Health >= current.MaximumHealth)
+                    {
+                        if (teamEconomies.TryGetValue(build.Team, out var economy)) economy.AddP7(item.Cost);
+                        break;
+                    }
+                    if (BuildCitySlot(build.Team, item) is { } built) events.BuildingPlacements.Add(built);
+                    break;
             }
         }
+        return unitOrders;
     }
 
     /// <summary>
@@ -62,8 +81,8 @@ public sealed partial class ScenarioSimulation
     /// building of at least the item's variant, 1 when the item can be
     /// built (slot and variant out), and 2 otherwise: an unknown, disabled,
     /// or non-building item, another race's item, or a prerequisite that is
-    /// not itself at 0. A slot that a transport is using (<c>+0xC10</c>)
-    /// also gives 2; the port does not model those transport slots.
+    /// not itself at 0. A slot whose new building is still rising
+    /// (<c>+0xC10</c>) also gives 2; the port builds at once and has no such state.
     /// </summary>
     internal int NativeBuildingStatus(int team, int itemId, out int slot, out int variant)
     {
@@ -98,6 +117,9 @@ public sealed partial class ScenarioSimulation
         cost = item.Cost;
         return true;
     }
+
+    /// <summary>The price of an item (<c>0x438074</c>), or 0 for an unknown one.</summary>
+    internal int NativeItemCost(int itemId) => dependencyCatalog?.TryGet(itemId, out var item) == true ? item.Cost : 0;
 
     /// <summary>The build variant of the live building in a city slot (player <c>+0xC5C + slot * 4</c>).</summary>
     internal int? CitySlotVariant(int team, int slot)

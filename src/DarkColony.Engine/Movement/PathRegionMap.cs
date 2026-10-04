@@ -56,6 +56,40 @@ public sealed class PathRegionMap
 
     public byte NextRegion(byte sourceRegion, byte targetRegion) => Routes.Span[sourceRegion * 256 + targetRegion];
 
+    private byte[][]? regionNeighbors;
+
+    /// <summary>
+    /// The neighbor list the PTH loader builds after the route table
+    /// (<c>0x442D1F</c>, 32 bytes per region at map <c>+0x984A8</c>): for regions
+    /// 1-254, the distinct nonzero <see cref="NextRegion"/> values toward targets
+    /// 1-254, in order of first appearance (at most 31). Regions 0 and 255 have none.
+    /// </summary>
+    public IReadOnlyList<byte> RegionNeighbors(byte region)
+    {
+        if (regionNeighbors is null)
+        {
+            var lists = new byte[256][];
+            var routes = Routes.Span;
+            var found = new List<byte>(32);
+            for (var source = 0; source < 256; source++)
+            {
+                found.Clear();
+                if (source is > 0 and < 255)
+                    for (var target = 1; target < 255; target++)
+                    {
+                        var next = routes[source * 256 + target];
+                        if (next == 0 || found.Contains(next)) continue;
+                        // The loader asserts the list never reaches 32 entries.
+                        if (found.Count == 31) throw new InvalidDataException($"PTH region {source} has more than 31 neighbors.");
+                        found.Add(next);
+                    }
+                lists[source] = [.. found];
+            }
+            regionNeighbors = lists;
+        }
+        return regionNeighbors[region];
+    }
+
     public CoarseRegionRoute BuildCoarseRoute(byte sourceRegion, byte targetRegion)
     {
         var route = new List<byte> { sourceRegion };

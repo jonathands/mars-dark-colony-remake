@@ -92,6 +92,7 @@ public sealed partial class ScenarioSimulation
     private void ApplyDamage(SimulatedActor target, int damage, ICollection<DestroyedActorEvent> destroyed, int? attackerTeam)
     {
         target.Health = Math.Max(0, target.Health - damage);
+        target.KrustyHit = true;
         if (target.Health != 0) return;
         RecordMissionKill(target, attackerTeam);
         Destroy(target, destroyed);

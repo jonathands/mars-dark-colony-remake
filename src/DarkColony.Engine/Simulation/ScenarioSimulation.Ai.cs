@@ -84,9 +84,16 @@ public sealed partial class ScenarioSimulation
     public KrustyBrain? KrustyState(int player) => (uint)player < PlayerCount ? krustyBrains[player] : null;
 
     /// <summary><c>0x44BE40</c>: creates the state on first use (<c>0x44BD2C</c>), then plans.</summary>
-    private void ThinkKrusty(int player)
+    private void ThinkKrusty(int player) => KrustyBrainFor(player).Think();
+
+    private KrustyBrain KrustyBrainFor(int player) => krustyBrains[player] ??= new KrustyBrain(this, player);
+
+    /// <summary>
+    /// <c>0x41AD68</c> calls the controller's message method at once; Krusty's
+    /// (<c>0x44BF54</c>) creates the state if needed. Other profiles ignore it.
+    /// </summary>
+    private void DeliverAiMessage(int player, IReadOnlyList<int> values)
     {
-        var brain = krustyBrains[player] ??= new KrustyBrain(this, player);
-        brain.Think();
+        if (aiProfiles[player] == KrustyAiProfile) KrustyBrainFor(player).HandleMessage(values);
     }
 }

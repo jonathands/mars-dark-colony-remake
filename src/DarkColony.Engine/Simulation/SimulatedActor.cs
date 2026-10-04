@@ -137,6 +137,23 @@ public sealed class SimulatedActor
     /// <summary>Command 9's word: the point the next leg heads for.</summary>
     public int PatrolIndex { get; internal set; }
     /// <summary>
+    /// Byte <c>+0x11</c>, written only by the computer player: the region a
+    /// harvester's vent lies in, or the region an army member was last sent to.
+    /// </summary>
+    public int KrustyZone { get; internal set; }
+    /// <summary>
+    /// Byte <c>+0xCC</c>, the computer player's per-unit state: 0 new, 2 joined an
+    /// army task, 1 arrived; a scout uses 4 (random target), 5 (bombing a zone)
+    /// and 6 (bombing run over).
+    /// </summary>
+    public int KrustyState { get; internal set; }
+    /// <summary>Bytes <c>+0xCD</c>/<c>+0xCE</c>: the cell seen at the computer player's last check.</summary>
+    internal CellCoordinate KrustyLastCell { get; set; }
+    /// <summary>Byte <c>+0xCF</c>: consecutive checks spent on that cell.</summary>
+    public int KrustyStuckChecks { get; internal set; }
+    /// <summary>Byte <c>+0xC9</c>: set by every hit (<c>0x441930</c>), cleared by the scout group.</summary>
+    internal bool KrustyHit { get; set; }
+    /// <summary>
     /// An artifact site's (entity 37) idle record word (<c>0x4131BC</c>):
     /// updates left before the harvester standing on it digs out the next item.
     /// </summary>

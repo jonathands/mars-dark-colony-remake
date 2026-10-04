@@ -1388,6 +1388,88 @@ Check("computer players think on the native cadence", () =>
     Equal(false, simulation.KrustyState(3) is not null);
 });
 
+// A Krusty test world: entity ids 0-7 follow the native categories (2 a
+// ground fighter, 5 a flier, 6 the harvester), one region unless given a PTH.
+string KrustyEntity(string code, int weapon, int movementClass) =>
+    $"{code} 0 255 25 4 4 {weapon} -1 -1 1 1 1 100 {movementClass} 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0";
+EntityCatalog KrustyCatalog() => EntityCatalog.Parse("8\n" + string.Join('\n',
+    KrustyEntity("TRSC", 1, 0), KrustyEntity("TURR", -1, 0), KrustyEntity("REAP", 1, 0), KrustyEntity("BARR", 1, 0),
+    KrustyEntity("SARG", 1, 0), KrustyEntity("SCGM", 1, 1), KrustyEntity("EXPL", -1, 0), KrustyEntity("ATRIL", -1, 0)) + "\n");
+ScenarioSimulation KrustyWorld(string placements, PathRegionMap? map = null) => ScenarioSimulation.Create(
+    ScenarioDefinition.Parse("tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n" +
+        "TEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n0\n%Race\n0\n%Money\n3\n%AI\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" + placements),
+    KrustyCatalog(), map ?? OpenPath(8, 4),
+    weaponCatalog: WeaponCatalog.Parse("1\n1 BULLET 0 0 20 100 90 5 0 0 0 0 0\n"),
+    damageMatrix: DamageMatrix.Parse("10\n9\n" + string.Concat(Enumerable.Repeat("100 100 100 100 100 100 100 100 100 100\n", 9))));
+
+Check("Krusty regions use the PTH neighbor lists, hop counts, and two-step path danger", () =>
+{
+    // A chain 1-2-3-4: each region's route to any other goes through its neighbor.
+    var bytes = new byte[PathRegionMap.RouteTableSize + 4];
+    for (var from = 1; from <= 4; from++)
+        for (var to = 1; to <= 4; to++)
+            if (from != to) bytes[from * 256 + to] = (byte)(to > from ? from + 1 : from - 1);
+    new byte[] { 1, 2, 3, 4 }.CopyTo(bytes, PathRegionMap.RouteTableSize);
+    var map = PathRegionMap.Parse(bytes, 4, 1);
+    // 0x442D1F: distinct next hops in order of first appearance.
+    Equal(new byte[] { 2 }, map.RegionNeighbors(1).ToArray());
+    Equal(new byte[] { 1, 3 }, map.RegionNeighbors(2).ToArray());
+    Equal(0, map.RegionNeighbors(0).Count);
+    var simulation = KrustyWorld("3 0 2 1 -1 0\n", map);
+    var brain = new KrustyBrain(simulation, 1);
+    Equal((3, 0, 0xFF), (brain.HopDistance(1, 4), brain.HopDistance(2, 2), brain.HopDistance(0, 3)));
+    // Hop distances from home (region 1) and a cell of each region.
+    Equal(new[] { 0, 1, 2, 3 }, brain.Zones.Skip(1).Take(4).Select(zone => zone.Distance).ToArray());
+    Equal(new CellCoordinate(2, 0), brain.Zones[3].Centroid);
+    // 0x45817C: the route, its neighbors, and theirs (two steps).
+    brain.Zones[4].OwnerB = 0;
+    brain.Zones[4].StrengthB = 50;
+    Equal((50, 50, 0, 0), (brain.PathDanger(1, 4, 1), brain.PathDanger(1, 2, 1), brain.PathDanger(1, 1, 1), brain.PathDanger(1, 4, 0)));
+    Equal(-1, brain.PathDanger(0, 4, 1));
+});
+
+Check("Krusty influence lets the stronger side own a region's slots and marks contested ones", () =>
+{
+    // 0x456AD0, in slot order: the Human soldier claims the region, the first
+    // Krusty soldier cancels it and takes the slots, the second adds to them.
+    var simulation = KrustyWorld("1 1 0 0 -1 0\n2 1 2 1 -1 0\n3 1 2 1 -1 0\n");
+    for (var tick = 0; tick < 4; tick++) simulation.Step([]);
+    var zone = simulation.KrustyState(1)!.Zones[1];
+    // Ground strength 25 * M[0][1] / M[1][1]; anti-air M[0][2]; both 8.8 factors 256.
+    Equal((1, 25, 1, 256, 0xFF), (zone.OwnerB, zone.StrengthB, zone.OwnerA, zone.StrengthA, zone.OwnerC));
+    Equal(1, zone.Flags & 1);
+    Equal(0, simulation.KrustyState(1)!.PathDanger(1, 1, 1));
+});
+
+Check("Krusty hands harvesters, fliers, and a quarter of the rest to their groups", () =>
+{
+    // 0x457568 with the 0xC0 ratio: guards take a unit while 3 x their count
+    // stays within the attackers'. 0x458F3C spreads attackers over tasks 0/1
+    // by count x 4 x (task + 1).
+    var simulation = KrustyWorld("1 1 2 1 -1 0\n2 1 2 1 -1 0\n3 1 2 1 -1 0\n4 1 2 1 -1 0\n5 1 6 1 -1 0\n6 1 5 1 -1 0\n");
+    for (var tick = 0; tick < 4; tick++) simulation.Step([]);
+    var brain = simulation.KrustyState(1)!;
+    Equal(new[] { 1 }, brain.Groups[1].Tasks[0].Members.ToArray());
+    Equal(new[] { 4, 2 }, brain.Groups[2].Tasks[0].Members.ToArray());
+    Equal(new[] { 3 }, brain.Groups[2].Tasks[1].Members.ToArray());
+    Equal(new[] { 5 }, brain.Groups[0].Tasks[0].Members.ToArray());
+    Equal(new[] { 6 }, brain.Groups[3].Tasks[0].Members.ToArray());
+    Equal((1, 0), brain.MembershipOf(1)!.Value);
+    // The census counts every harvester-group member as a harvester.
+    Equal(1, brain.Groups[0].CategoryCounts[6]);
+});
+
+Check("aimsg settings reach the Krusty planner", () =>
+{
+    // 0x44BF54: value 0 sets the guard share in percent of 256; 14 an ally.
+    var simulation = KrustyWorld("1 1 2 1 -1 0\n");
+    for (var tick = 0; tick < 4; tick++) simulation.Step([]);
+    var brain = simulation.KrustyState(1)!;
+    Equal(true, brain.HandleMessage([0, 50]));
+    Equal(128, brain.GuardShare);
+    Equal(false, brain.HandleMessage([7, 1, 1]));
+});
+
 Check("noundeploy keeps deployed harvesters on their vents", () =>
 {
     var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
@@ -2953,6 +3035,59 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(4, outcome.OutcomeText);
         Equal(1, simulation.PlayerStatistic(0, 0));
         Equal(4, simulation.PlayerStatistic(7, 0));
+    });
+
+    Check("human05's Krusty base builds, trains, harvests, guards its vents and attacks", () =>
+    {
+        // Team 2 (Gray, profile 3, 4000 P7) with no player orders at all.
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var (simulation, _) = DeterminismHarness.Load(install, rules, "human/human05");
+        var built = 0;
+        var trained = 0;
+        var attacked = false;
+        for (var tick = 0; tick < 6000; tick++)
+        {
+            simulation.Step([]);
+            built += simulation.LastBuildingPlacements.Count(placement => placement.TeamId == 2);
+            trained += simulation.LastUnitProductions.Count(production => production.TeamId == 2 && production.Outcome == UnitProductionOutcome.Produced);
+            attacked |= simulation.KrustyState(2)?.Groups[2].Tasks.Any(task => task.Active && task.Mode == KrustyTaskMode.Attacking) == true;
+        }
+        var brain = simulation.KrustyState(2)!;
+        if (built < 2 || trained < 8) throw new InvalidOperationException($"Built {built} buildings and trained {trained} troops.");
+        // Deployed harvesters keep their vent region; a guard task holds each.
+        var vents = brain.Groups[0].Tasks[0].Members.Select(id => simulation.Actor(id)!).Where(actor => actor.DeployedEntityId is not null).ToArray();
+        if (vents.Length == 0) throw new InvalidOperationException("No harvester deployed.");
+        var guarded = brain.Groups[1].Tasks.Skip(1).Where(task => task.Active).Select(task => task.Target).ToHashSet();
+        Equal(true, vents.All(actor => guarded.Contains(actor.KrustyZone)));
+        Equal(true, attacked);
+    });
+
+    Check("in a local War on Dead Man's Wharf the computer harvests, builds, trains and attacks", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var file = install.DataFile("scenario", "mplayer", "d2play01.scn");
+        var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+        var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+        var scenario = ScenarioDefinition.Load(file).WithComputerOpponents(0);
+        var simulation = ScenarioSimulation.Create(scenario, path, rules, MissionScript.LoadForScenario(file), map);
+        Equal(ScenarioSimulation.KrustyAiProfile, simulation.AiProfile(1));
+        var built = 0;
+        var trained = 0;
+        var deployed = false;
+        var attacked = false;
+        for (var tick = 0; tick < 10000; tick++)
+        {
+            simulation.Step([]);
+            built += simulation.LastBuildingPlacements.Count(placement => placement.TeamId == 1);
+            trained += simulation.LastUnitProductions.Count(production => production.TeamId == 1 && production.Outcome == UnitProductionOutcome.Produced);
+            deployed |= simulation.LastHarvesterDeployments.Any(deployment =>
+                simulation.Actor(deployment.EntityInstanceId)?.Seed.Team == 1 && deployment.Outcome == HarvesterDeploymentOutcome.Attached);
+            attacked |= simulation.KrustyState(1)?.Groups[2].Tasks.Any(task => task.Active && task.Mode == KrustyTaskMode.Attacking) == true;
+        }
+        if (built < 1 || trained < 5 || !deployed || !attacked)
+            throw new InvalidOperationException($"Built {built}, trained {trained}, deployed {deployed}, attacked {attacked}.");
     });
 
     Check("native sight: tree occlusion, shaded cells, day/night blend and the 16-update refresh", () =>

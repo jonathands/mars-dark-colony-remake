@@ -20,7 +20,8 @@ public sealed record SimulationRules(
     NativeRandomTable RandomTable,
     NativeTargetRings TargetRings,
     TroopBuildTimings? BuildTimings = null,
-    NativeVisionTrees? VisionTrees = null)
+    NativeVisionTrees? VisionTrees = null,
+    NativeKrustyTables? KrustyTables = null)
 {
     public static SimulationRules Load(GameInstallation installation)
     {
@@ -36,6 +37,7 @@ public sealed record SimulationRules(
             NativeRandomTable.Load(installation.ExecutablePath),
             NativeTargetRings.Load(installation.ExecutablePath),
             TroopBuildTimings.Load(entities, installation),
-            NativeVisionTrees.Load(installation.ExecutablePath));
+            NativeVisionTrees.Load(installation.ExecutablePath),
+            NativeKrustyTables.Load(installation.ExecutablePath));
     }
 }

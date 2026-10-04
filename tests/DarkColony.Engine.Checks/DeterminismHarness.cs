@@ -373,7 +373,7 @@ internal static class DeterminismCli
         var update = args.Contains("--update-goldens");
         var dump = Array.IndexOf(args, "--dump-digest");
         var summary = Array.IndexOf(args, "--event-summary");
-        string[] modes = ["--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map"];
+        string[] modes = ["--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report"];
         if (!args.Any(modes.Contains)) return false;
 
         var dataIndex = Array.IndexOf(args, "--data");
@@ -451,6 +451,13 @@ internal static class DeterminismCli
             return true;
         }
 
+        var aiReport = Array.IndexOf(args, "--ai-report");
+        if (aiReport >= 0)
+        {
+            AiReport(installation, rules, args[aiReport + 1], ulong.Parse(args[aiReport + 2]), args.Contains("--war"));
+            return true;
+        }
+
         if (summary >= 0)
         {
             var counts = DeterminismHarness.EventSummary(installation, rules, args[summary + 1], ulong.Parse(args[summary + 2]));
@@ -458,6 +465,50 @@ internal static class DeterminismCli
             return true;
         }
 
+        return RunDump(installation, rules, args, dump);
+    }
+
+    /// <summary>
+    /// <c>--ai-report &lt;scenario&gt; &lt;ticks&gt; [--war]</c>: runs without player
+    /// commands (with <c>--war</c>, every other enabled team gets the Krusty
+    /// planner) and prints each computer player's state every 600 ticks.
+    /// </summary>
+    private static void AiReport(GameInstallation installation, SimulationRules rules, string scenario, ulong ticks, bool war)
+    {
+        var file = installation.DataFile(["scenario", .. scenario.Split('/')]) + ".scn";
+        var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+        var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+        var definition = ScenarioDefinition.Load(file);
+        var local = definition.Teams.First(team => team.Enabled).TeamId;
+        if (war) definition = definition.WithComputerOpponents(local);
+        var simulation = ScenarioSimulation.Create(definition, path, rules, MissionScript.LoadForScenario(file), map);
+        var built = new Dictionary<int, int>();
+        for (ulong tick = 1; tick <= ticks; tick++)
+        {
+            simulation.Step([]);
+            foreach (var placement in simulation.LastBuildingPlacements)
+                built[placement.TeamId] = built.GetValueOrDefault(placement.TeamId) + 1;
+            if (tick % 600 != 0 && tick != ticks) continue;
+            Console.WriteLine($"-- tick {tick}");
+            for (var player = 0; player < 8; player++)
+            {
+                if (simulation.KrustyState(player) is not { } brain) continue;
+                var units = simulation.Actors.Where(actor => actor.Seed.Team == player && !actor.IsDestroyed)
+                    .GroupBy(actor => simulation.EffectiveDefinition(actor).Code).OrderBy(group => group.Key)
+                    .Select(group => $"{group.Key}x{group.Count()}");
+                Console.WriteLine($"  p{player} P7={simulation.ResourceForTeam(player)} thinks={brain.Thinks} built={built.GetValueOrDefault(player)} units: {string.Join(' ', units)}");
+                foreach (var group in brain.Groups)
+                {
+                    var tasks = group.Tasks.Select((task, index) => (task, index)).Where(entry => entry.task.Active)
+                        .Select(entry => $"t{entry.index}[{entry.task.Mode} {entry.task.Current}->{entry.task.Target} n={entry.task.Members.Count}]");
+                    Console.WriteLine($"    g{group.Index}: {string.Join(' ', tasks)}");
+                }
+            }
+        }
+    }
+
+    private static bool RunDump(GameInstallation installation, SimulationRules rules, string[] args, int dump)
+    {
         var scenario = args[dump + 1];
         var tick = ulong.Parse(args[dump + 2]);
         var output = args[dump + 3];
