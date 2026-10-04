@@ -1,0 +1,133 @@
+using DarkColony.Engine.Commands;
+using DarkColony.Engine.Combat;
+using DarkColony.Engine.Data;
+using DarkColony.Engine.Economy;
+using DarkColony.Engine.Time;
+using DarkColony.Engine.Movement;
+using DarkColony.Engine.Scenario;
+using DarkColony.Engine.World;
+
+namespace DarkColony.Engine.Simulation;
+
+public sealed class SimulatedActor
+{
+    internal SimulatedActor(WorldEntity seed, EntityDefinition definition)
+    {
+        Seed = seed;
+        Definition = definition;
+        Movement = new MovementState(seed.SpawnCell);
+        Facing = new FacingState();
+        Health = definition.Health;
+        MaximumHealth = definition.Health;
+        AbilityCharge = NativeInitialAbilityCharge;
+    }
+
+    public WorldEntity Seed { get; }
+    public EntityDefinition Definition { get; }
+    public MovementState Movement { get; }
+    public FacingState Facing { get; }
+    /// <summary>Authoritative live health; catalog health is the immutable maximum.</summary>
+    public int Health { get; internal set; }
+    /// <summary>
+    /// Current form's health ceiling. Most actors keep their seed definition,
+    /// but an in-place deployment must not retain a mobile form's stat cap.
+    /// </summary>
+    public int MaximumHealth { get; internal set; }
+    public bool IsDestroyed => Health <= 0;
+    public const int NativeInitialAbilityCharge = 0x40;
+    public const int NativeMaximumAbilityCharge = 0xff;
+    /// <summary>Native actor byte +0x0a, used as the BEON/ZISP heal charge.</summary>
+    public int AbilityCharge { get; internal set; }
+    public PackedPathPlayback? Playback { get; internal set; }
+    public ActiveMoveOrder? MoveOrder { get; internal set; }
+    /// <summary>Native actor byte +0x35: an allied mover's blocked direction.</summary>
+    public PathDirection? YieldNotificationDirection { get; internal set; }
+    /// <summary>
+    /// The vent this harvester is travelling to or is currently attached to.
+    /// This is authoritative economy state, rather than a presentation-only
+    /// Deploy cursor mode.
+    /// </summary>
+    public int? HarvestVentId { get; internal set; }
+    /// <summary>
+    /// Data-resolved visual form used while a mobile P7 harvester is deployed.
+    /// The seed identity remains the original Exploiter/Slug so economy and
+    /// commands do not pretend this is a separately spawned building.
+    /// </summary>
+    public int? DeployedEntityId { get; internal set; }
+    public int? AttackTargetInstanceId { get; internal set; }
+    /// <summary>Pending one-shot opcode-0x1b/state-18 ground target.</summary>
+    public CellCoordinate? GroundSpecialAttackTarget { get; internal set; }
+    /// <summary>Player destination retained while attack-move pursues hostiles.</summary>
+    public CellCoordinate? AttackMoveDestination { get; internal set; }
+    /// <summary>
+    /// Native actor byte <c>+0x34</c>: shots fired in the active weapon burst.
+    /// It resets when the weapon's decoded burst limit is reached.
+    /// </summary>
+    public int BurstShotCount { get; internal set; }
+    public int CooldownTicks { get; internal set; }
+    /// <summary>Remaining ticks in the native state-13 mine deployment.</summary>
+    public int MineDeployTicksRemaining { get; internal set; }
+    /// <summary>Remaining ticks in the commander's native state-13 cast.</summary>
+    public int InspireCastTicksRemaining { get; internal set; }
+    /// <summary>
+    /// Native actor byte <c>+0xd6</c>. A nonzero value forces exact-center aim;
+    /// it is decremented once per 16 world updates.
+    /// </summary>
+    public int InspirationTicksRemaining { get; internal set; }
+    /// <summary>Native actor word <c>+0xd8</c>: the commander supplying Inspire.</summary>
+    public int? InspirationSourceActorInstanceId { get; internal set; }
+}
+
+/// <summary>Persistent player intent, segmented by the native 32-step buffer.</summary>
+public sealed class ActiveMoveOrder
+{
+    // dc.exe keeps a fixed eight-point player waypoint list. Retaining that
+    // boundary in the authoritative model makes UI and later replay/network
+    // input agree on what a single order can contain.
+    public const int MaximumWaypoints = 8;
+    public ActiveMoveOrder(CellCoordinate target) => Target = target;
+
+    private readonly Queue<CellCoordinate> waypoints = [];
+
+    /// <summary>The destination currently being segmented into packed local paths.</summary>
+    public CellCoordinate Target { get; private set; }
+    public int PendingWaypointCount => waypoints.Count;
+    /// <summary>
+    /// Remaining player destinations in execution order. This is a read-only
+    /// projection for HUD/replay inspection; queue mutation remains internal
+    /// to deterministic command processing.
+    /// </summary>
+    public IReadOnlyList<CellCoordinate> PendingWaypoints => waypoints.ToArray();
+    public int SegmentCount { get; internal set; }
+    public int BlockedTicksRemaining { get; internal set; }
+    public CellCoordinate? LastBlockedCell { get; internal set; }
+
+    public bool TryAppendWaypoint(CellCoordinate target)
+    {
+        // The active destination is the predecessor while the queued list is
+        // empty. Treat it exactly like the tail of a non-empty queue so a
+        // Shift-click on the current marker cannot insert a zero-length first
+        // waypoint ahead of the player's next real destination.
+        var previous = waypoints.Count == 0 ? Target : waypoints.Last();
+        if (waypoints.Count >= MaximumWaypoints || previous == target) return false;
+        waypoints.Enqueue(target);
+        return true;
+    }
+
+    public bool AdvanceWaypoint()
+    {
+        if (!waypoints.TryDequeue(out var next)) return false;
+        Target = next;
+        SegmentCount = 0;
+        BlockedTicksRemaining = 0;
+        LastBlockedCell = null;
+        return true;
+    }
+
+    internal void JitterTarget(CellCoordinate target)
+    {
+        Target = target;
+        SegmentCount = 0;
+        BlockedTicksRemaining = 0;
+    }
+}
