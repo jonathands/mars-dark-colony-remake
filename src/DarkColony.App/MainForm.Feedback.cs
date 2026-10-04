@@ -321,6 +321,14 @@ public sealed partial class MainForm
                 _ => $"Steal deployment rejected: {deployment.Outcome}.",
             };
         }
+        foreach (var contact in _scenarioSimulation.LastContactResolutions)
+        {
+            var name = _scenarioSimulation.Actor(contact.ActorInstanceId)?.Definition.DisplayName ?? $"Unit #{contact.ActorInstanceId}";
+            if (contact.Role == ContactRole.Rescue && _localPlayerTeam == 0)
+                _status = $"{name} rescued; it joins your forces.";
+            else if (contact.Role == ContactRole.Pickup && contact.Team == _localPlayerTeam)
+                _status = $"Picked up {name}: +{contact.Amount} P7.";
+        }
         foreach (var theft in _scenarioSimulation.LastP7Thefts)
         {
             if (theft.ThiefTeamId == _localPlayerTeam)

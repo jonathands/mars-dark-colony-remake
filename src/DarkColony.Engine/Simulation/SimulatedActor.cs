@@ -22,7 +22,8 @@ public sealed class SimulatedActor
         AbilityCharge = NativeInitialAbilityCharge;
     }
 
-    public WorldEntity Seed { get; }
+    /// <summary>Identity and spawn record; only a rescue (<see cref="ContactRole"/>) changes its team.</summary>
+    public WorldEntity Seed { get; internal set; }
     public EntityDefinition Definition { get; }
     public MovementState Movement { get; }
     public FacingState Facing { get; }
@@ -140,6 +141,8 @@ public sealed class SimulatedActor
     /// updates left before the harvester standing on it digs out the next item.
     /// </summary>
     public int ArtifactExcavationTicks { get; internal set; }
+    /// <summary>Byte <c>+0xCB</c>: a placement that waits for contact (rescue or pickup).</summary>
+    public ContactRole ContactRole { get; internal set; }
     /// <summary>The idle EXPL/SLUG digging at this artifact site in the last update, if any.</summary>
     public int? ArtifactExcavatorInstanceId { get; internal set; }
 }

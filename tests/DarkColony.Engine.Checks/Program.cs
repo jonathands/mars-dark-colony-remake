@@ -437,7 +437,7 @@ Check("local path uses decoded target-relative priority buckets", () =>
 Check("blocked allied actor receives a yield notification before jitter wait", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 3 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n1 3 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 6];
     bytes[1 * 256 + 1] = 1;
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -467,7 +467,7 @@ Check("scenario simulation consumes move intents and owns motion", () =>
 {
     var entityText = "1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n";
     var catalog = EntityCatalog.Parse(entityText);
-    const string scenarioText = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    const string scenarioText = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n";
     var scenario = ScenarioDefinition.Parse(scenarioText);
     var pathBytes = new byte[PathRegionMap.RouteTableSize + 16];
     pathBytes[1 * 256 + 1] = 1;
@@ -490,7 +490,7 @@ Check("scenario simulation retains explicit attack targets until stopped", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 4 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 1 1 1 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n1 1 1 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 12];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 3), weaponCatalog: weapons);
@@ -558,7 +558,7 @@ Check("notified idle blockers step aside, never back toward the mover", () =>
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
     ScenarioSimulation Notified(string extra)
     {
-        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 1 0 100 0\n" + extra),
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 1 0 -1 0\n" + extra),
             catalog, OpenPath(12, 12), targetRings: EuclideanRings());
         simulation.Actor(1)!.YieldNotificationDirection = PathDirection.East;
         simulation.Step([]);
@@ -571,7 +571,7 @@ Check("notified idle blockers step aside, never back toward the mover", () =>
     for (var tick = 0; tick < 40 && blocker.MoveOrder is not null; tick++) open.Step([]);
     Equal(new CellCoordinate(5, 6), blocker.Movement.OccupiedCell);
 
-    var southTaken = Notified("5 6 4 0 100 0\n");
+    var southTaken = Notified("5 6 4 0 -1 0\n");
     Equal(new CellCoordinate(5, 4), southTaken.Actor(1)!.MoveOrder!.Target);
 });
 
@@ -579,7 +579,7 @@ Check("armed blockers with a hostile in range yield straight ahead instead of at
 {
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
     var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 0 0 1000 0\n8 5 1 1 100 0\n"),
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 0 0 -1 0\n8 5 1 1 -1 0\n"),
         catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
     var blocker = simulation.Actor(1)!;
     blocker.YieldNotificationDirection = PathDirection.East;
@@ -602,7 +602,7 @@ Check("a hostile mine is a target only after a detector of the scanner's team re
     var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
     ScenarioSimulation Run(string extra)
     {
-        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 0 0 1000 0\n7 5 1 1 800 0\n" + extra),
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 0 0 -1 0\n7 5 1 1 -1 0\n" + extra),
             catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
         for (var tick = 0; tick < 20; tick++) simulation.Step([]);
         return simulation;
@@ -610,7 +610,7 @@ Check("a hostile mine is a target only after a detector of the scanner's team re
     var unrevealed = Run("");
     Equal(0, unrevealed.Actor(2)!.RevealedTeamMask);
     Equal(true, unrevealed.Actor(1)!.AttackTargetInstanceId is null);
-    var revealed = Run("6 3 2 0 100 0\n");
+    var revealed = Run("6 3 2 0 -1 0\n");
     Equal(1, revealed.Actor(2)!.RevealedTeamMask);
     Equal(2, revealed.Actor(1)!.AttackTargetInstanceId ?? -1);
 });
@@ -623,8 +623,8 @@ Check("a fully blocked yield shuffles its order with the shared random stream", 
     // accepted, so the first step there is blocked with no free cell left,
     // and 0x4155D5 jitters the target by entries 2 and 3 (0 % 3 - 1 each).
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
-    var placements = "5 5 1 0 100 0\n" + string.Concat(
-        new[] { (5, 6), (5, 4), (6, 6), (6, 4), (4, 6), (4, 4), (6, 5) }.Select(cell => $"{cell.Item1} {cell.Item2} 4 0 100 0\n"));
+    var placements = "5 5 1 0 -1 0\n" + string.Concat(
+        new[] { (5, 6), (5, 4), (6, 6), (6, 4), (4, 6), (4, 4), (6, 5) }.Select(cell => $"{cell.Item1} {cell.Item2} 4 0 -1 0\n"));
     var stream = new uint[NativeRandomTable.Length];
     stream[1] = 3;
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + placements), catalog, OpenPath(12, 12),
@@ -641,7 +641,7 @@ Check("a move onto an occupied cell routes there and settles beside it", () =>
     // has a route; the last step is blocked with no free cell left and the
     // target is jittered (entries 1 and 2: 0 % 3 - 1 = -1 each).
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 5 1 0 100 0\n6 5 4 0 100 0\n"),
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 5 1 0 -1 0\n6 5 4 0 -1 0\n"),
         catalog, OpenPath(12, 12), randomTable: NativeRandomTable.FromValues(new uint[NativeRandomTable.Length]),
         targetRings: EuclideanRings());
     var mover = simulation.Actor(1)!;
@@ -655,7 +655,7 @@ Check("a move onto an occupied cell routes there and settles beside it", () =>
 Check("the idle record survives the moves it pushes itself", () =>
 {
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 1 0 100 0\n"),
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 1 0 -1 0\n"),
         catalog, OpenPath(12, 12), targetRings: EuclideanRings());
     var blocker = simulation.Actor(1)!;
     simulation.Step([]);
@@ -699,7 +699,7 @@ Check("idle armed actors acquire a visible hostile in weapon range", () =>
 {
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
     var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n4 2 1 1 100 0\n"),
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 -1 0\n4 2 1 1 -1 0\n"),
         catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
     simulation.Step([]);
     Equal(2, simulation.Actor(1)!.AttackTargetInstanceId!.Value);
@@ -713,7 +713,7 @@ Check("idle selection keeps ring order for ordinary weapons and scores area weap
     // the armed guard second.
     var rings = NativeTargetRings.FromRings([[new CellCoordinate(0, 0)], [new CellCoordinate(1, 0), new CellCoordinate(-1, 0)]]);
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
-    const string placements = "5 5 0 0 1000 0\n6 5 1 1 100 0\n4 5 0 1 1000 0\n";
+    const string placements = "5 5 0 0 -1 0\n6 5 1 1 -1 0\n4 5 0 1 -1 0\n";
     var ordinary = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + placements), catalog, OpenPath(12, 12),
         weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: rings);
     ordinary.Step([]);
@@ -734,7 +734,7 @@ Check("idle second scan radius depends on player kind and damage", () =>
     var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
     // The intruder is six cells away: outside weapon range 3 and the calm
     // human radius 4, inside the computer radius 16.
-    var human = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n8 2 1 1 100 0\n"),
+    var human = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 -1 0\n8 2 1 1 -1 0\n"),
         catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
     human.Step([]);
     Equal(true, human.Actor(1)!.AttackTargetInstanceId is null && human.Actor(1)!.MoveOrder is null);
@@ -742,7 +742,7 @@ Check("idle second scan radius depends on player kind and damage", () =>
     Equal(1, human.Actor(1)!.IdleMissCount);
 
     const string computerTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n4\n%AI\nTEAM 1 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
-    var computer =ScenarioSimulation.Create(ScenarioDefinition.Parse(computerTeams + "2 2 0 0 1000 0\n8 2 1 1 100 0\n"),
+    var computer =ScenarioSimulation.Create(ScenarioDefinition.Parse(computerTeams + "2 2 0 0 -1 0\n8 2 1 1 -1 0\n"),
         catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
     computer.Step([]);
     var approach = computer.LastIdleAcquisitions.Single();
@@ -758,7 +758,7 @@ Check("damaged human units widen their idle scan and close on the shooter", () =
     var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
     // A long-range shooter six cells away hits the idle guard; the guard
     // cannot see past radius 4 until it has been damaged, then looks 9 out.
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n8 2 2 1 1000 0\n"),
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 -1 0\n8 2 2 1 -1 0\n"),
         catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(2, 1))]);
     Equal(true, simulation.Actor(1)!.MoveOrder is null);
@@ -775,7 +775,7 @@ Check("damaged human units widen their idle scan and close on the shooter", () =
 Check("idle scans wait 15 ticks for three misses and then 45", () =>
 {
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n"),
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 -1 0\n"),
         catalog, OpenPath(8, 8), weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: EuclideanRings());
     var guard = simulation.Actors.Single();
     var scans = new List<int>();
@@ -795,7 +795,7 @@ Check("idle scans wait 15 ticks for three misses and then 45", () =>
 Check("damage ends an idle wait and the idle record scans in the same update", () =>
 {
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n"),
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 -1 0\n"),
         catalog, OpenPath(8, 8), weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: EuclideanRings());
     var guard = simulation.Actors.Single();
     for (var tick = 0; tick < 5; tick++) simulation.Step([]);
@@ -816,7 +816,7 @@ Check("an idle fidget turns to its random bearing after the wait before scanning
     // per update and pops on arrival, letting the idle record scan in the same
     // update.
     var catalog = EntityCatalog.Parse("1\nSLOW 0 2 25 8 8 1 -1 -1 1 1 0 1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n"),
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 -1 0\n"),
         catalog, OpenPath(8, 8), weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: EuclideanRings());
     var guard = simulation.Actors.Single();
     for (var tick = 0; tick < 5000 && guard.IdleFidgetFacing is null; tick++) simulation.Step([]);
@@ -841,7 +841,7 @@ Check("idle selection skips critters, untargetable props, and unseen cells", () 
     var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
     // Team 9 critter and an untargetable prop next to the guard, plus a
     // hostile in weapon range but outside the guard's sight.
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 3 0 1000 0\n3 2 1 9 100 0\n2 3 4 1 100 0\n5 2 1 1 100 0\n"),
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 3 0 -1 0\n3 2 1 9 -1 0\n2 3 4 1 -1 0\n5 2 1 1 -1 0\n"),
         catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
     simulation.Step([]);
     Equal(true, simulation.Actor(1)!.AttackTargetInstanceId is null);
@@ -853,7 +853,7 @@ Check("a stop-on-contact approach ends once a hostile is in weapon range", () =>
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
     // Both teams share race 0 so the loader's race swap leaves the fixtures alone.
     const string computerTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n4\n%AI\nTEAM 1 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(computerTeams + "1 2 0 0 1000 0\n8 2 1 1 100 0\n"),
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(computerTeams + "1 2 0 0 -1 0\n8 2 1 1 -1 0\n"),
         catalog, OpenPath(14, 6), weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: EuclideanRings());
     var guard = simulation.Actor(1)!;
     var start = guard.Movement.VisualPosition;
@@ -876,7 +876,7 @@ Check("replacement move cancels an explicit attack target", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 4 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 1 1 1 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n1 1 1 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 12];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 3), weaponCatalog: weapons);
@@ -890,7 +890,7 @@ Check("a direct attack lets the in-flight step finish, then drops the move", () 
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 1 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1 4 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 1 0 2 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n1 1 0 2 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 3), weaponCatalog: weapons);
@@ -912,7 +912,7 @@ Check("an attack-move lets the in-flight step finish first", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 1 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1 4 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 1 0 2 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n1 1 0 2 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 3), weaponCatalog: weapons);
@@ -932,7 +932,7 @@ Check("weapon bursts use rate between shots then decoded reload", () =>
     // rate=1, burst limit=2, reload=4. Projectile speed makes each hit resolve
     // within its firing tick, isolating cadence from flight time.
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 1 90 4 0 2 4 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 1 1 1 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n1 1 1 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 12];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 3), weaponCatalog: weapons);
@@ -960,7 +960,7 @@ Check("area-effect weapon applies its authored radial percentage", () =>
     var catalog = EntityCatalog.Parse("4\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nNEARBY 1 1 25 1 1 -1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nFRIENDLY 0 1 25 1 1 -1 -1 -1 1 1 0 200 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BLAST 0 0 1 100 90 4 1 0 0 1 0\n");
     var areas = AreaEffectCatalog.Parse("1\n1 3\nNONE\n0 100 0\n0 100 50\n0 0 0\n0 0 0\n0 100 0\n0 0 0\n");
-    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 2 0 0 200 0\n3 2 1 1 200 0\n4 2 2 1 200 0\n3 1 3 0 200 0\n";
+    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 2 0 0 -1 0\n3 2 1 1 -1 0\n4 2 2 1 -1 0\n3 1 3 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 30]; bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 5), weaponCatalog: weapons, areaEffects: areas);
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
@@ -977,7 +977,7 @@ Check("projectiles collide with an intervening hostile instead of remaining targ
     ((int[])catalog[2].Values)[10] = 1;
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 20 25 90 5 0 0 0 0 0\n");
     var matrix = DamageMatrix.Parse("10\n9\n25 12 25 18 25 90 5 50 0 5\n100 25 0 25 50 100 10 50 0 10\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n");
-    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 100 0\n3 1 1 1 100 0\n1 1 2 1 100 0\n";
+    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 -1 0\n3 1 1 1 -1 0\n1 1 2 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 15]; bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 3), weaponCatalog: weapons, damageMatrix: matrix);
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
@@ -992,7 +992,7 @@ Check("area trajectories skip intervening actors and detonate at their launch-ti
     var catalog = EntityCatalog.Parse("3\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nBLOCKER 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BLAST 0 0 100 25 15 10 1 0 0 1 0\n");
     var areas = AreaEffectCatalog.Parse("1\n1 3\nNONE\n0 0 0\n0 100 0\n0 0 0\n0 0 0\n0 100 0\n0 0 0\n");
-    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 100 0\n4 1 1 1 100 0\n1 1 2 1 100 0\n";
+    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 -1 0\n4 1 1 1 -1 0\n1 1 2 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 21]; bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 7, 3), weaponCatalog: weapons, areaEffects: areas);
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
@@ -1008,7 +1008,7 @@ Check("world ticks execute the native four projectile substeps", () =>
     Equal(4, ScenarioSimulation.NativeProjectileSubstepsPerTick);
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 100 10 15 10 0 0 0 0 0\n");
-    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 100 0\n4 1 1 1 100 0\n";
+    const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 -1 0\n4 1 1 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 18]; bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 3), weaponCatalog: weapons);
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
@@ -1023,7 +1023,7 @@ Check("attack orders honor the recovered team relation matrix", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 4 0 0 0 0 0\n");
-    const string sameTeam = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n2 0 1 0 100 0\n";
+    const string sameTeam = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n2 0 1 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 12];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(sameTeam), catalog, PathRegionMap.Parse(bytes, 4, 3), weaponCatalog: weapons);
@@ -1031,7 +1031,7 @@ Check("attack orders honor the recovered team relation matrix", () =>
     Equal(AttackOrderOutcome.NonHostile, simulation.LastAttackOrders.Single().Outcome);
     Equal(false, simulation.Actor(1)!.AttackTargetInstanceId.HasValue);
 
-    const string opposingTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n2 1 1 1 100 0\n";
+    const string opposingTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n2 1 1 1 -1 0\n";
     // Relations among players follow the mutual alliance bits, recomputed at
     // the start of every update (0x4198D3).
     simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(opposingTeams), catalog, PathRegionMap.Parse(bytes, 4, 3), weaponCatalog: weapons);
@@ -1049,7 +1049,7 @@ Check("attack orders pursue an out-of-range target through normal movement", () 
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 2 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n7 1 1 1 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n7 1 1 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3), weaponCatalog: weapons);
@@ -1069,7 +1069,7 @@ Check("target destruction cancels another attacker's reserved pursuit", () =>
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 200 90 2 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n6 1 1 1 100 0\n5 1 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n6 1 1 1 -1 0\n5 1 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3), weaponCatalog: weapons);
@@ -1091,7 +1091,7 @@ Check("attack-move resumes its destination when another attacker destroys its ta
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 200 90 2 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n6 1 1 1 100 0\n5 1 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n6 1 1 1 -1 0\n5 1 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3), weaponCatalog: weapons);
@@ -1112,7 +1112,7 @@ Check("attack-move acquires a visible hostile then resumes its destination", () 
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 2 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n2 1 1 1 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n2 1 1 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3), weaponCatalog: weapons);
@@ -1128,7 +1128,7 @@ Check("attack-move acquires a visible hostile then resumes its destination", () 
 Check("alliance and vision bits count only when both players set them", () =>
 {
     var catalog = EntityCatalog.Parse("1\nSCOUT 0 255 25 2 2 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n8 1 0 1 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n8 1 0 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3));
@@ -1153,7 +1153,7 @@ Check("attack-move excludes a team marked cooperative in the relation matrix", (
 {
     var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 2 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n2 1 1 1 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n2 1 1 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3), weaponCatalog: weapons);
@@ -1190,7 +1190,7 @@ Check("scenario simulation executes P7 purchase intents deterministically", () =
 Check("Exploiter vent deployment accelerates P7 and sight blends day and night", () =>
 {
     var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 9 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 8 5 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n1 1 40 0 100\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n1 1 40 0 100\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4),
@@ -1217,7 +1217,7 @@ Check("Exploiter vent deployment accelerates P7 and sight blends day and night",
 Check("P7 source stops before consuming its final exact-rate remainder", () =>
 {
     var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n1 1 40 0 4\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n1 1 40 0 4\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4),
@@ -1234,7 +1234,7 @@ Check("P7 source stops before consuming its final exact-rate remainder", () =>
 Check("harvester deployment walks to a vent then attaches deterministically", () =>
 {
     var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 9 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 8 5 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 100 0\n3 3 40 0 100\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 -1 0\n3 3 40 0 100\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 36];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 6));
@@ -1261,7 +1261,7 @@ Check("harvester deployment walks to a vent then attaches deterministically", ()
 Check("ordinary movement onto a free vent automatically begins harvester deployment", () =>
 {
     var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 9 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 8 5 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 100 0\n3 3 40 0 100\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 -1 0\n3 3 40 0 100\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 36];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 6));
@@ -1281,7 +1281,7 @@ Check("tower builders deploy into their paired armed static forms", () =>
     var catalog = EntityCatalog.Parse("5\nTURR 0 10 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nT 0 5 0 1 1 1 -1 -1 1 1 6 60 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nXDEPLOY 1 5 0 1 1 1 -1 -1 1 1 6 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nLAB 0 0 0 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 100 4 0 0 0 0 0\n");
     var dependencies = DependencyCatalog.Parse("1\n71 0 0 2 1 0 1 -1\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n100\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n2 0 3 0 100 0\n3 0 4 1 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n100\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n2 0 3 0 -1 0\n3 0 4 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4), weaponCatalog: weapons, dependencyCatalog: dependencies);
@@ -1310,7 +1310,7 @@ Check("tower builders deploy into their paired armed static forms", () =>
 Check("a stealing stance forms after state 13 and retracts when it finds no victim", () =>
 {
     var catalog = EntityCatalog.Parse("2\nSARG 0 10 45 10 10 13 14 14 125 150 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 12 0\nSARGSTL 0 10 0 10 10 -1 -1 -1 125 150 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 78 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4));
@@ -1343,7 +1343,7 @@ Check("a stealing stance forms after state 13 and retracts when it finds no vict
 Check("noundeploy keeps deployed harvesters on their vents", () =>
 {
     var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n" +
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n" +
         "1 1 40 20 5000\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -1370,7 +1370,7 @@ Check("vents pay their own SCN rate per pulse, and a zero-rate vent pays nothing
     var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     int Earned(int rate)
     {
-        var source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 1 0 0 100 0\n" +
+        var source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 1 0 0 -1 0\n" +
             $"1 1 40 {rate} 100\n";
         var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
         bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -1397,7 +1397,7 @@ Check("a steal stance links the first visible deployed harvester and halves its 
     // the harvester at (1,1) from 10 and 9 cells away.
     var catalog = EntityCatalog.Parse("4\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nSARG 0 10 45 10 10 -1 -1 -1 1 1 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 3 0\nSARGSTL 0 10 0 10 10 -1 -1 -1 1 1 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 2 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
-        "11 1 2 0 100 0\n10 1 2 0 100 0\n1 1 0 1 100 0\n1 1 40 0 5000\n";
+        "11 1 2 0 -1 0\n10 1 2 0 -1 0\n1 1 0 1 -1 0\n1 1 40 0 5000\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 16, 4),
@@ -1440,7 +1440,7 @@ Check("a steal stance links the first visible deployed harvester and halves its 
 Check("engineer mine deployment resolves the faction-matched HMINE form", () =>
 {
     var catalog = EntityCatalog.Parse("3\nENGI 0 15 30 6 4 -1 -1 -1 1 1 5 800 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 0\nUNUSED 0 0 0 0 0 -1 -1 -1 1 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nHMINE 0 40 0 6 4 38 38 38 1 1 7 800 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4));
@@ -1467,7 +1467,7 @@ Check("a deployed mine follows native three-trigger integrity and weapon cooldow
     var catalog = EntityCatalog.Parse("4\nENGI 0 15 30 6 4 -1 -1 -1 1 1 5 800 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 0\nUNUSED 0 0 0 0 0 -1 -1 -1 1 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nHMINE 0 40 0 6 4 38 38 38 1 1 7 800 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 10000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("1\n38 weapons 6 38 2 100 90 1 2 -1 -1 0 0\n");
     var areas = AreaEffectCatalog.Parse("1\n2 3\nNONE\n0 0 0\n0 100 0\n0 0 0\n0 0 0\n0 100 0\n0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 800 0\n1 1 3 1 10000 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n1 1 3 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 25];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 5), weaponCatalog: weapons, areaEffects: areas);
@@ -1494,7 +1494,7 @@ Check("mine acquisition uses native target priority instead of nearest instance 
 {
     var catalog = EntityCatalog.Parse("5\nENGI 0 15 30 6 4 -1 -1 -1 1 1 5 800 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 0\nUNUSED 0 0 0 0 0 -1 -1 -1 1 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nHMINE 0 40 0 6 4 38 38 38 1 1 7 800 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nUNARMED 1 1 25 1 1 -1 -1 -1 1 1 0 1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nARMED 1 1 25 1 1 39 39 39 1 1 0 1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
     var weapons = WeaponCatalog.Parse("2\n38 MINE 6 38 20 100 1 1 2 -1 -1 0 0\n39 GUN 0 0 20 10 1 1 0 -1 -1 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 2 0 0 800 0\n2 3 3 1 1000 0\n2 1 4 1 1000 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 2 0 0 -1 0\n2 3 3 1 -1 0\n2 1 4 1 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 25];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog,
@@ -1507,7 +1507,7 @@ Check("mine acquisition uses native target priority instead of nearest instance 
 Check("scenario simulation chains movement beyond one packed segment", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 45 * 3];
     bytes[1 * 256 + 1] = 1;
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -1522,7 +1522,7 @@ Check("scenario simulation chains movement beyond one packed segment", () =>
 Check("scenario simulation preserves queued move waypoints", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 6 * 3];
     bytes[1 * 256 + 1] = 1;
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -1538,7 +1538,7 @@ Check("scenario simulation preserves queued move waypoints", () =>
 Check("queued duplicate waypoint does not discard later destinations", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 6 * 3];
     bytes[1 * 256 + 1] = 1;
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -1556,7 +1556,7 @@ Check("queued duplicate waypoint does not discard later destinations", () =>
 Check("a replacement move finishes the in-flight step, then routes to its target", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 5];
     bytes[1 * 256 + 1] = 1;
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -1590,7 +1590,7 @@ Check("active move order caps native waypoint list and ignores consecutive dupli
 Check("a stop lets the in-flight step finish on its destination cell", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 3];
     bytes[1 * 256 + 1] = 1;
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -1614,7 +1614,7 @@ Check("a stop lets the in-flight step finish on its destination cell", () =>
 Check("scenario simulation waits then replans after a dynamic block", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 7 * 3];
     bytes[1 * 256 + 1] = 1;
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -1631,7 +1631,7 @@ Check("scenario simulation waits then replans after a dynamic block", () =>
 Check("scenario simulation repairs a blocked local route before waiting", () =>
 {
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 2];
     bytes[1 * 256 + 1] = 1;
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -1651,7 +1651,7 @@ Check("a blocked step whose repair fails waits four updates, then retries its ke
     // remaining cell (3,0) has no route around the blocker, so 0x415458 waits
     // (type 3, counter 4) with the move record still holding its steps.
     var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 100 0\n";
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 -1 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 5];
     bytes[1 * 256 + 1] = 1;
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
@@ -1899,7 +1899,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(true, catalog[12].HasGroundSpecialAttack);
         Equal(51, catalog[12].GroundSpecialWeaponId);
 
-        const string scenarioText = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 2 4 0 100 0\n3 2 0 1 100 0\n4 2 1 1 100 0\n";
+        const string scenarioText = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 2 4 0 -1 0\n3 2 0 1 -1 0\n4 2 1 1 -1 0\n";
         var pathBytes = new byte[PathRegionMap.RouteTableSize + 8 * 6];
         pathBytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
         var simulation = ScenarioSimulation.Create(
@@ -1948,7 +1948,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         pathBytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
         var path = PathRegionMap.Parse(pathBytes, 12, 8);
 
-        const string humanScenario = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 2 71 0 100 0\n";
+        const string humanScenario = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 2 71 0 -1 0\n";
         var human = ScenarioSimulation.Create(ScenarioDefinition.Parse(humanScenario), catalog, path,
             weaponCatalog: weapons, areaEffects: effects);
         Equal("DROP SHIP", UnitCommandProfiles.Describe(catalog[71], true).SecondaryCommand!.Label);
@@ -1974,7 +1974,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(true, humanTransportEvents.Any(item => item.Kind == BattlefieldTransportEventKind.Departed));
         Equal(0, human.BattlefieldTransports.Count);
 
-        const string grayScenario = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 2 74 1 100 0\n8 2 0 0 100 0\n";
+        const string grayScenario = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 2 74 1 -1 0\n8 2 0 0 -1 0\n";
         var gray = ScenarioSimulation.Create(ScenarioDefinition.Parse(grayScenario), catalog, path,
             weaponCatalog: weapons, areaEffects: effects);
         Equal("SAUCER", UnitCommandProfiles.Describe(catalog[74], true).SecondaryCommand!.Label);
@@ -2086,7 +2086,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(true, footprints.TryResolveBuildingEntity(candidate.BuildingFaction!.Value, candidate.BuildingVariant!.Value,
             candidate.BuildingSlot!.Value, out var entityId));
         const string header = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n";
-        var scenario = ScenarioDefinition.Parse($"{header}TEAM 0 1\n{candidate.BuildingFaction}\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 {entityId} 0 100 0\n");
+        var scenario = ScenarioDefinition.Parse($"{header}TEAM 0 1\n{candidate.BuildingFaction}\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 {entityId} 0 -1 0\n");
         var bytes = new byte[PathRegionMap.RouteTableSize + 1];
         bytes[^1] = 1;
         var path = PathRegionMap.Parse(bytes, 1, 1);
@@ -2101,7 +2101,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var catalog = EntityCatalog.Parse("3\nBEON 0 255 25 5 3 -1 -1 -1 1 1 2 400 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 0 255 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nATTACKER 1 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
         ((int[])catalog[0].Values)[24] = 1;
         var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 100 10 90 4 0 0 0 0 0\n");
-        const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 100 0\n1 0 1 0 100 0\n2 0 2 1 100 0\n";
+        const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 -1 0\n1 0 1 0 -1 0\n2 0 2 1 -1 0\n";
         var pathBytes = new byte[PathRegionMap.RouteTableSize + 4 * 2];
         pathBytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
         var simulation = ScenarioSimulation.Create(
@@ -2218,7 +2218,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var install = GameInstallation.Open(dataPath);
         var entities = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
         var weapons = WeaponCatalog.Load(install.DataFile("gamestat", "weapstat.txt"));
-        const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n10 10 69 0 100 0\n10 5 0 0 100 0\n11 5 0 1 100 0\n";
+        const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n10 10 69 0 -1 0\n10 5 0 0 -1 0\n11 5 0 1 -1 0\n";
         var bytes = new byte[PathRegionMap.RouteTableSize + 32 * 32];
         bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
         var scenario = ScenarioDefinition.Parse(source);
@@ -2543,7 +2543,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
 
         // A site at (6,1) holding LUNA then LENS, and an EXPL at (2,1).
         const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
-            "6 1 37 0 0 0\n6 1 65 0 0 0\n6 1 63 0 0 0\n2 1 6 0 0 0\n";
+            "6 1 37 0 -1 0\n6 1 65 0 -1 0\n6 1 63 0 -1 0\n2 1 6 0 -1 0\n";
         var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
         bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
         // Actions run in reverse order: reinforce2 buries a HYYK, then
@@ -2596,7 +2596,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var install = GameInstallation.Open(dataPath);
         var rules = SimulationRules.Load(install);
         const string source = "desert.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
-            "2 1 0 0 0 0\n";
+            "2 1 0 0 -1 0\n";
         var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
         bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
         var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), PathRegionMap.Parse(bytes, 16, 4), rules);
@@ -2636,7 +2636,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         ScenarioSimulation Start(string tileset, MissionScript? script)
         {
             var source = tileset + "\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
-                "5 1 69 0 0 0\n2 1 0 0 0 0\n";
+                "5 1 69 0 -1 0\n2 1 0 0 -1 0\n";
             var started = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), PathRegionMap.Parse(bytes, 16, 4), rules, script);
             // The nopickup trigger runs in the norm pass of update 8.
             for (var tick = 0; tick < 8; tick++) started.Step([]);
@@ -2687,7 +2687,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var install = GameInstallation.Open(dataPath);
         var rules = SimulationRules.Load(install);
         const string source = "desert.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
-            "2 1 0 0 0 0\n";
+            "2 1 0 0 -1 0\n";
         var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
         bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
         var script = MissionScript.Compile(ScenarioTriggers.Parse("1 norm 1 (1)\nwaypoint 2 1 2 6 1 2 1\nend\n"));
@@ -2717,7 +2717,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var rules = SimulationRules.Load(install);
         // A Scout VTOL (flier, entity 5) listed first, then a marine (entity 0), both on (3,1).
         const string source = "desert.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
-            "3 1 5 0 0 0\n3 1 0 0 0 0\n";
+            "3 1 5 0 -1 0\n3 1 0 0 -1 0\n";
         var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
         bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
         var script = MissionScript.Compile(ScenarioTriggers.Parse("1 norm 1 (1)\nnewtype 3 1 84\nend\n"));
@@ -2731,6 +2731,51 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(84, simulation.EffectiveDefinition(marine).Id);
         Equal(health, marine.Health);
         Equal(rules.Entities[84].Health, marine.MaximumHealth);
+    });
+
+    Check("SCN values set health, and flagged placements wait to be rescued or picked up", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        // 0x41B339: a value other than -1 is the initial health; 0x41B321: the
+        // flag column is byte +0xCB.
+        var (alien06, _) = DeterminismHarness.Load(install, rules, "alien/alien06");
+        var scenario = ScenarioDefinition.Load(install.DataFile("scenario", "alien", "alien06") + ".scn");
+        var valued = scenario.OrdinaryPlacements.Count(placement => placement.Value > -1 && placement.EntityId != 37 && placement.Team < 8);
+        Equal(true, valued > 0);
+        Equal(true, alien06.Actors.Where(actor => actor.Seed.ScenarioValue > -1 && actor.Seed.InstanceId <= scenario.OrdinaryPlacements.Count)
+            .All(actor => actor.Health == actor.Seed.ScenarioValue));
+        Equal(3, alien06.Actors.Count(actor => actor.ContactRole == ContactRole.Rescue));
+
+        // A captive marine of team 2 (flag 1) at (5,1) and a fuel crate of
+        // team 3 worth 20 (flag 2) at (9,1); an Exploiter of team 0 at (1,1).
+        const string source = "desert.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
+            "5 1 0 2 -1 1\n9 1 85 3 20 2\n1 1 6 0 -1 0\n";
+        var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+        bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), PathRegionMap.Parse(bytes, 16, 4), rules);
+        var captive = simulation.Actors.Single(actor => actor.Seed.EntityId == 0);
+        var crate = simulation.Actors.Single(actor => actor.Seed.EntityId == 85);
+        var harvester = simulation.Actors.Single(actor => actor.Seed.EntityId == 6);
+        Equal(20, crate.Health);
+        Equal(ContactRole.Pickup, crate.ContactRole);
+        for (var tick = 0; tick < 16; tick++) simulation.Step([]);
+        Equal(2, captive.Seed.Team);
+        // 0x4140DC: within two cells of a player-0 unit the captive joins player 0.
+        simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new MoveIntent(harvester.Seed.InstanceId, new CellCoordinate(3, 1)))]);
+        for (var tick = 0; tick < 200 && captive.Seed.Team != 0; tick++) simulation.Step([]);
+        Equal(0, captive.Seed.Team);
+        Equal(ContactRole.None, captive.ContactRole);
+        Equal(1, simulation.ScriptWords[0]);
+        Equal(ContactRole.Rescue, simulation.LastContactResolutions.Single().Role);
+        // The crate pays its health to the first player whose unit comes close, then dies.
+        var p7 = simulation.ResourceForTeam(0);
+        simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new MoveIntent(harvester.Seed.InstanceId, new CellCoordinate(7, 1)))]);
+        for (var tick = 0; tick < 200 && !crate.IsDestroyed; tick++) simulation.Step([]);
+        Equal(true, crate.IsDying);
+        Equal(p7 + 20, simulation.ResourceForTeam(0));
+        var pickup = simulation.LastContactResolutions.Single();
+        Equal((ContactRole.Pickup, 0, 20), (pickup.Role, pickup.Team, pickup.Amount));
     });
 
     Check("losing the mining colony ends human01 in defeat with outcome text 4", () =>
@@ -2786,7 +2831,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         }
         var catalog = EntityCatalog.Parse("1\nSCOUT 0 255 25 4 8 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
         var source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
-            $"{viewer.X} {viewer.Z} 0 0 100 0\n";
+            $"{viewer.X} {viewer.Z} 0 0 -1 0\n";
         var bytes = new byte[PathRegionMap.RouteTableSize + size * size];
         bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
         // Day at its last tick: lighting 0, so the radius is the day sight (4).
@@ -2931,7 +2976,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var path = PathRegionMap.Parse(bytes, 32, 32);
 
         var ordinaryScenario = ScenarioDefinition.Parse(header +
-            $"10 5 {areaSource.Id} 0 100 0\n15 5 0 1 100 0\n");
+            $"10 5 {areaSource.Id} 0 -1 0\n15 5 0 1 -1 0\n");
         var ordinary = ScenarioSimulation.Create(ordinaryScenario, entities, path,
             weaponCatalog: weapons, areaEffects: forcedTopLeft, randomTable: NativeRandomTable.Load(install.ExecutablePath));
         ordinary.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
@@ -2943,7 +2988,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal((byte)0x7e, ordinary.LastWeaponFires.Single().PresentationVariantRoll);
 
         var inspiredScenario = ScenarioDefinition.Parse(header +
-            $"10 10 69 0 100 0\n10 5 {areaSource.Id} 0 100 0\n15 5 0 1 100 0\n");
+            $"10 10 69 0 -1 0\n10 5 {areaSource.Id} 0 -1 0\n15 5 0 1 -1 0\n");
         var inspired = ScenarioSimulation.Create(inspiredScenario, entities, path,
             weaponCatalog: weapons, areaEffects: forcedTopLeft);
         inspired.Step([new ScheduledWorldCommand(1, 0, new InspireTroopsIntent(1))]);

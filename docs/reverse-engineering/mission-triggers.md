@@ -140,7 +140,9 @@ machine:
 - `s(p,k,i)` = per-type statistic (`0x495860`).
 - `m(x,z)` = the live-mine map bit.
 - `v(x,z,p)` = visibility.
-- `u(i)` = a word at `0x4FE04C`.
+- `u(i)` = the low word of dword i of the script array at `0x4FE04C`
+  (`0x43D1F8`). The script loader zeroes u(0)-u(7); only a rescue writes it
+  (u(0) + 1, `0x43FC24`, see city-and-economy.md). No corpus script reads it.
 
 The grammar has quirks:
 - Addition binds tighter than multiplication.
@@ -227,6 +229,7 @@ checks without declared cities skip the slot 4 test.
 | `nopickup` | implemented (see combat-damage.md, Dying state). Its only reader is the kill routine `0x416308` |
 | `noundeploy` | implemented: the mining command (`0x4137CF`) ignores a pending state-13 request while world `+0x948` is set, and state 13 (`0x4167EF`) refuses the deployed forms 0x2F/0x30. The port answers `RetractHarvesterIntent` with `UndeployLocked`. The third reader (`0x43FD36`) reapplies the flag when a save is loaded |
 | `aimsg` | not modeled; reported as `LastUnmodeledMissionActions` |
+| `u(i)` | implemented (`ScriptWords`) |
 | `newtype` | implemented: only the type byte changes, so the health stays. The port keeps the original identity and sets the form override, which every rule reads through `EffectiveDefinition` |
 | Bail delay | provisional: 152 ticks for the native 10,000 ms |
 | Malformed-condition stack floor | provisional (reads 0 below the stack) |

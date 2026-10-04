@@ -27,8 +27,9 @@ condition `v(x,z,p)`) reads the last picture.
 ## Stamping (`0x44A6D4`)
 
 1. Every live actor's revealed byte `+0xCA` is cleared.
-2. An actor stamps if it is alive, its team is 0-7, and it is not a troop
-   still inside its production building (`+0xCB` 1 or 2).
+2. An actor stamps if its state is not 0 (alive or dying), its team is 0-7,
+   and it is not a placement waiting for contact (`+0xCB` 1 or 2, see
+   city-and-economy.md).
 3. **Radius.** `r = (w × night + (256 − w) × day) >> 8`, where day and night
    are gamestat values 4 and 5 and `w` is the lighting level
    `world + 0x540`. `w` ramps over the first `world + 0x538` ticks of each
@@ -76,6 +77,6 @@ checks), and bit 3 a flier (no opacity test).
 | Sight trees, opacity, flyers, shaded cells | implemented; trees read from `dc.exe` (`NativeVisionTrees`), MAP attributes from the scenario's MAP |
 | Mine detectors and the `+0xCA` revealed bits | implemented (`RevealedTeamMask`) |
 | Dying actors' shrinking radius | implemented (see combat-damage.md, Dying state) |
-| Production troops (`+0xCB`) | not needed: the port creates the troop when it leaves |
+| Placements waiting for contact (`+0xCB` 1 or 2) | implemented: they do not stamp |
 | Allied vision in `player + 0x19C0` | pending (A3 `vision` / `ally`) |
 | Explored memory (bit 31) for the display | pending (goal 7) |

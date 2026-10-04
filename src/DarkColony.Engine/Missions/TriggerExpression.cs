@@ -19,8 +19,8 @@ public interface ITriggerExpressionContext
     int TypeStat(int player, int stat, int entityType);
     /// <summary><c>m(x,z)</c>: the map's live-mine bit (load byte 3, bit 2).</summary>
     bool MineAlive(int x, int z);
-    /// <summary><c>u(i)</c>: a word of the script array at <c>0x4FE04C</c> (byte offset i).</summary>
-    int ScriptWord(int byteOffset);
+    /// <summary><c>u(i)</c>: the low word of dword i of the script array at <c>0x4FE04C</c>.</summary>
+    int ScriptWord(int index);
 }
 
 /// <summary>

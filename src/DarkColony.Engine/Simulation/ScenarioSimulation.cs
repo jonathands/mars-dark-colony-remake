@@ -175,6 +175,7 @@ public sealed partial class ScenarioSimulation
     public IReadOnlyList<AttackMoveAcquisitionEvent> LastAttackMoveAcquisitions { get; private set; } = [];
     public IReadOnlyList<IdleAcquisitionEvent> LastIdleAcquisitions { get; private set; } = [];
     public IReadOnlyList<ArtifactRecoveryEvent> LastArtifactRecoveries { get; private set; } = [];
+    public IReadOnlyList<ContactResolvedEvent> LastContactResolutions { get; private set; } = [];
     public IReadOnlyList<PurchaseReservedEvent> LastPurchaseReservations { get; private set; } = [];
     public IReadOnlyList<HarvesterDeploymentEvent> LastHarvesterDeployments { get; private set; } = [];
     public IReadOnlyList<MineDeploymentEvent> LastMineDeployments { get; private set; } = [];
@@ -255,6 +256,7 @@ public sealed partial class ScenarioSimulation
             }
             seeds.Add(new WorldEntity(seeds.Count + 1, entityId, team, cell, FixedPointPosition.AtCellCenter(cell), placement.Value, flag));
         }
+        var placementSeedCount = seeds.Count;
         var ground = new CellOccupancy();
         var alternate = new CellOccupancy();
         var mine = new CellOccupancy();
@@ -278,6 +280,13 @@ public sealed partial class ScenarioSimulation
             scenario.AutonomousSpawnGroups, catalog, path, ground, alternate, seeds.Count + 1);
         seeds.AddRange(autonomous.Entities);
         var actors = seeds.Select(seed => new SimulatedActor(seed, catalog[seed.EntityId])).ToArray();
+        foreach (var actor in actors.Take(placementSeedCount))
+        {
+            // The constructor (0x41B339) takes the SCN value as health unless
+            // it is -1, and the flag column as byte +0xCB (0x41B321).
+            if (actor.Seed.ScenarioValue > -1) actor.Health = actor.Seed.ScenarioValue;
+            actor.ContactRole = (ContactRole)(byte)actor.Seed.ScenarioFlag;
+        }
         foreach (var city in cityBuildings)
         {
             // City actors keep the slot's exact native position and %City health.
@@ -489,6 +498,7 @@ public sealed partial class ScenarioSimulation
         LastAttackMoveAcquisitions = events.AttackMoveAcquisitions;
         LastIdleAcquisitions = events.IdleAcquisitions;
         LastArtifactRecoveries = events.ArtifactRecoveries;
+        LastContactResolutions = events.ContactResolutions;
         LastMissionMessages = pendingMissionMessages.ToArray();
         LastUnmodeledMissionActions = pendingUnmodeledMissionActions.ToArray();
         LastP7Income = [.. passiveIncome, .. ventIncome];
@@ -530,6 +540,7 @@ public sealed partial class ScenarioSimulation
         public List<AttackMoveAcquisitionEvent> AttackMoveAcquisitions { get; } = [];
         public List<IdleAcquisitionEvent> IdleAcquisitions { get; } = [];
         public List<ArtifactRecoveryEvent> ArtifactRecoveries { get; } = [];
+        public List<ContactResolvedEvent> ContactResolutions { get; } = [];
         public List<PurchaseReservedEvent> Purchases { get; } = [];
         public List<HarvesterDeploymentEvent> HarvesterDeployments { get; } = [];
         public List<MineDeploymentEvent> MineDeployments { get; } = [];
@@ -705,6 +716,11 @@ public sealed partial class ScenarioSimulation
             if (actor.Seed.EntityId == ArtifactSiteEntity)
             {
                 UpdateArtifactSite(actor, events);
+                continue;
+            }
+            if (actor.ContactRole is ContactRole.Rescue or ContactRole.Pickup)
+            {
+                UpdateContact(actor, events);
                 continue;
             }
             if (actor.FinishingStep is { } finishing)

@@ -418,6 +418,7 @@ public sealed partial class ScenarioSimulation
         public int TypeStat(int player, int stat, int entityType) => simulation.TypeStatistic(player, stat, entityType);
         public bool MineAlive(int x, int z) =>
             simulation.PetraVents.Any(vent => vent.Position.X == x && vent.Position.Z == z && vent.RemainingReservoir > 0);
-        public int ScriptWord(int byteOffset) => 0;
+        /// <summary><c>u(i)</c> reads the low word of dword i (<c>0x43D1F8</c>); the corpus never uses it.</summary>
+        public int ScriptWord(int index) => (uint)index < ScriptWordCount ? (short)simulation.scriptWords[index] : 0;
     }
 }

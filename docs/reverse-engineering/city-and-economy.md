@@ -55,6 +55,10 @@ placement. Each built slot becomes actor `player * 15 + slot` (actors 0-119):
   hexagonal pedestal painted into the MAP.
 
 SCN placements are then created from actor `0x98` onward by `0x41AF14`.
+The actor constructor takes the value column as the initial health unless it
+is -1 (`0x41B339`; the corpus uses -1 for 2327 placements and 20-600 for the
+rest), and the flag column as byte `+0xCB` (`0x41B321`). Units created during
+play (`0x41B634`) get -1 and 0.
 Actors 120-151 are not used by the loader. Before creating a player
 placement, the loader (`0x41C4E3`) compares the entity's race (gamestat
 value 1, runtime `+4`) with the player's race (`+0xBB8`). If they differ and
@@ -182,3 +186,20 @@ cannot direct-attack critters, and their projectiles pass through critters.
 | Building purchase builds the slot at once (command 9) | confirmed; see [production-flow.md](production-flow.md) |
 | Building prerequisite = live slot building of at least that variant (`0x438220`) | confirmed; completed building items follow each slot |
 | Building sprite anchor | open: the HQ draws about two tiles lower and left of the original captures |
+
+## Rescue and pickup placements
+
+Recovered on 2026-10-04 and implemented in
+`Simulation/ScenarioSimulation.Contact.cs`. The idle command (`0x4148B0`)
+hands an actor whose `+0xCB` is 1 or 2 to `0x4140DC` and does nothing else,
+so such an actor neither scans for targets nor takes orders, and vision skips
+it. Every fourth phase tick (`world + 0x530 & 3`) it walks the 5 x 5 square
+around its cell, x outer and z inner, and probes the ground grid and then the
+alternate grid of each cell, skipping occupants whose own `+0xCB` is nonzero.
+
+- **1, rescue** (81 corpus placements, captives and loose artifacts): the
+  first player-0 occupant clears the byte, makes the actor a player-0 unit,
+  adds 1 to the script word u(0) (`0x43FC24`), and plays sound (3, 7).
+- **2, pickup** (163 placements, such as FUEL crates worth 20): the first
+  occupant of players 0-7 adds the actor's health to that player's P7
+  (`+0xBAC`), and the actor is killed (`0x416308`). No kill statistic changes.
