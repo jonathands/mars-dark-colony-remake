@@ -2476,6 +2476,31 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(p7, simulation.ResourceForTeam(0));
     });
 
+    Check("alien01 registers commanders and abducts team 1's commander after c > 10", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var (simulation, _) = DeterminismHarness.Load(install, rules, "alien/alien01");
+        // Trigger 1 (c > 0) runs "reinforce2 1 66 67 69 1": the constructor puts
+        // the commander (0x41B223) into team 1's first slot.
+        for (var tick = 0; tick < 17; tick++) simulation.Step([]);
+        var commanderId = simulation.CommanderInSlot(1, 0) ?? throw new InvalidOperationException("No team 1 commander slot.");
+        var commander = simulation.Actor(commanderId)!;
+        Equal(69, commander.Seed.EntityId);
+        // 0x4197D2 keeps a slotted commander's ability charge at 230.
+        Equal(ScenarioSimulation.NativeCommanderCharge, commander.AbilityCharge);
+        // Trigger 10 (c > 10) runs "abduct 1 1": a transport of team 1's race
+        // comes for that commander.
+        for (var tick = 0; tick < 200 && simulation.BattlefieldTransports.All(transport => !transport.Abducts); tick++)
+            simulation.Step([]);
+        var transport = simulation.BattlefieldTransports.Single(candidate => candidate.Abducts);
+        Equal(1, transport.TeamId);
+        for (var tick = 0; tick < 400 && !commander.IsDestroyed; tick++) simulation.Step([]);
+        Equal(true, commander.IsDestroyed);
+        for (var tick = 0; tick < 8; tick++) simulation.Step([]);
+        Equal(false, simulation.CommanderInSlot(1, 0).HasValue);
+    });
+
     Check("losing the mining colony ends human01 in defeat with outcome text 4", () =>
     {
         var install = GameInstallation.Open(dataPath);

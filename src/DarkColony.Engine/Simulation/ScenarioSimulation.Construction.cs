@@ -76,6 +76,7 @@ public sealed partial class ScenarioSimulation
         var actor = new SimulatedActor(seed, EntityDefinitionFor(entityId));
         actors.Add(actor);
         actorsById.Add(instanceId, actor);
+        RegisterCommander(actor);
         nextActorInstanceId++;
         return new BuildingPlacedEvent(intent.TeamId, intent.DependencyItemId, instanceId, entityId, intent.Origin, BuildingDropOutcome.Placed);
     }
@@ -118,6 +119,7 @@ public sealed partial class ScenarioSimulation
         var actor = new SimulatedActor(seed, definition);
         actors.Add(actor);
         actorsById.Add(instanceId, actor);
+        RegisterCommander(actor);
         return new UnitProducedEvent(intent.TeamId, intent.DependencyItemId, instanceId, entityId, intent.SourceBuildingInstanceId, UnitProductionOutcome.Produced);
     }
 

@@ -280,6 +280,7 @@ public sealed partial class ScenarioSimulation
         simulation.targetRings = targetRings;
         simulation.visionTrees = visionTrees ?? NativeVisionTrees.Flat;
         simulation.LoadAlliances(scenario);
+        foreach (var actor in simulation.actors) simulation.RegisterCommander(actor);
         simulation.LoadTerrainSight(terrain);
         simulation.computerTeams = scenario.Teams.Where(team => team.Enabled && team.AiProfile > 0).Select(team => team.TeamId).ToHashSet();
         simulation.citiesDeclared = scenario.Teams.Any(team => team.CityOrigin is not null);
@@ -412,6 +413,7 @@ public sealed partial class ScenarioSimulation
     {
         var update = WorldUpdateCounter;
         RecountMissionStatistics();
+        ChargeCommanders();
         TroopCap = ComputeTroopCap();
         RecomputeAlliances();
         pendingMissionMessages.Clear();
@@ -426,6 +428,7 @@ public sealed partial class ScenarioSimulation
         var syntheticPulse = !nativeIncomeCadence && SyntheticPetraPulse();
         LastAutonomousWanders = (update & 7) == 0 ? UpdateAutonomousActors() : [];
         RunNormTriggers(pendingMissionMessages, pendingUnmodeledMissionActions);
+        if ((update & 7) == 0) ClearDeadCommanders();
         var passiveIncome = ApplyPassiveIncome(nativeIncomeCadence ? (update & 15) == 0 : syntheticPulse);
         var events = new TickEvents(UpdateInspireState());
         UpdateAbilityCharge();

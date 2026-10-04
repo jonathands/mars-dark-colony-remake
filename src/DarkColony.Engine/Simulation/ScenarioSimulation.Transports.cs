@@ -267,6 +267,7 @@ public sealed partial class ScenarioSimulation
         var actor = new SimulatedActor(seed, definition);
         actors.Add(actor);
         actorsById.Add(instanceId, actor);
+        RegisterCommander(actor);
         return true;
     }
 }

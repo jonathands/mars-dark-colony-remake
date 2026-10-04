@@ -102,6 +102,15 @@ public sealed partial class ScenarioSimulation
             playerStats[victim.Seed.Team, 3]++;
             if (victimType < TypeStatEntities) typeStats[victim.Seed.Team, victimType, 0]++;
         }
+        // 0x441B45: stat 11 counts a player's kills less than 20 cells
+        // (Manhattan) from the actor in its first commander slot.
+        if (attackerTeam is { } player and >= 0 and < 8 && CommanderInSlot(player, 0) is { } commanderId &&
+            actorsById.TryGetValue(commanderId, out var commander))
+        {
+            var from = commander.Movement.VisualPosition.Cell;
+            var to = victim.Movement.VisualPosition.Cell;
+            if (Math.Abs(from.X - to.X) + Math.Abs(from.Z - to.Z) < 20) playerStats[player, 11]++;
+        }
     }
 
     /// <summary>Player stat 1 accumulates every Petra-7 credit (start money, passive and vent income).</summary>
@@ -220,9 +229,7 @@ public sealed partial class ScenarioSimulation
                     NoUndeploy = true;
                     break;
                 case MissionActionType.Abduct:
-                    // 0x43E2A0 abducts player v[1]'s commander slot (player
-                    // +0xD9C), which this build never fills: the loader sets
-                    // -1 and nothing else writes it, so nothing happens.
+                    StartAbduction(v, pendingMissionTransports);
                     break;
                 case MissionActionType.NoPickup:
                 case MissionActionType.Artifact:
@@ -284,6 +291,7 @@ public sealed partial class ScenarioSimulation
                 var actor = new SimulatedActor(seed, definition);
                 actors.Add(actor);
                 actorsById.Add(instanceId, actor);
+                RegisterCommander(actor);
             }
         }
     }
