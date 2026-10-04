@@ -856,8 +856,15 @@ Check("a stop-on-contact approach ends once a hostile is in weapon range", () =>
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(computerTeams + "1 2 0 0 1000 0\n8 2 1 1 100 0\n"),
         catalog, OpenPath(14, 6), weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: EuclideanRings());
     var guard = simulation.Actor(1)!;
+    var start = guard.Movement.VisualPosition;
     simulation.Step([]);
     Equal(true, guard.MoveOrder!.StopOnContact);
+    // The idle handler returns 0 after pushing the move (0x414C20): no step
+    // yet. The next update reserves the first cell.
+    Equal(start, guard.Movement.VisualPosition);
+    Equal(guard.Movement.OccupiedCell, guard.Movement.ReservedDestination);
+    simulation.Step([]);
+    Equal(true, guard.Movement.ReservedDestination != guard.Movement.OccupiedCell);
     for (var tick = 0; tick < 300 && guard.AttackTargetInstanceId is null; tick++) simulation.Step([]);
     Equal(2, guard.AttackTargetInstanceId ?? throw new InvalidOperationException("The approach never turned into an attack."));
     // Contact came at ring 3 (distance 3, at X = 5), one cell before the

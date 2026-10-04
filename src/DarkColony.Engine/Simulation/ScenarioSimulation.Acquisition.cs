@@ -110,10 +110,12 @@ public sealed partial class ScenarioSimulation
             // port's local search has no partial routes to an occupied cell,
             // so the move targets the same free approach cell that attack
             // pursuit uses (port adapter).
+            // The handler returns 0 after the push (0x414C20), so the move's
+            // first step waits for the next update; the actor update below
+            // only builds its route this update.
             actor.IdleMissCount = 0;
             actor.MoveOrder = new ActiveMoveOrder(approachCell) { StopOnContact = true };
             actor.IdleIssuedMove = actor.MoveOrder;
-            _ = StartSegment(actor);
             events.IdleAcquisitions.Add(new IdleAcquisitionEvent(actor.Seed.InstanceId, distant.Seed.InstanceId, Approach: true));
             return;
         }

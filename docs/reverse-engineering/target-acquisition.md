@@ -63,7 +63,11 @@ the handler returns nonzero.
   state handler `0x419238` mentioned in older notes is the state table's
   entry, not this command's.
 
-Nothing in the idle handler runs while either lasts. Moves and
+Nothing in the idle handler runs while either lasts.
+
+The same return value decides when a move the handler pushes starts. A yield
+(`0x412BC8`) returns 1, so its first step runs in the same update. The mode-2
+approach (`0x414C1B`) returns 0, so its first step waits for the next update. Moves and
 attacks the handler starts itself (approach, yield, acquired target) are
 pushed above the idle record too. When they end, the record resumes with its
 health snapshot and miss counter intact. A player order replaces the whole
