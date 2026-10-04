@@ -72,7 +72,7 @@ public sealed partial class ScenarioSimulation
         if (container is null || !container.TryTake(out var entityId))
         {
             site.ArtifactExcavatorInstanceId = null;
-            RemoveActorFromWorld(site);
+            RemoveActorFromWorld(site, carriedOff: false);
             events.ArtifactRecoveries.Add(new ArtifactRecoveryEvent(site.Seed.InstanceId, harvester.Seed.InstanceId, null, SiteDepleted: true));
             return;
         }

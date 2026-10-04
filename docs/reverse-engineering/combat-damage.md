@@ -118,3 +118,31 @@ case verifies that an ordinary area shot consumes table entry one for scatter
 and entry two for its presentation roll. This avoids a deterministic-but-wrong
 split PRNG whose outcomes diverge as soon as movement repair and combat are
 interleaved.
+
+## Dying state
+
+A kill calls `0x416308` and then `0x434D48`. Recovered on 2026-10-04 and
+implemented in `Simulation/ScenarioSimulation.Death.cs`.
+
+- `0x416308` sets state byte `+0x2C` to 10, empties the command stack, and
+  pushes the dying command (10, `0x416460`) with a zero counter. A city
+  building (actor index below 0x78) also zeroes its slot health.
+- `0x434D48` clears the actor from the grids around its cell.
+- The actor stays in the update list (`world + 0x468EC`). The statistics
+  recount (`0x419738`, stat 6 and the per-type live counts) and the troop cap
+  (`0x41E744`, any nonzero state) keep counting it. Vision keeps stamping it
+  with radius `(150 - t) * r / 150`, at least 1 (`0x445D05`).
+- The dying command's first run draws a death animation from the shared
+  stream (`0x4164B9`). Each later run adds 1 to the counter. At 150 the actor
+  is set to state 0 and leaves the update list (`0x416532`).
+- A commander (runtime `+0x100`, the Inspire target limit, nonzero only for
+  entities 69-76) never counts up: its counter is set to 1 and waits. Unless
+  the tileset is `atlantis.bts` (world byte 0, `0x41BB37`) or the player ran
+  `nopickup`, `0x416308` calls a transport of the commander's team
+  (`0x418F4C`) to the body's position cell. Its first payload word is zero
+  and the next two low bytes hold the actor index. On its first delivery run
+  (`0x418CAA`) the transport sets the body's counter to 150 and takes off.
+  Transports update before other actors, so the body leaves in that update.
+  Otherwise the body stays in state 10 for the rest of the game.
+- An actor carried off by an abducting transport (`0x416220`) enters the
+  same state with counter 1, which skips the animation draw.

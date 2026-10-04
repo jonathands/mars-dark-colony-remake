@@ -436,7 +436,8 @@ one harvester may own or prepare on a vent.
     transition outright.
   - Actor state byte `+0x2C` takes only 0 (free slot), 1 (alive) and 10
     (dying). The shuffled yield fallback's "state 1" test is therefore "alive"
-    in the port, which has no dying state.
+    in the port. Dying actors are off the grids (see
+    `reverse-engineering/combat-damage.md`, Dying state).
 
   Jitter consumes the executable's initialized 256-entry stream at `0x478e04`
   with its increment-before-read cursor at `0x479204`. The app only renders this state and

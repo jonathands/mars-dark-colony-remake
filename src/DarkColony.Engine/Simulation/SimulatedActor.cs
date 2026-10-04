@@ -34,6 +34,14 @@ public sealed class SimulatedActor
     /// </summary>
     public int MaximumHealth { get; internal set; }
     public bool IsDestroyed => Health <= 0;
+    /// <summary>
+    /// The dying command's counter (state 10, command 10 <c>0x416460</c>), or
+    /// null outside that state. A killed actor starts at 0 and a carried-off
+    /// one at 1; the actor leaves the world when the counter reaches 150.
+    /// </summary>
+    public int? DeathTicks { get; internal set; }
+    /// <summary>Killed or carried off, but still counted and seeing until the dying counter runs out.</summary>
+    public bool IsDying => DeathTicks is not null;
     public const int NativeInitialAbilityCharge = 0x40;
     public const int NativeMaximumAbilityCharge = 0xff;
     /// <summary>Native actor byte +0x0a, used as the BEON/ZISP heal charge.</summary>

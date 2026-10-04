@@ -101,9 +101,9 @@ public sealed partial class ScenarioSimulation
     /// cell with MAP attribute bit 7, unless the viewer flies (movement class
     /// nonzero). A cell with attribute bit 8 at depth 2 or more gets no team
     /// bit (shaded) but still blocks or passes sight as above.
-    /// Not modeled: the shrinking radius of a dying actor (state 10), and the
-    /// skip of troops still inside their production building (<c>+0xCB</c>);
-    /// the port has neither state.
+    /// A dying actor (state 10) still stamps, with a shrinking radius. Not
+    /// modeled: the skip of troops still inside their production building
+    /// (<c>+0xCB</c>); the port creates a troop when it leaves.
     /// </summary>
     private void RefreshVision()
     {
@@ -117,9 +117,10 @@ public sealed partial class ScenarioSimulation
         var expands = new bool[512];
         foreach (var viewer in actors)
         {
-            if (viewer.IsDestroyed || viewer.Seed.Team is < 0 or > 7) continue;
+            if (!IsInWorld(viewer) || viewer.Seed.Team is < 0 or > 7) continue;
             var radius = ObservationRange(viewer);
             if (radius is < 1 or > 12) continue;
+            radius = DyingObservationRange(viewer, radius);
             var nodes = visionTrees.Nodes(radius);
             if (nodes.Count > expands.Length) expands = new bool[nodes.Count];
             var definition = EffectiveDefinition(viewer);

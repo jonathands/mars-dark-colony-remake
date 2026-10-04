@@ -45,16 +45,21 @@ public sealed partial class ScenarioSimulation
     }
 
     /// <summary>
-    /// Right after the statistics recount (<c>0x4197B4</c>): every live
-    /// commander in a slot gets ability charge 230.
+    /// Right after the statistics recount (<c>0x4197B4</c>): when a player's
+    /// live units (stat 6) reach the troop cap, which is still last update's
+    /// (<c>world + 0x528</c>), every commander in its slots gets ability charge
+    /// 230. The original does not check that the commander is alive; a dead
+    /// one keeps its slot until the next cleanup.
     /// </summary>
     private void ChargeCommanders()
     {
         for (var player = 0; player < PlayerCount; player++)
-        for (var slot = 0; slot < NativeCommanderSlots; slot++)
-            if (commanderSlots[player, slot] >= 0 && actorsById.TryGetValue(commanderSlots[player, slot], out var commander) &&
-                !commander.IsDestroyed)
-                commander.AbilityCharge = NativeCommanderCharge;
+        {
+            if (playerStats[player, 6] < TroopCap) continue;
+            for (var slot = 0; slot < NativeCommanderSlots; slot++)
+                if (commanderSlots[player, slot] >= 0 && actorsById.TryGetValue(commanderSlots[player, slot], out var commander))
+                    commander.AbilityCharge = NativeCommanderCharge;
+        }
     }
 
     /// <summary>
@@ -86,6 +91,6 @@ public sealed partial class ScenarioSimulation
         if (CommanderInSlot(values[1], 0) is not { } commanderId || !actorsById.TryGetValue(commanderId, out var commander) ||
             commander.IsDestroyed) return;
         var transportEntityId = teamRaces.GetValueOrDefault(team) == 1 ? 93 : 92;
-        StartBattlefieldTransport(-1, team, transportEntityId, commander.Movement.OccupiedCell, [], [commanderId], events);
+        StartBattlefieldTransport(-1, team, transportEntityId, commander.Movement.VisualPosition.Cell, [], [commanderId], events);
     }
 }

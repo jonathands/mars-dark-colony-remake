@@ -61,6 +61,11 @@ public sealed class BattlefieldTransportState
     /// the transport collects actors instead of unloading new ones.
     /// </summary>
     public bool Abducts { get; }
+    /// <summary>
+    /// A commander's body this transport collects (<c>0x416308</c>): the first
+    /// payload word is zero and the next two low bytes hold the actor index.
+    /// </summary>
+    public int? CorpseInstanceId { get; internal init; }
     public CellCoordinate Target { get; }
     public FixedPointPosition Position { get; internal set; }
     public int BaseHeightRaw { get; }

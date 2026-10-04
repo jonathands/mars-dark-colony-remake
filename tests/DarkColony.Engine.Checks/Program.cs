@@ -2487,8 +2487,10 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var commanderId = simulation.CommanderInSlot(1, 0) ?? throw new InvalidOperationException("No team 1 commander slot.");
         var commander = simulation.Actor(commanderId)!;
         Equal(69, commander.Seed.EntityId);
-        // 0x4197D2 keeps a slotted commander's ability charge at 230.
-        Equal(ScenarioSimulation.NativeCommanderCharge, commander.AbilityCharge);
+        // 0x419801: the 230 charge applies only while the player's live units
+        // reach the troop cap; team 1 is far below it.
+        Equal(true, simulation.PlayerStatistic(1, 6) < simulation.TroopCap);
+        Equal(SimulatedActor.NativeInitialAbilityCharge, commander.AbilityCharge);
         // Trigger 10 (c > 10) runs "abduct 1 1": a transport of team 1's race
         // comes for that commander.
         for (var tick = 0; tick < 200 && simulation.BattlefieldTransports.All(transport => !transport.Abducts); tick++)
@@ -2564,6 +2566,97 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(true, simulation.LastArtifactRecoveries.Single().SiteDepleted);
         Equal(true, site.IsDestroyed);
         Equal(false, harvester.IsDestroyed);
+    });
+
+    Check("a killed actor stays counted and seeing for 150 updates in the dying state", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        const string source = "desert.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
+            "2 1 0 0 0 0\n";
+        var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+        bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), PathRegionMap.Parse(bytes, 16, 4), rules);
+        var unit = simulation.Actors.Single();
+        var radius = simulation.ObservationRange(unit);
+        Equal(true, radius >= 2);
+        var edge = new CellCoordinate(2 + radius, 1);
+        for (var tick = 0; tick < 15; tick++) simulation.Step([]);
+        // 0x416308 pushes the dying command with counter 0; 0x434D48 clears the grids.
+        simulation.Destroy(unit, new List<DestroyedActorEvent>());
+        Equal(0, unit.DeathTicks!.Value);
+        Equal(false, simulation.GroundOccupancy.IsOccupied(new CellCoordinate(2, 1)));
+        simulation.Step([]);
+        // The refresh at update 16 still stamps the full radius (counter 1).
+        Equal(1, unit.DeathTicks!.Value);
+        Equal(true, simulation.IsCellVisibleToTeam(0, edge));
+        Equal(1, simulation.PlayerStatistic(0, 6));
+        // 0x445D05: (150 - t) * r / 150, at least 1.
+        while (unit.DeathTicks < 140) simulation.Step([]);
+        while (simulation.TickCount % 16 != 0) simulation.Step([]);
+        Equal(false, simulation.IsCellVisibleToTeam(0, edge));
+        Equal(true, simulation.IsCellVisibleToTeam(0, new CellCoordinate(2, 1)));
+        Equal(1, simulation.PlayerStatistic(0, 6));
+        while (unit.IsDying) simulation.Step([]);
+        // Out of the update list after 150 runs of the dying command.
+        Equal(15UL + ScenarioSimulation.NativeDeathTicks, simulation.TickCount);
+        simulation.Step([]);
+        Equal(0, simulation.PlayerStatistic(0, 6));
+    });
+
+    Check("a commander's body waits for its pickup transport unless nopickup or atlantis.bts", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+        bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        ScenarioSimulation Start(string tileset, MissionScript? script)
+        {
+            var source = tileset + "\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
+                "5 1 69 0 0 0\n2 1 0 0 0 0\n";
+            var started = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), PathRegionMap.Parse(bytes, 16, 4), rules, script);
+            // The nopickup trigger runs in the norm pass of update 8.
+            for (var tick = 0; tick < 8; tick++) started.Step([]);
+            return started;
+        }
+
+        var simulation = Start("desert.bts", null);
+        var commander = simulation.Actors.Single(actor => actor.Seed.EntityId == 69);
+        simulation.Destroy(commander, new List<DestroyedActorEvent>());
+        // 0x416308: a transport of the commander's team comes for the body.
+        var transport = simulation.BattlefieldTransports.Single();
+        Equal(commander.Seed.InstanceId, transport.CorpseInstanceId!.Value);
+        Equal(0, transport.TeamId);
+        Equal(92, transport.TransportEntityId);
+        simulation.Step([]);
+        Equal(1, commander.DeathTicks!.Value);
+        for (var tick = 0; tick < 200 && commander.IsDying; tick++)
+        {
+            Equal(1, commander.DeathTicks!.Value);
+            Equal(2, simulation.PlayerStatistic(0, 6));
+            simulation.Step([]);
+        }
+        // 0x418CAA sets the counter to 150 and takes off; the transport runs
+        // before the body in the update order, so the body leaves at once.
+        Equal(false, commander.IsDying);
+        Equal(BattlefieldTransportPhase.Ascending, transport.Phase);
+        Equal(commander.Seed.InstanceId, simulation.LastBattlefieldTransports
+            .Single(update => update.Kind == BattlefieldTransportEventKind.PayloadResolved).AbductedInstanceIds.Single());
+        simulation.Step([]);
+        Equal(1, simulation.PlayerStatistic(0, 6));
+
+        var noPickup = MissionScript.Compile(ScenarioTriggers.Parse("1 norm 1 (1)\nnopickup 0\nend\n"));
+        foreach (var (tileset, script) in new[] { ("atlantis.bts", (MissionScript?)null), ("desert.bts", noPickup) })
+        {
+            var stay = Start(tileset, script);
+            var body = stay.Actors.Single(actor => actor.Seed.EntityId == 69);
+            stay.Destroy(body, new List<DestroyedActorEvent>());
+            Equal(0, stay.BattlefieldTransports.Count);
+            for (var tick = 0; tick < 300; tick++) stay.Step([]);
+            // The counter stays at 1, so the body keeps counting as a unit.
+            Equal(1, body.DeathTicks!.Value);
+            Equal(2, stay.PlayerStatistic(0, 6));
+        }
     });
 
     Check("losing the mining colony ends human01 in defeat with outcome text 4", () =>
@@ -3712,14 +3805,14 @@ static int[] ValuesWith(int movementSpeed)
     return values;
 }
 
-static void Equal<T>(T expected, T actual) where T : notnull
+static void Equal<T>(T expected, T actual, [System.Runtime.CompilerServices.CallerLineNumber] int line = 0) where T : notnull
 {
     if (expected is Array expectedArray && actual is Array actualArray)
     {
         if (expectedArray.Length != actualArray.Length ||
             !expectedArray.Cast<object>().SequenceEqual(actualArray.Cast<object>()))
         {
-            throw new InvalidOperationException("Arrays differ.");
+            throw new InvalidOperationException($"Arrays differ (line {line}).");
         }
 
         return;
@@ -3727,7 +3820,7 @@ static void Equal<T>(T expected, T actual) where T : notnull
 
     if (!EqualityComparer<T>.Default.Equals(expected, actual))
     {
-        throw new InvalidOperationException($"Expected {expected}, got {actual}.");
+        throw new InvalidOperationException($"Expected {expected}, got {actual} (line {line}).");
     }
 }
 

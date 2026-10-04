@@ -75,7 +75,8 @@ public sealed partial class ScenarioSimulation
         CellCoordinate target,
         IReadOnlyList<int> reinforcementEntityIds,
         IReadOnlyList<int> abducteeInstanceIds,
-        ICollection<BattlefieldTransportEvent> events)
+        ICollection<BattlefieldTransportEvent> events,
+        int? corpseInstanceId = null)
     {
         var xOffset = (NextNativeRandom() & 1) == 0 ? -FixedPointPosition.One : FixedPointPosition.One;
         var zOffset = (NextNativeRandom() & 1) == 0 ? -FixedPointPosition.One : FixedPointPosition.One;
@@ -85,7 +86,10 @@ public sealed partial class ScenarioSimulation
         var state = new BattlefieldTransportState(nextTransportInstanceId++, sourceActorInstanceId,
             transportEntityId, teamId, target, position, baseHeight,
             transportDefinition.InitialFacing,
-            reinforcementEntityIds, abducteeInstanceIds);
+            reinforcementEntityIds, abducteeInstanceIds)
+        {
+            CorpseInstanceId = corpseInstanceId,
+        };
         battlefieldTransports.Add(state);
         events.Add(new BattlefieldTransportEvent(BattlefieldTransportEventKind.Started, state.InstanceId,
             sourceActorInstanceId, transportEntityId, target, [], []));
@@ -162,6 +166,27 @@ public sealed partial class ScenarioSimulation
                     continue;
                 }
 
+                if (transport.CorpseInstanceId is { } corpseId)
+                {
+                    // 0x418CAA: a first word of zero (no units) names a dying
+                    // body in the next two low bytes. Its counter is set to
+                    // 150, and the transport takes off. Transports update
+                    // before the actors, so the body leaves in this update.
+                    var collected = Array.Empty<int>();
+                    if (actorsById.TryGetValue(corpseId, out var corpse) && corpse.IsDying)
+                    {
+                        corpse.DeathTicks = NativeDeathTicks;
+                        collected = [corpseId];
+                    }
+                    events.Add(new BattlefieldTransportEvent(BattlefieldTransportEventKind.PayloadResolved,
+                        transport.InstanceId, transport.SourceActorInstanceId, transport.TransportEntityId,
+                        transport.Target, [], collected));
+                    transport.Phase = BattlefieldTransportPhase.Ascending;
+                    transport.FlightCounter = 0;
+                    transport.HeightRaw = transport.BaseHeightRaw;
+                    continue;
+                }
+
                 // Saucer payload word zero has high byte 0xff. State 21 treats
                 // it as a header, advances the payload cursor, and returns
                 // before inspecting the first victim on the following update.
@@ -200,7 +225,7 @@ public sealed partial class ScenarioSimulation
                                 BeginTransportPursuit(transport, victimPosition);
                                 continue;
                             }
-                            RemoveActorFromWorld(abductee);
+                            RemoveActorFromWorld(abductee, carriedOff: true);
                             removed = [abducteeId];
                         }
                         transport.PayloadIndex++;

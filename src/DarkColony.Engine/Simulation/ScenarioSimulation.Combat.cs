@@ -34,9 +34,15 @@ public sealed partial class ScenarioSimulation
         }
     }
 
-    private void RemoveActorFromWorld(SimulatedActor actor)
+    /// <summary>
+    /// Takes an actor off the map without a kill. A carried-off actor enters
+    /// the dying state with counter 1 (<c>0x416220</c>), which skips the death
+    /// animation's draw; other removals leave the update list at once.
+    /// </summary>
+    private void RemoveActorFromWorld(SimulatedActor actor, bool carriedOff)
     {
         actor.Health = 0;
+        if (carriedOff) actor.DeathTicks = 1;
         // Removing a transported or abducted actor must release any pending
         // Petra-7 vent handshake immediately; otherwise the vent remains
         // falsely occupied until the next sixteen-step income pass.
@@ -106,6 +112,8 @@ public sealed partial class ScenarioSimulation
     internal void Destroy(SimulatedActor actor, ICollection<DestroyedActorEvent> destroyed)
     {
         destroyed.Add(new DestroyedActorEvent(actor.Seed.InstanceId, actor.Seed.EntityId, actor.Movement.VisualPosition));
+        actor.Health = 0;
+        BeginDeath(actor);
         // The native actor destructor removes a live EXPL/SLUG source from its
         // vent record as part of world removal, rather than waiting for the
         // next producer pulse to notice a stale pointer.

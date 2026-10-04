@@ -75,7 +75,7 @@ checks), and bit 3 a flier (no opacity test).
 | Radius blend by lighting level | implemented (`ObservationRange`) |
 | Sight trees, opacity, flyers, shaded cells | implemented; trees read from `dc.exe` (`NativeVisionTrees`), MAP attributes from the scenario's MAP |
 | Mine detectors and the `+0xCA` revealed bits | implemented (`RevealedTeamMask`) |
-| Dying actors' shrinking radius | not modeled: the port has no dying state |
+| Dying actors' shrinking radius | implemented (see combat-damage.md, Dying state) |
 | Production troops (`+0xCB`) | not needed: the port creates the troop when it leaves |
 | Allied vision in `player + 0x19C0` | pending (A3 `vision` / `ally`) |
 | Explored memory (bit 31) for the display | pending (goal 7) |

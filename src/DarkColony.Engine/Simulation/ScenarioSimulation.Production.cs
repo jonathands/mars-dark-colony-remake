@@ -71,7 +71,7 @@ public sealed partial class ScenarioSimulation
         var cityActors = cityBuildings.Values.ToHashSet();
         foreach (var actor in actors)
         {
-            if (actor.IsDestroyed || cityActors.Contains(actor.Seed.InstanceId) || actor.Seed.Team is < 0 or > 8) continue;
+            if (!IsInWorld(actor) || cityActors.Contains(actor.Seed.InstanceId) || actor.Seed.Team is < 0 or > 8) continue;
             if (!active[actor.Seed.Team]) remaining--;
         }
         // The vents are team-8 actors in the native world.

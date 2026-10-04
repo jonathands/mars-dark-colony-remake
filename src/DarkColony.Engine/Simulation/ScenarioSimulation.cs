@@ -300,6 +300,7 @@ public sealed partial class ScenarioSimulation
         simulation.visionTrees = visionTrees ?? NativeVisionTrees.Flat;
         simulation.LoadAlliances(scenario);
         simulation.artifactContainers.AddRange(artifactContainers);
+        simulation.noPickupWorld = string.Equals(scenario.Tileset, NoPickupTileset, StringComparison.Ordinal);
         // The idle push (0x412654) leaves the site's record word at -1.
         foreach (var site in simulation.actors.Where(actor => actor.Seed.EntityId == ArtifactSiteEntity)) site.ArtifactExcavationTicks = -1;
         foreach (var actor in simulation.actors) simulation.RegisterCommander(actor);
@@ -677,7 +678,11 @@ public sealed partial class ScenarioSimulation
         UpdateCityProduction(events);
         foreach (var actor in actors.ToArray())
         {
-            if (actor.IsDestroyed) continue;
+            if (actor.IsDestroyed)
+            {
+                if (actor.IsDying) UpdateDeath(actor);
+                continue;
+            }
             if (actor.Seed.EntityId == ArtifactSiteEntity)
             {
                 UpdateArtifactSite(actor, events);

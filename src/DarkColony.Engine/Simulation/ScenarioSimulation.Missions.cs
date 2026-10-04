@@ -78,7 +78,7 @@ public sealed partial class ScenarioSimulation
         var cityActors = cityBuildings.Values.ToHashSet();
         foreach (var actor in actors)
         {
-            if (actor.IsDestroyed || cityActors.Contains(actor.Seed.InstanceId) || actor.Seed.Team is < 0 or >= 8) continue;
+            if (!IsInWorld(actor) || cityActors.Contains(actor.Seed.InstanceId) || actor.Seed.Team is < 0 or >= 8) continue;
             var type = EffectiveDefinition(actor).Id;
             if (type < TypeStatEntities) typeStats[actor.Seed.Team, type, 1]++;
             playerStats[actor.Seed.Team, 6]++;
@@ -235,6 +235,9 @@ public sealed partial class ScenarioSimulation
                     AddScriptArtifact(v);
                     break;
                 case MissionActionType.NoPickup:
+                    // Player +0xBB4 (0x43DA7A): its commanders' bodies stay.
+                    if ((uint)v[0] < PlayerCount) noPickupPlayers[v[0]] = true;
+                    break;
                 case MissionActionType.AiMessage:
                     unmodeled.Add(new MissionUnmodeledActionEvent(trigger.Slot, action.Type, v));
                     break;
