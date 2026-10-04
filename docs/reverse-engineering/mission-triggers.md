@@ -158,9 +158,13 @@ The grammar has quirks:
 | 1 | P7 earned, including the starting money |
 | 2 | kills |
 | 3 | losses |
+| 4 | the player's side; `0x41A830` sums a statistic over the players of one side |
+| 5 | harvester pulses that paid the player (`0x413B9C`) |
 | 6 | live units outside the city, recounted every update |
+| 8 | projectiles launched (`0x44178F`, in the constructor `0x441710`) |
+| 9 | health restored by healers to the player's actors (`0x413F04`, `0x413FD8`) |
 | 10 | player 0: 1 − night; player 1: day fraction × 256 |
-| 11 | kills within 20 cells of the killer's commander |
+| 11 | kills (`0x441BDC`) whose victim is less than 20 cells away (Manhattan) from the actor in the killer's word `+0x1934` |
 
 Per-type statistics (4 per player and entity type):
 
@@ -176,7 +180,8 @@ Per-type statistics (4 per player and entity type):
 | Parser, action layout, reverse order | confirmed |
 | Expression grammar and evaluator | confirmed (corpus compiles: 101 scripts, 2465 triggers) |
 | Norm cadence (every 8 updates, after critter groups and before passive income and actors), lives, trip map | confirmed |
-| Statistics 1, 2, 3, 6, 10 and per-type 0, 1, 2 | confirmed writers; stats 5, 8, 9, 11 and per-type 3 not modeled |
+| Statistics 1, 2, 3, 5, 6, 8, 9, 10 and per-type 0-3 | confirmed writers. The corpus scripts read only stats 0, 1, 2, 3, 6 and 10 |
+| Statistic 11 | not modeled. Only the side sum `0x41A830` reads it. The word `+0x1934` (four words from `+0x1934`) is copied from interface state (`0x40AFBB`), and the update `0x419AC7` resets an entry to -1 when its actor dies, then zeroes stat 11 of the player whose index equals the entry's index (an apparent bug in the original). What sets the words in play was not traced |
 | Lobby options in stat 0 | confirmed: session start `0x40123C` sets them, and this build never changes the defaults. Players 1/2 hold the vent rate/money multipliers (4 << 6 = 256); players 3-6 hold 0, so the multiplayer vent-respawn scripts (`s(3,0)==1`) never fire |
 | `reinforce` transport flight | provisional: cargo placed at once like `reinforce2` |
 | Vent rate/reservoir multipliers | confirmed: `newrate` uses stat (1,0) and `setmoney` stat (2,0) (`0x41A538` with AL = 0), both 256 = x1 |

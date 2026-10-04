@@ -865,6 +865,8 @@ Check("weapon bursts use rate between shots then decoded reload", () =>
     simulation.Step([]);
     Equal(1, simulation.LastWeaponFires.Count);
     Equal(1, simulation.Actor(1)!.BurstShotCount);
+    // Stat 8 counts every projectile the player launches (0x44178F).
+    Equal(3, simulation.PlayerStatistic(simulation.Actor(1)!.Seed.Team, 8));
 });
 
 Check("area-effect weapon applies its authored radial percentage", () =>
@@ -1963,6 +1965,8 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(Math.Min(missingBeforeHeal, 36 * matrix[7, target.Definition.ArmorClass] / 256), heal.Amount);
         Equal(target.MaximumHealth - missingBeforeHeal + heal.Amount, target.Health);
         Equal(0, simulation.Actor(1)!.AbilityCharge);
+        // Stat 9 adds the restored health to the healed actor's player.
+        Equal(heal.Amount, simulation.PlayerStatistic(target.Seed.Team, 9));
 
         simulation.Step([new ScheduledWorldCommand(3, 0, new HealAreaIntent(1))]);
         Equal(HealOutcome.InsufficientCharge, simulation.LastHeals.Single().Outcome);

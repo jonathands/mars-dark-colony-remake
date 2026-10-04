@@ -448,6 +448,7 @@ public sealed partial class ScenarioSimulation
             if (amount <= 0) continue;
             target.Health += amount;
             source.AbilityCharge = 0;
+            AddPlayerStatistic(target.Seed.Team, 9, amount);
             return [new HealEvent(source.Seed.InstanceId, target.Seed.InstanceId, amount, HealOutcome.Healed)];
         }
         return [new HealEvent(source.Seed.InstanceId, source.Seed.InstanceId, 0, HealOutcome.NoEligibleTargets)];

@@ -261,6 +261,7 @@ public sealed partial class ScenarioSimulation
         projectiles.Add(new ProjectileState(nextProjectileInstanceId++, attacker.Seed.InstanceId, target.Seed.InstanceId,
             weapon.Id, Math.Max(0, weapon.Damage), source, velocityX, velocityZ, ticks, weapon.ProjectileLifetimeTicks,
             timedImpactCell: timedImpactCell, projectileMode: weapon.ProjectileMode));
+        AddPlayerStatistic(attacker.Seed.Team, 8, 1);
         // dc.exe 0x413181 reads the weapon's burst limit (+0x20), increments
         // actor byte +0x34, and substitutes reload (+0x24) only after the
         // final burst shot. Normal shots use the rate field (+0x08). Keep this
@@ -284,6 +285,7 @@ public sealed partial class ScenarioSimulation
         projectiles.Add(new ProjectileState(nextProjectileInstanceId++, attacker.Seed.InstanceId, -1,
             weapon.Id, Math.Max(0, weapon.Damage), source, velocityX, velocityZ, ticks, weapon.ProjectileLifetimeTicks,
             target, destination.Cell, weapon.ProjectileMode));
+        AddPlayerStatistic(attacker.Seed.Team, 8, 1);
         ApplyWeaponCooldown(attacker, weapon);
         fired.Add(new WeaponFireEvent(attacker.Seed.InstanceId, weapon.Id, NextFirePresentationRoll()));
     }

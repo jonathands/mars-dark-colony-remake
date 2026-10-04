@@ -111,9 +111,17 @@ public sealed partial class ScenarioSimulation
     }
 
     /// <summary><c>0x413B9C</c>: stat 5 counts the harvester pulses that paid their owner.</summary>
-    private void RecordHarvestPulse(int team)
+    private void RecordHarvestPulse(int team) => AddPlayerStatistic(team, 5, 1);
+
+    /// <summary>
+    /// <c>0x419D8C</c> adds to a player statistic. Besides the kill and P7
+    /// counters: stat 8 counts projectiles launched (constructor
+    /// <c>0x441710</c>, <c>0x44178F</c>) and stat 9 the health a healer
+    /// restores to the healed actor's player (<c>0x413F04</c>, <c>0x413FD8</c>).
+    /// </summary>
+    private void AddPlayerStatistic(int team, int stat, int amount)
     {
-        if ((uint)team < 8) playerStats[team, 5]++;
+        if ((uint)team < 8) playerStats[team, stat] += amount;
     }
 
     /// <summary>The trigger block of the world update (<c>0x419A4E</c>), every eighth tick.</summary>
