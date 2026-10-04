@@ -1582,6 +1582,40 @@ Check("scenario simulation repairs a blocked local route before waiting", () =>
     Equal(true, actor.Playback is not null);
 });
 
+Check("a blocked step whose repair fails waits four updates, then retries its kept steps", () =>
+{
+    // A one-cell corridor: the step into (2,0) is blocked, the first free
+    // remaining cell (3,0) has no route around the blocker, so 0x415458 waits
+    // (type 3, counter 4) with the move record still holding its steps.
+    var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 5];
+    bytes[1 * 256 + 1] = 1;
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 1));
+    simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(1, new CellCoordinate(4, 0)))]);
+    simulation.GroundOccupancy.ReplaceClaims(99, [new CellCoordinate(2, 0)]);
+    var actor = simulation.Actor(1)!;
+    for (var tick = 0; tick < 60 && actor.MoveOrder is { BlockedWaiting: false }; tick++) simulation.Step([]);
+    var order = actor.MoveOrder ?? throw new InvalidOperationException("The move ended instead of waiting.");
+    if (!order.BlockedWaiting)
+        throw new InvalidOperationException($"No wait: at {actor.Movement.OccupiedCell}, blocked {order.LastBlockedCell}, ticks {order.BlockedTicksRemaining}, target {order.Target}, playback {actor.Playback is not null}.");
+    Equal(new CellCoordinate(1, 0), actor.Movement.OccupiedCell);
+    Equal(new[] { PathDirection.East, PathDirection.East, PathDirection.East }, order.KeptSteps.ToArray());
+    for (var update = 0; update < 4; update++)
+    {
+        simulation.Step([]);
+        Equal(true, order.BlockedWaiting);
+    }
+    // The blocker leaves; the fifth update ends the wait and the kept steps run on.
+    simulation.GroundOccupancy.Release(99);
+    simulation.Step([]);
+    Equal(false, order.BlockedWaiting);
+    Equal(true, actor.Playback is not null);
+    for (var tick = 0; tick < 200 && actor.MoveOrder is not null; tick++) simulation.Step([]);
+    Equal(new CellCoordinate(4, 0), actor.Movement.OccupiedCell);
+});
+
 Check("ordinary SCN construction replaces stacked occupancy owner", () =>
 {
     var occupancy = new CellOccupancy();

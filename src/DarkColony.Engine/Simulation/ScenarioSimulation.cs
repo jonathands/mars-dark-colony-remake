@@ -687,6 +687,19 @@ public sealed partial class ScenarioSimulation
                 actor.Facing.Step(EffectiveDefinition(actor).TurnSpeed);
             if (actor.CooldownTicks > 0) actor.CooldownTicks--;
             StopMoveOnContact(actor);
+            if (actor.Playback is null && actor.MoveOrder is { BlockedWaiting: true } blocked)
+            {
+                // The blocked step's type-3 wait (0x4122C8): a health change
+                // retries the kept steps in this update; otherwise the counter
+                // runs down, and the retry steps in the update after it ends.
+                if (actor.Health == blocked.BlockedWaitHealth)
+                {
+                    if (blocked.BlockedTicksRemaining > 0) blocked.BlockedTicksRemaining--;
+                    else ResumeKeptSteps(actor, blocked);
+                    continue;
+                }
+                ResumeKeptSteps(actor, blocked);
+            }
             if (actor.Playback is not null)
             {
                 var status = actor.Playback.Step();
@@ -720,7 +733,9 @@ public sealed partial class ScenarioSimulation
                 }
             }
 
-            if (actor.Playback is not null || actor.MoveOrder is null) continue;
+            // The blocked-step wait runs above; this counter is the port's
+            // retry after a failed route.
+            if (actor.Playback is not null || actor.MoveOrder is null || actor.MoveOrder.BlockedWaiting) continue;
             if (actor.MoveOrder.BlockedTicksRemaining > 0)
             {
                 actor.MoveOrder.BlockedTicksRemaining--;

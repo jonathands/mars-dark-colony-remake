@@ -56,8 +56,10 @@ public sealed partial class ScenarioSimulation
     /// ally is told to step aside in the direction of the step reaching the
     /// free cell, and the mover waits four executions.</item>
     /// </list>
-    /// After the wait the port routes afresh to the target where the native
-    /// command retries its kept steps.
+    /// The wait is the idle command's type-3 wait (<c>0x4122C8</c>): a health
+    /// change ends it in the same update, otherwise it ends one update after
+    /// its counter reaches zero. The move then retries the steps it kept,
+    /// starting with the blocked one (<see cref="ResumeKeptSteps"/>).
     /// </summary>
     private void HandleBlockedStep(SimulatedActor mover, IReadOnlyList<(PathDirection Direction, CellCoordinate Cell)> remaining)
     {
@@ -111,6 +113,22 @@ public sealed partial class ScenarioSimulation
             blocker.YieldNotificationDirection = free.Direction;
         }
         order.BlockedTicksRemaining = 4;
+        order.BlockedWaiting = true;
+        order.BlockedWaitHealth = mover.Health;
+        order.KeptSteps = remaining.Select(step => step.Direction).ToArray();
+    }
+
+    /// <summary>The move record retries its kept steps after the blocked-step wait.</summary>
+    private void ResumeKeptSteps(SimulatedActor mover, ActiveMoveOrder order)
+    {
+        order.BlockedWaiting = false;
+        order.BlockedTicksRemaining = 0;
+        var steps = new PackedLocalPath();
+        foreach (var direction in order.KeptSteps.Take(PackedLocalPath.MaximumSteps - 1)) steps.Append(direction);
+        order.KeptSteps = [];
+        var definition = EffectiveDefinition(mover);
+        var occupancy = definition.MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
+        mover.Playback = new PackedPathPlayback(mover.Seed.InstanceId, definition.MovementSpeed, mover.Movement, steps, occupancy, mover.Facing);
     }
 
     private int NextMovementJitter() => (int)(NextNativeRandom() % 3) - 1;

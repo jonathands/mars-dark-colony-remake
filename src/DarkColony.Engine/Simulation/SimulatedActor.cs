@@ -138,6 +138,15 @@ public sealed class ActiveMoveOrder
     public IReadOnlyList<CellCoordinate> PendingWaypoints => waypoints.ToArray();
     public int SegmentCount { get; internal set; }
     public int BlockedTicksRemaining { get; internal set; }
+    /// <summary>
+    /// The blocked step's wait (<c>0x4157C6</c>: a type-3 wait of 4) is
+    /// running; the move then retries <see cref="KeptSteps"/>.
+    /// </summary>
+    public bool BlockedWaiting { get; internal set; }
+    /// <summary>The wait's health word: a change ends it in the same update.</summary>
+    public int BlockedWaitHealth { get; internal set; }
+    /// <summary>The path steps the move record keeps through the wait, starting with the blocked one.</summary>
+    public IReadOnlyList<PathDirection> KeptSteps { get; internal set; } = [];
     public CellCoordinate? LastBlockedCell { get; internal set; }
     /// <summary>
     /// Native move mode 2, issued by the idle handler to close on a distant
@@ -164,6 +173,8 @@ public sealed class ActiveMoveOrder
         Target = next;
         SegmentCount = 0;
         BlockedTicksRemaining = 0;
+        BlockedWaiting = false;
+        KeptSteps = [];
         LastBlockedCell = null;
         return true;
     }
@@ -173,5 +184,7 @@ public sealed class ActiveMoveOrder
         Target = target;
         SegmentCount = 0;
         BlockedTicksRemaining = 0;
+        BlockedWaiting = false;
+        KeptSteps = [];
     }
 }

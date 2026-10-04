@@ -423,7 +423,10 @@ one harvester may own or prepare on a vent.
     that route exists.
   - Otherwise the mover routes to that cell and keeps the remaining steps if
     they fit. When that route fails, it notifies an allied blocker (`+0x35`)
-    and waits four executions.
+    and pushes the type-3 wait with counter 4 (`0x4157C6`). A health change
+    ends the wait at once; otherwise it ends one update after the counter
+    reaches zero. The move then retries the steps it kept, starting with the
+    blocked one, instead of routing afresh.
 
   Jitter consumes the executable's initialized 256-entry stream at `0x478e04`
   with its increment-before-read cursor at `0x479204`. The app only renders this state and
