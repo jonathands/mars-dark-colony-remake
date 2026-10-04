@@ -211,6 +211,9 @@ public sealed partial class MainForm
                 _cameraX = localActor.Movement.OccupiedCell.X * 32 - 258;
                 _cameraY = CellPixelTop(localActor.Movement.OccupiedCell.Z) - 229;
             }
+            // Campaign maps such as human01 start without local units; the
+            // camera then follows the first ones the mission script brings in.
+            _cameraAwaitsLocalUnits = localActor is null;
             ClampGameplayCamera();
             _status = $"Loaded {scenario.Directory}\\{scenario.Name}: {_scenarioSimulation.Actors.Count} actors / {missionScript?.Triggers.Count ?? 0} triggers.";
             return true;
