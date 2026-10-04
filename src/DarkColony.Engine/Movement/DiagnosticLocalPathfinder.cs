@@ -37,6 +37,7 @@ public sealed class DiagnosticLocalPathfinder
     private readonly bool[] enterable;
     private readonly int[] enterableStamps;
     private int stamp;
+    private int searchTargetIndex = -1;
     private readonly bool[] allowedRegions = new bool[256];
     private readonly PriorityQueue<(CellCoordinate Cell, long Sequence), (int Cost, long TieBreak)> frontier = new();
 
@@ -74,9 +75,11 @@ public sealed class DiagnosticLocalPathfinder
         long sequence = 0;
         var startIndex = IndexOf(start);
         var targetIndex = IndexOf(target);
-        // A cell is recorded only after passing CanEnter, so an unenterable
-        // target (for example, one occupied by the unit being attacked) can
-        // never be reached: answer without flooding the whole region.
+        // The native search (0x444540) seeds the target and expands toward the
+        // mover, so the target cell itself is never tested for occupancy; a
+        // route may end on an occupied cell. A target outside the allowed
+        // regions still cannot be reached: answer without flooding.
+        searchTargetIndex = targetIndex;
         if (targetIndex != startIndex && !CanEnter(target, movementClass, movingInstanceId, restrictRegions))
             return Empty(DiagnosticPathTermination.NoRoute);
         Record(startIndex, 0, startIndex, default);
@@ -143,7 +146,7 @@ public sealed class DiagnosticLocalPathfinder
     private bool ComputeCanEnter(CellCoordinate cell, int movementClass, int movingInstanceId, bool restrictRegions)
     {
         var occupancy = movementClass == 0 ? groundOccupancy : alternateOccupancy;
-        if (occupancy.TryGetOwner(cell, out var owner) && owner != movingInstanceId) return false;
+        if (IndexOf(cell) != searchTargetIndex && occupancy.TryGetOwner(cell, out var owner) && owner != movingInstanceId) return false;
         if (!restrictRegions) return true;
         var region = path.RegionAt(cell);
         return region != 0 && allowedRegions[region];

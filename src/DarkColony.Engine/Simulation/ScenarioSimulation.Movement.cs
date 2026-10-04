@@ -43,30 +43,74 @@ public sealed partial class ScenarioSimulation
         return new MoveCommandOutcome(actor.Seed.InstanceId, order.Target, local.Termination, local.Steps.Count);
     }
 
-    private void NotifyAndJitterBlockedActor(SimulatedActor mover, CellCoordinate? blockedCell)
+    /// <summary>
+    /// Blocked path step (<c>0x415458</c>). The remaining packed steps are
+    /// walked for the first cell that is free in the mover's grid:
+    /// <list type="bullet">
+    /// <item>None free (for example an occupied destination): the move target
+    /// is jittered by -1..1 cells in X and then Z from the shared stream
+    /// (<c>0x4155D5</c>) and the move restarts; it ends if the jittered target
+    /// is the mover's own cell.</item>
+    /// <item>A free cell: route to it and keep the old steps after it when the
+    /// total fits in 31 (<c>0x41518C</c>). If that route fails, the blocking
+    /// ally is told to step aside in the direction of the step reaching the
+    /// free cell, and the mover waits four executions.</item>
+    /// </list>
+    /// After the wait the port routes afresh to the target where the native
+    /// command retries its kept steps.
+    /// </summary>
+    private void HandleBlockedStep(SimulatedActor mover, IReadOnlyList<(PathDirection Direction, CellCoordinate Cell)> remaining)
     {
-        if (mover.MoveOrder is null) return;
+        var order = mover.MoveOrder!;
         var definition = EffectiveDefinition(mover);
         var occupancy = definition.MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
-        if (blockedCell is { } cell && occupancy.TryGetOwner(cell, out var blockerId) &&
+        var freeIndex = -1;
+        for (var index = 0; index < remaining.Count; index++)
+        {
+            if (occupancy.IsOccupied(remaining[index].Cell)) continue;
+            freeIndex = index;
+            break;
+        }
+
+        if (freeIndex < 0)
+        {
+            var target = order.Target;
+            var jittered = new CellCoordinate(
+                Math.Clamp(target.X + NextMovementJitter(), 0, path.Width - 1),
+                Math.Clamp(target.Z + NextMovementJitter(), 0, path.Height - 1));
+            if (jittered == mover.Movement.OccupiedCell)
+            {
+                if (order.AdvanceWaypoint()) _ = StartSegment(mover);
+                else mover.MoveOrder = null;
+                return;
+            }
+            order.JitterTarget(jittered);
+            _ = StartSegment(mover);
+            return;
+        }
+
+        var free = remaining[freeIndex];
+        var finder = localPathfinder ??= new DiagnosticLocalPathfinder(path, GroundOccupancy, AlternateOccupancy);
+        var route = finder.Find(mover.Movement.OccupiedCell, free.Cell, definition.MovementClass, mover.Seed.InstanceId);
+        if (route.Steps.Count != 0)
+        {
+            var steps = new PackedLocalPath();
+            for (var index = 0; index < route.Steps.Count; index++) steps.Append(route.Steps[index]);
+            if (route.Steps.Count + remaining.Count - freeIndex - 1 < PackedLocalPath.MaximumSteps)
+                for (var index = freeIndex + 1; index < remaining.Count; index++) steps.Append(remaining[index].Direction);
+            mover.Playback = new PackedPathPlayback(mover.Seed.InstanceId, definition.MovementSpeed, mover.Movement, steps, occupancy, mover.Facing);
+            order.SegmentCount++;
+            return;
+        }
+
+        if (occupancy.TryGetOwner(remaining[0].Cell, out var blockerId) &&
             actorsById.TryGetValue(blockerId, out var blocker) &&
             TeamRelations.Relation(mover.Seed.Team, blocker.Seed.Team) != 0 &&
             blocker.YieldNotificationDirection is null)
         {
-            blocker.YieldNotificationDirection = DirectionBetween(mover.Movement.OccupiedCell, cell);
+            blocker.YieldNotificationDirection = free.Direction;
         }
-
-        var target = mover.MoveOrder.Target;
-        var jittered = new CellCoordinate(
-            Math.Clamp(target.X + NextMovementJitter(), 0, path.Width - 1),
-            Math.Clamp(target.Z + NextMovementJitter(), 0, path.Height - 1));
-        if (jittered != mover.Movement.OccupiedCell)
-        {
-            mover.MoveOrder.JitterTarget(jittered);
-            var retry = StartSegment(mover);
-            if (retry.StepCount != 0) return;
-        }
-        mover.MoveOrder.BlockedTicksRemaining = 4;
+        order.BlockedTicksRemaining = 4;
     }
 
     private int NextMovementJitter() => (int)(NextNativeRandom() % 3) - 1;
@@ -75,23 +119,5 @@ public sealed partial class ScenarioSimulation
     {
         nativeRandomIndex = (nativeRandomIndex + 1) & 0xff;
         return nativeRandomTable[nativeRandomIndex];
-    }
-
-    private static PathDirection DirectionBetween(CellCoordinate source, CellCoordinate target)
-    {
-        var dx = Math.Sign(target.X - source.X);
-        var dz = Math.Sign(target.Z - source.Z);
-        return (dx, dz) switch
-        {
-            (-1, -1) => PathDirection.NorthWest,
-            (0, -1) => PathDirection.North,
-            (1, -1) => PathDirection.NorthEast,
-            (-1, 0) => PathDirection.West,
-            (1, 0) => PathDirection.East,
-            (-1, 1) => PathDirection.SouthWest,
-            (0, 1) => PathDirection.South,
-            (1, 1) => PathDirection.SouthEast,
-            _ => throw new InvalidOperationException("Blocked-cell direction cannot be zero."),
-        };
     }
 }

@@ -74,6 +74,19 @@ public sealed class PackedPathPlayback
         throw new InvalidOperationException("Cancelled movement owns neither its source nor its destination cell.");
     }
 
+    /// <summary>The steps not yet taken, starting with a blocked one, and the cell each enters.</summary>
+    public IReadOnlyList<(PathDirection Direction, CellCoordinate Cell)> RemainingSteps()
+    {
+        var steps = new List<(PathDirection, CellCoordinate)>();
+        var cell = Movement.OccupiedCell;
+        for (var index = nextStep; index < path.Count; index++)
+        {
+            cell = cell.Offset(path[index].Delta());
+            steps.Add((path[index], cell));
+        }
+        return steps;
+    }
+
     public PackedPathPlaybackStatus Step()
     {
         CompletedTransitionLastStep = false;

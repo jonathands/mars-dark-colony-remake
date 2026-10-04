@@ -97,7 +97,9 @@ and accepted ground special attacks.
   - the per-node LINQ candidate sort became a precomputed table;
   - per-search dictionaries became reused stamped arrays;
   - superseded queue entries are skipped;
-  - an unenterable target answers `NoRoute` without flooding its region.
+  - an unenterable target answers `NoRoute` without flooding its region
+    (since 2026-10-04 an occupied target is enterable, as the native search
+    seeds it; only region rules make a target unenterable).
 
   The worst scenario now costs 0.94 ms per tick in Release
   (`d4play08`), and `alien09` costs 1.2 ms. Measure with `--timing`.

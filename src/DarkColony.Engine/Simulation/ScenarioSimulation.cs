@@ -641,17 +641,9 @@ public sealed partial class ScenarioSimulation
                 {
                     actor.MoveOrder ??= new ActiveMoveOrder(actor.Movement.OccupiedCell);
                     actor.MoveOrder.LastBlockedCell = actor.Playback.BlockedCell;
-                    var blockedCell = actor.Playback.BlockedCell;
+                    var remaining = actor.Playback.RemainingSteps();
                     actor.Playback = null;
-                    // Native blockage handling first attempts to reconstruct a
-                    // usable local suffix. The four-execution wait is only the
-                    // failure path; the notified blocker steps aside from its
-                    // idle command (ScenarioSimulation.Yield.cs).
-                    var repair = StartSegment(actor);
-                    if (repair.StepCount == 0)
-                    {
-                        NotifyAndJitterBlockedActor(actor, blockedCell);
-                    }
+                    HandleBlockedStep(actor, remaining);
                 }
                 else if (actor.Playback.CompletedTransitionLastStep)
                 {

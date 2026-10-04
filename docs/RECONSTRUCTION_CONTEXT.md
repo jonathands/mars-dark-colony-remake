@@ -414,10 +414,17 @@ one harvester may own or prepare on a vent.
   the A/B families rather than assigning FIREB exclusively to Napalm.
 - Local unit control is now engine-driven for campaign team 0: selection only
   submits future-tick `MoveIntent` commands, `ScenarioSimulation` owns their
-  persistent target/order state, segments paths beyond the 32-step buffer, and
-  immediately rebuilds a local route after a dynamic playback block. On repair
-  failure it now applies the recovered cooperative-team blocker notification,
-  one-cell `random % 3 - 1` target jitter, and four-execution fallback wait.
+  persistent target/order state, and segments paths beyond the 32-step
+  buffer. A blocked step follows `0x415458` (2026-10-04). It looks for the
+  first free cell among the remaining packed steps:
+  - With none free, the move target is jittered by `random % 3 - 1` in X,
+    then Z, and the move restarts (`0x4155D5`). This is how a move onto an
+    occupied cell settles beside it; the native search seeds the target, so
+    that route exists.
+  - Otherwise the mover routes to that cell and keeps the remaining steps if
+    they fit. When that route fails, it notifies an allied blocker (`+0x35`)
+    and waits four executions.
+
   Jitter consumes the executable's initialized 256-entry stream at `0x478e04`
   with its increment-before-read cursor at `0x479204`. The app only renders this state and
   exposes selected unit/cell/facing/order feedback.

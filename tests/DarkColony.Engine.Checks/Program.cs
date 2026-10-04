@@ -592,7 +592,9 @@ Check("a fully blocked yield shuffles its order with the shared random stream", 
 {
     // Every sideways candidate around (5,5) is held, so 0x4126A8 fails and
     // 0x412820 draws: entry 1 = 3 swaps preference 3 (offset -1) to the
-    // front, which turns east into north-east. Held live cells are accepted.
+    // front, which turns east into north-east (6,4). Held live cells are
+    // accepted, so the first step there is blocked with no free cell left,
+    // and 0x4155D5 jitters the target by entries 2 and 3 (0 % 3 - 1 each).
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
     var placements = "5 5 1 0 100 0\n" + string.Concat(
         new[] { (5, 6), (5, 4), (6, 6), (6, 4), (4, 6), (4, 4), (6, 5) }.Select(cell => $"{cell.Item1} {cell.Item2} 4 0 100 0\n"));
@@ -603,7 +605,24 @@ Check("a fully blocked yield shuffles its order with the shared random stream", 
     var blocker = simulation.Actor(1)!;
     blocker.YieldNotificationDirection = PathDirection.East;
     simulation.Step([]);
-    Equal(new CellCoordinate(6, 4), blocker.MoveOrder!.Target);
+    Equal(new CellCoordinate(5, 3), blocker.MoveOrder!.Target);
+});
+
+Check("a move onto an occupied cell routes there and settles beside it", () =>
+{
+    // The native search seeds the target, so an occupied destination still
+    // has a route; the last step is blocked with no free cell left and the
+    // target is jittered (entries 1 and 2: 0 % 3 - 1 = -1 each).
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 5 1 0 100 0\n6 5 4 0 100 0\n"),
+        catalog, OpenPath(12, 12), randomTable: NativeRandomTable.FromValues(new uint[NativeRandomTable.Length]),
+        targetRings: EuclideanRings());
+    var mover = simulation.Actor(1)!;
+    simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new MoveIntent(1, new CellCoordinate(6, 5)))]);
+    Equal(true, mover.Playback is not null);
+    for (var tick = 0; tick < 200 && mover.MoveOrder is not null; tick++) simulation.Step([]);
+    Equal(true, mover.MoveOrder is null);
+    Equal(new CellCoordinate(5, 4), mover.Movement.OccupiedCell);
 });
 
 Check("the idle record survives the moves it pushes itself", () =>
