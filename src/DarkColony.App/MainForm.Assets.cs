@@ -214,6 +214,27 @@ public sealed partial class MainForm
         return animation is not null && DrawAnimationFrame(graphics, fileName, animation.FirstFrame, x, y);
     }
 
+    private readonly Dictionary<(string File, int First, int Last), int[]> _nativeFrameTicks = [];
+
+    /// <summary>
+    /// The frame of the sequence <paramref name="first"/>-<paramref name="last"/>
+    /// shown after <paramref name="steps"/> updates on the executable's clock
+    /// (<see cref="NativeAnimationTiming"/>), or -1 when a one-shot sequence is over.
+    /// </summary>
+    private int NativeFrame(string fileName, int first, int last, ulong steps, NativeAnimationMode mode = NativeAnimationMode.Loop)
+    {
+        if (!_nativeFrameTicks.TryGetValue((fileName, first, last), out var ticks))
+        {
+            _ = Animation(fileName, string.Empty);
+            ticks = _animationDefinitions.TryGetValue(fileName, out var definition)
+                ? NativeAnimationTiming.FrameTicks(definition, first, last)
+                : [.. Enumerable.Repeat(3, Math.Max(1, last - first + 1))];
+            _nativeFrameTicks[(fileName, first, last)] = ticks;
+        }
+        var offset = NativeAnimationTiming.FrameAt(ticks, steps, mode);
+        return offset < 0 ? -1 : first + offset;
+    }
+
     private AnimationRange? Animation(string fileName, string animationName)
     {
         if (_installation is null) return null;

@@ -7,7 +7,8 @@ public sealed record AnimationRange(string Name, ushort FirstFrame, ushort LastF
 
 public sealed record DrawLayer(string SpriteName, ushort SpriteFrame, short X, short Y, ushort[] Values);
 
-public sealed record LogicalFrame(ushort Event, IReadOnlyList<DrawLayer> Layers);
+/// <summary>A FIN logical frame: its delay word (frame ticks are <c>(d + 3) * 15 / 100</c>, d 0 meaning 15; see <see cref="NativeAnimationTiming"/>) and its layers.</summary>
+public sealed record LogicalFrame(ushort Delay, IReadOnlyList<DrawLayer> Layers);
 
 public sealed record CompositeFrame(int X, int Y, int Width, int Height, byte[] Rgba);
 
@@ -55,7 +56,7 @@ public sealed class AnimationDefinition
 
         var logicalEnd = checked(animationsEnd + logicalFrameCount * 164);
         if (logicalEnd > data.Length) throw new InvalidDataException("FIN logical-frame table exceeds the file.");
-        var headers = new (ushort Count, ushort Event)[logicalFrameCount];
+        var headers = new (ushort Count, ushort Delay)[logicalFrameCount];
         var totalLayers = 0;
         for (var index = 0; index < logicalFrameCount; index++)
         {
@@ -84,7 +85,7 @@ public sealed class AnimationDefinition
         for (var index = 0; index < logicalFrameCount; index++)
         {
             var layers = allLayers.Skip(layerOffset).Take(headers[index].Count).ToArray();
-            logicalFrames[index] = new LogicalFrame(headers[index].Event, layers);
+            logicalFrames[index] = new LogicalFrame(headers[index].Delay, layers);
             layerOffset += headers[index].Count;
         }
 

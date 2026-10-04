@@ -42,7 +42,7 @@ public sealed class TroopBuildTimings
             {
                 if (frames.ContainsKey(animation.Name) || animation.LastFrame < animation.FirstFrame) continue;
                 frames[animation.Name] = Enumerable.Range(animation.FirstFrame, animation.LastFrame - animation.FirstFrame + 1)
-                    .Select(frame => definition.LogicalFrames[frame].Event)
+                    .Select(frame => definition.LogicalFrames[frame].Delay)
                     .ToArray();
             }
         }
@@ -66,11 +66,7 @@ public sealed class TroopBuildTimings
     public static int PlayOnceTicks(IReadOnlyList<ushort> finDelays)
     {
         var ticks = 1;
-        for (var frame = 1; frame < finDelays.Count; frame++)
-        {
-            var frameTicks = (byte)(((finDelays[frame] == 0 ? 15 : finDelays[frame]) + 3) * 15 / 100);
-            ticks += frameTicks == 0 ? 256 : frameTicks;
-        }
+        for (var frame = 1; frame < finDelays.Count; frame++) ticks += NativeAnimationTiming.FrameTicks(finDelays[frame]);
         return ticks;
     }
 }

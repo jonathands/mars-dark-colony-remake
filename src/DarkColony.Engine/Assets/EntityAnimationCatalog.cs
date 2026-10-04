@@ -44,8 +44,24 @@ public sealed class EntityAnimationCatalog
         this.deathCandidates = deathCandidates;
     }
 
-    public static EntityAnimationCatalog Build(EntityCatalog entities, string animateDirectory)
+    /// <summary>The FIN files <c>anim.dat</c> lists, in order: the order the game loads them.</summary>
+    public static IReadOnlyList<string> LoadOrder(string animDatPath) => File.Exists(animDatPath)
+        ? File.ReadAllLines(animDatPath).Select(line => line.Trim()).Where(line => line.Length != 0).ToArray()
+        : [];
+
+    /// <param name="loadOrder">
+    /// The <c>anim.dat</c> file order. When given, a name found in several FIN
+    /// files resolves to the first one loaded, as the game's name lookup does;
+    /// without it, a file named after the entity code wins, then file name order.
+    /// </param>
+    public static EntityAnimationCatalog Build(EntityCatalog entities, string animateDirectory, IReadOnlyList<string>? loadOrder = null)
     {
+        var rank = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (loadOrder is not null)
+            for (var index = 0; index < loadOrder.Count; index++) rank.TryAdd(Path.GetFileName(loadOrder[index]), index);
+        int FileRank(EntityAnimationCandidate candidate) => loadOrder is null
+            ? (candidate.ExactFileStem ? 0 : 1)
+            : rank.GetValueOrDefault(Path.GetFileName(candidate.FinPath), int.MaxValue);
         var codes = entities.Entities.Select(entity => entity.Code).Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(code => code.Length).ToArray();
         var byCode = codes.ToDictionary(code => code, _ => new List<EntityAnimationCandidate>(), StringComparer.OrdinalIgnoreCase);
@@ -109,32 +125,32 @@ public sealed class EntityAnimationCatalog
                 .Select(group => group.OrderBy(item => item.AnimationName.Equals(entity.Code + "STAND0", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
                     .ThenBy(item => item.AnimationName.EndsWith('0') ? 0 : 1)
                     .ThenBy(item => item.AnimationName, StringComparer.OrdinalIgnoreCase).First())
-                .OrderBy(item => item.ExactFileStem ? 0 : 1)
+                .OrderBy(item => FileRank(item))
                 .ThenBy(item => item.FinPath, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => item.AnimationName, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             result[entity.Id] = selectedPerFile;
             moveResult[entity.Id] = movesByCode[entity.Code]
-                .OrderBy(item => item.Candidate.ExactFileStem ? 0 : 1).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
+                .OrderBy(item => FileRank(item.Candidate)).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
             deployResult[entity.Id] = deploysByCode[entity.Code]
-                .OrderBy(item => item.Candidate.ExactFileStem ? 0 : 1).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
+                .OrderBy(item => FileRank(item.Candidate)).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
             retractResult[entity.Id] = retractsByCode[entity.Code]
-                .OrderBy(item => item.Candidate.ExactFileStem ? 0 : 1).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
+                .OrderBy(item => FileRank(item.Candidate)).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
             fireResult[entity.Id] = firesByCode[entity.Code]
                 // FIREA/B/C are distinct families in the installed assets.
                 // Normal map firing uses the plain family when present; the
                 // source ordering otherwise places A ahead of B/C. Make that
                 // policy explicit instead of letting directory/frame order
                 // accidentally choose Cyborg's alternate FIREB sequence.
-                .OrderBy(item => item.Candidate.ExactFileStem ? 0 : 1)
+                .OrderBy(item => FileRank(item.Candidate))
                 .ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => FireVariantPriority(entity.Code, item.Candidate.AnimationName))
                 .ThenBy(item => item.Sector)
                 .ToArray();
             hitResult[entity.Id] = hitsByCode[entity.Code]
-                .OrderBy(item => item.Candidate.ExactFileStem ? 0 : 1).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
+                .OrderBy(item => FileRank(item.Candidate)).ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Sector).ToArray();
             deathResult[entity.Id] = deathsByCode[entity.Code]
-                .OrderBy(item => item.ExactFileStem ? 0 : 1)
+                .OrderBy(item => FileRank(item))
                 .ThenBy(item => item.AnimationName.EndsWith('0') ? 0 : 1)
                 .ThenBy(item => item.FinPath, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -222,9 +238,8 @@ public sealed class EntityAnimationCatalog
             .GroupBy(item => item.Sector)
             .ToDictionary(
                 group => group.Key,
-                group => group.OrderBy(item => item.Candidate.ExactFileStem ? 0 : 1)
-                    .ThenBy(item => item.Candidate.FinPath, StringComparer.OrdinalIgnoreCase)
-                    .First().Candidate);
+                // The lists are already in file preference order (see Build).
+                group => group.First().Candidate);
         var selector = sector * 2;
         for (var attempt = 0; attempt < NativeDirectionalFallbackOffsets.Length; attempt++)
         {

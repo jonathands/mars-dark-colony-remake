@@ -1,4 +1,5 @@
 using DarkColony.Engine.Commands;
+using DarkColony.Engine.Assets;
 using DarkColony.Engine.Data;
 using DarkColony.Engine.Economy;
 using DarkColony.Engine.Missions;
@@ -373,7 +374,7 @@ internal static class DeterminismCli
         var update = args.Contains("--update-goldens");
         var dump = Array.IndexOf(args, "--dump-digest");
         var summary = Array.IndexOf(args, "--event-summary");
-        string[] modes = ["--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke"];
+        string[] modes = ["--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke"];
         if (!args.Any(modes.Contains)) return false;
 
         var dataIndex = Array.IndexOf(args, "--data");
@@ -447,6 +448,28 @@ internal static class DeterminismCli
                 var keys = DeterminismHarness.EventSummary(installation, rules, scanned, scanTicks)
                     .Where(pair => pair.Value > 0).Select(pair => pair.Key).ToArray();
                 Console.WriteLine($"{keys.Length,3} {scanned,-18} {string.Join(' ', keys.Where(key => !key.EndsWith("SourceInvalid") && !key.EndsWith("Unsupported") && !key.Contains("SourceNot")).Select(key => key.Replace("Last", "")))}");
+            }
+            return true;
+        }
+
+        if (args.Contains("--animation-order"))
+        {
+            // Entity animations that the anim.dat load order resolves differently.
+            var animate = installation.DataFile("animate");
+            var byStem = EntityAnimationCatalog.Build(rules.Entities, animate);
+            var byLoad = EntityAnimationCatalog.Build(rules.Entities, animate, EntityAnimationCatalog.LoadOrder(installation.DataFile("anim.dat")));
+            static string Name(EntityAnimationCandidate? candidate) => candidate is null ? "-" : $"{Path.GetFileName(candidate.FinPath)}:{candidate.AnimationName}";
+            foreach (var entity in rules.Entities.Entities)
+            {
+                (string Kind, string Old, string New)[] pairs =
+                [
+                    ("stand", Name(byStem.Preferred(entity.Id)), Name(byLoad.Preferred(entity.Id))),
+                    ("die", Name(byStem.PreferredDeath(entity.Id)), Name(byLoad.PreferredDeath(entity.Id))),
+                    ("move0", Name(byStem.PreferredMove(entity.Id, 0)?.Candidate), Name(byLoad.PreferredMove(entity.Id, 0)?.Candidate)),
+                    ("fire0", Name(byStem.PreferredFire(entity.Id, 0)?.Candidate), Name(byLoad.PreferredFire(entity.Id, 0)?.Candidate)),
+                ];
+                foreach (var (kind, old, @new) in pairs.Where(pair => pair.Old != pair.New))
+                    Console.WriteLine($"{entity.Id,3} {entity.Code,-9} {kind,-6} {old} -> {@new}");
             }
             return true;
         }

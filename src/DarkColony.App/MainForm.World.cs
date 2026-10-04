@@ -425,11 +425,12 @@ public sealed partial class MainForm
         var candidate = combatPresentation?.Candidate ?? moveSelection?.Candidate ?? _entityAnimations.Preferred(renderEntityId);
         if (candidate is null) return false;
         var span = candidate.LastFrame - candidate.FirstFrame + 1;
-        var frameAge = combatPresentation is null
-            ? (_world.TickCount - _screenStartedAtTick) / 3
-            : _world.TickCount - combatPresentation.StartedAtTick;
-        var frame = (ushort)(candidate.FirstFrame + frameAge % (ulong)span);
         var fileName = Path.GetFileName(candidate.FinPath);
+        // Stands and walks run on the native clock; combat presentations keep
+        // their one-frame-per-update timing from the firing model.
+        var frame = combatPresentation is null
+            ? (ushort)NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, _world.TickCount - _screenStartedAtTick)
+            : (ushort)(candidate.FirstFrame + (_world.TickCount - combatPresentation.StartedAtTick) % (ulong)span);
         var bitmap = WorldAnimationBitmap(fileName, frame);
         if (bitmap is null) return false;
         var key = $"{fileName}:{frame}:world";
@@ -457,7 +458,8 @@ public sealed partial class MainForm
         try
         {
             _entityCatalog ??= EntityCatalog.Load(_installation.DataFile("gamestat", "gamestat.txt"));
-            _entityAnimations ??= EntityAnimationCatalog.Build(_entityCatalog, _installation.DataFile("animate"));
+            _entityAnimations ??= EntityAnimationCatalog.Build(_entityCatalog, _installation.DataFile("animate"),
+                EntityAnimationCatalog.LoadOrder(_installation.DataFile("anim.dat")));
             _weaponEffects ??= _weaponCatalog is null ? null : WeaponEffectCatalog.Build(_weaponCatalog, _installation.DataFile("animate"));
             var state = graphics.Save();
             graphics.SetClip(new Rectangle(0, 0, 516, 458));
@@ -686,9 +688,8 @@ public sealed partial class MainForm
                 : null;
             var candidate = move?.Candidate ?? _entityAnimations.Preferred(transport.TransportEntityId);
             if (candidate is null) continue;
-            var span = candidate.LastFrame - candidate.FirstFrame + 1;
-            var frame = candidate.FirstFrame + (ushort)((_world.TickCount / 3) % (ulong)span);
             var fileName = Path.GetFileName(candidate.FinPath);
+            var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, _world.TickCount);
             var bitmap = WorldAnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
             var origin = WorldAnimationOrigin(fileName, frame);
@@ -719,15 +720,13 @@ public sealed partial class MainForm
                 _deathEffects.RemoveAt(index);
                 continue;
             }
-            var span = candidate.LastFrame - candidate.FirstFrame + 1;
-            var age = (_world.TickCount - effect.StartedAtTick) / 3;
-            if (age >= (ulong)span)
+            var fileName = Path.GetFileName(candidate.FinPath);
+            var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, _world.TickCount - effect.StartedAtTick, NativeAnimationMode.Once);
+            if (frame < 0)
             {
                 _deathEffects.RemoveAt(index);
                 continue;
             }
-            var frame = candidate.FirstFrame + (ushort)age;
-            var fileName = Path.GetFileName(candidate.FinPath);
             var bitmap = WorldAnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
             var origin = WorldAnimationOrigin(fileName, frame);
@@ -788,8 +787,7 @@ public sealed partial class MainForm
         if (_gameplayPointer is not { } pointer) return;
         var animation = Animation("curs.fin", GameplayCursorAnimation(pointer));
         if (animation is null) return;
-        var span = animation.LastFrame - animation.FirstFrame + 1;
-        var frame = animation.FirstFrame + (ushort)(((_world.TickCount - _screenStartedAtTick) / 3) % (ulong)span);
+        var frame = NativeFrame("curs.fin", animation.FirstFrame, animation.LastFrame, _world.TickCount - _screenStartedAtTick);
         var bitmap = AnimationBitmap("curs.fin", frame);
         if (bitmap is null) return;
         // Cursor FIN layers have their own negative hotspot offsets. Unlike a

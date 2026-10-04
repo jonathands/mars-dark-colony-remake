@@ -539,6 +539,18 @@ Check("players and critter team 9 start mutually cooperative", () =>
     Equal(true, relations.IsHostile(8, 0));
 });
 
+Check("the native animation clock skips frame 0 once, then loops it at its own ticks", () =>
+{
+    // 0x425674: (d + 3) * 15 / 100 ticks, d 0 meaning 15; a zero byte lasts 256.
+    Equal((2, 3, 256), (NativeAnimationTiming.FrameTicks(0), NativeAnimationTiming.FrameTicks(17), NativeAnimationTiming.FrameTicks(1704)));
+    // 0x4264C8 with frames of 2, 1 and 3 ticks: step 1 shows frame 1.
+    int[] ticks = [2, 1, 3];
+    var loop = Enumerable.Range(0, 12).Select(step => NativeAnimationTiming.FrameAt(ticks, (ulong)step)).ToArray();
+    Equal(new[] { 0, 1, 2, 2, 2, 0, 0, 1, 2, 2, 2, 0 }, loop);
+    Equal(new[] { 1, 2, 2, 2, -1 }, Enumerable.Range(1, 5).Select(step => NativeAnimationTiming.FrameAt(ticks, (ulong)step, NativeAnimationMode.Once)).ToArray());
+    Equal(2, NativeAnimationTiming.FrameAt(ticks, 50, NativeAnimationMode.Hold));
+});
+
 Check("troop build animations convert FIN frame delays to ticks like 0x425674", () =>
 {
     // The first tick leaves frame 0; each later frame lasts (d + 3) * 15 / 100
@@ -4029,7 +4041,10 @@ Check("faction-selected War rosters complete a local movement order", () =>
         Equal("EXPL", entities[6].Code);
         Equal("Exploiter", entities[6].DisplayName);
 
-        var animations = EntityAnimationCatalog.Build(entities, install.DataFile("animate"));
+        var animations = EntityAnimationCatalog.Build(entities, install.DataFile("animate"),
+            EntityAnimationCatalog.LoadOrder(install.DataFile("anim.dat")));
+        // fill.fin is not in anim.dat, so the game takes FILL from fuel.fin.
+        Equal("fuel.fin", Path.GetFileName(animations.Preferred(90)!.FinPath).ToLowerInvariant());
         var unresolved = entities.Entities.Where(entity => animations.Preferred(entity.Id) is null).ToArray();
         Equal(0, unresolved.Length);
         Equal("EXPLSTAND0", animations.Preferred(6)!.AnimationName);
