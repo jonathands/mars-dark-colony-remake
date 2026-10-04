@@ -33,6 +33,28 @@ Or double-click [`run-war-lobby-debug.cmd`](run-war-lobby-debug.cmd).
 If `--data` is omitted, the app checks `DARKCOLONY_DATA` and then the adjacent
 `../Dark Colony` directory. The original files are never copied into this port.
 
+## Diagnostics
+
+Every session writes a plain-text log to
+`%LOCALAPPDATA%\DarkColony.Port\logs\latest.log`; the previous session is kept
+as `previous.log`. Use `--log <path>` or `DARKCOLONY_LOG` to write elsewhere.
+The log records unhandled exceptions with stack traces, data errors, screen
+changes, and every status-line message. With `--no-dialogs` (or
+`DARKCOLONY_NO_DIALOGS=1`) failures are logged and the process exits instead of
+showing a message box: exit code 1 is an unhandled exception, 2 a data error.
+
+For unattended checks from PowerShell 7:
+
+```powershell
+.\tools\Run-Port.ps1 -Name main-menu
+.\tools\Run-Port.ps1 -ExtraArguments '--single-player-war' -Actions 'click:574,463','wait:3000' -Name war
+```
+
+`Run-Port.ps1` starts the Debug build with `--no-dialogs`, captures the window
+into `screenshots/`, closes it, and prints the log from `artifacts/logs/`.
+`Send-PortInput.ps1` posts clicks, drags, and keys in native 640×480
+coordinates without moving the real cursor or taking focus.
+
 ## Verify
 
 ```powershell

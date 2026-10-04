@@ -37,3 +37,12 @@ a web-preview approximation into engine behavior.
 
 Do not introduce a third-party game framework until native asset rendering and
 simulation requirements demonstrate that one is necessary.
+
+## Verifying changes
+
+- `dotnet build DarkColony.Port.sln` must have zero warnings (warnings are errors).
+- `dotnet run --project tests/DarkColony.Engine.Checks` exits non-zero on any failure.
+- For visible behavior, use `tools/Run-Port.ps1` (PowerShell 7). It never blocks
+  on a dialog; read the printed log before guessing at a failure, and inspect
+  the captured screenshot. Drive menus and gameplay with `-Actions`.
+- Never leave a check disabled (`#if false`, early return) to make the suite pass.

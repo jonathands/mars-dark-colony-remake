@@ -1,3 +1,4 @@
+using DarkColony.App.Diagnostics;
 using DarkColony.App.Ui;
 using DarkColony.App.Rendering;
 using DarkColony.Engine.Assets;
@@ -170,6 +171,7 @@ public sealed class MainForm : Form
     private int _gameplayMessageIndex = -1;
     private bool _singlePlayerScrollDragging;
     private string _status;
+    private string? _lastLoggedStatus;
     private ulong _screenStartedAtTick;
 
     public MainForm(GameInstallation? installation, MenuScreenId initialScreen = MenuScreenId.Main)
@@ -258,9 +260,27 @@ public sealed class MainForm : Form
                     CaptureConstructionFeedback();
                 }
             });
+            LogStatusChange();
             _surface.RenderAndPresent();
         };
         _timer.Start();
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs eventArgs)
+    {
+        RuntimeLog.Info($"Window closing: {eventArgs.CloseReason}");
+        base.OnFormClosing(eventArgs);
+    }
+
+    /// <summary>
+    /// The status line carries most recoverable errors (missing data, failed
+    /// scenario loads, unimplemented actions); mirror each change to the log.
+    /// </summary>
+    private void LogStatusChange()
+    {
+        if (string.Equals(_status, _lastLoggedStatus, StringComparison.Ordinal)) return;
+        _lastLoggedStatus = _status;
+        RuntimeLog.Info($"Status: {_status}");
     }
 
     protected override bool ProcessCmdKey(ref Message message, Keys keyData) =>
@@ -432,6 +452,7 @@ public sealed class MainForm : Form
             LoadGameplayScenario();
         }
         _resumeGameplayFromStory = false;
+        RuntimeLog.Info($"Screen {_screen} -> {screen}");
         _screen = screen;
         _screenStartedAtTick = _world.TickCount;
         _hoveredButton = null;

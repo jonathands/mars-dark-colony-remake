@@ -1,6 +1,7 @@
 using System.Drawing.Imaging;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using DarkColony.App.Diagnostics;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
@@ -143,6 +144,7 @@ public sealed class Direct3DSurface : Control
 
         var swapChain = _swapChain ?? throw new InvalidOperationException("D3D11 did not return a swap chain.");
         var device = _device ?? throw new InvalidOperationException("D3D11 did not return a device.");
+        RuntimeLog.Info($"D3D11 device created: feature level {device.FeatureLevel}, {NativeWidth}x{NativeHeight} native target.");
         _backBuffer = swapChain.GetBuffer<ID3D11Texture2D>(0);
         _backBufferView = device.CreateRenderTargetView(_backBuffer);
 
