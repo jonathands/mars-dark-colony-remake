@@ -1470,6 +1470,19 @@ Check("aimsg settings reach the Krusty planner", () =>
     Equal(false, brain.HandleMessage([7, 1, 1]));
 });
 
+Check("a ground move into region 0 heads for the first passable cell, x outer and z inner", () =>
+{
+    // 0x414E32: ring 1 around (2, 2) is scanned from x = 1; (1, 1) is region 0.
+    var bytes = new byte[PathRegionMap.RouteTableSize + 25];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    bytes[PathRegionMap.RouteTableSize + 2 * 5 + 2] = 0;
+    bytes[PathRegionMap.RouteTableSize + 1 * 5 + 1] = 0;
+    var simulation = KrustyWorld("4 4 2 0 -1 0\n", PathRegionMap.Parse(bytes, 5, 5));
+    simulation.Step([new ScheduledWorldCommand(0, 0, new MoveIntent(1, new CellCoordinate(2, 2)))]);
+    for (var tick = 0; tick < 200 && simulation.Actor(1)!.MoveOrder is not null; tick++) simulation.Step([]);
+    Equal(new CellCoordinate(1, 2), simulation.Actor(1)!.Movement.OccupiedCell);
+});
+
 Check("noundeploy keeps deployed harvesters on their vents", () =>
 {
     var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
@@ -3063,6 +3076,20 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(true, attacked);
     });
 
+    Check("every campaign and training mission reaches its script's outcome in the campaign smoke", () =>
+    {
+        // docs/CAMPAIGN_SMOKE.md: team 0 under the Krusty planner, hostiles of the
+        // victory triggers swept every 64 updates, idle units sent to open trips.
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var lines = DeterminismCli.CampaignSmoke(install, rules, 40000, filter: null, sweep: true);
+        Equal(44, lines.Count);
+        var unfinished = lines.Where(line => line.Contains(" none ", StringComparison.Ordinal) || line.Contains("FAULT", StringComparison.Ordinal)).ToArray();
+        if (unfinished.Length != 0) throw new InvalidOperationException(string.Join("; ", unfinished));
+        var victories = lines.Count(line => line.Contains(" victory ", StringComparison.Ordinal));
+        Console.WriteLine($"  campaign smoke: {lines.Count} missions ended, {victories} in victory");
+    });
+
     Check("in a local War on Dead Man's Wharf the computer harvests, builds, trains and attacks", () =>
     {
         var install = GameInstallation.Open(dataPath);
@@ -3077,7 +3104,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var trained = 0;
         var deployed = false;
         var attacked = false;
-        for (var tick = 0; tick < 10000; tick++)
+        for (var tick = 0; tick < 20000; tick++)
         {
             simulation.Step([]);
             built += simulation.LastBuildingPlacements.Count(placement => placement.TeamId == 1);

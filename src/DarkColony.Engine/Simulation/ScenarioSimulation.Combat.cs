@@ -89,6 +89,12 @@ public sealed partial class ScenarioSimulation
         return null;
     }
 
+    /// <summary>A lethal hit from <paramref name="attackerTeam"/>, recorded like any kill (diagnostics and smoke runs).</summary>
+    internal void Kill(SimulatedActor target, int? attackerTeam, ICollection<DestroyedActorEvent> destroyed)
+    {
+        if (!target.IsDestroyed) ApplyDamage(target, target.Health, destroyed, attackerTeam);
+    }
+
     private void ApplyDamage(SimulatedActor target, int damage, ICollection<DestroyedActorEvent> destroyed, int? attackerTeam)
     {
         target.Health = Math.Max(0, target.Health - damage);

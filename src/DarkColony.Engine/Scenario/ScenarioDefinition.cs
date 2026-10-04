@@ -151,6 +151,16 @@ public sealed class ScenarioDefinition
         return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, teams, Placements, Vents);
     }
 
+    /// <summary>
+    /// The same scenario with one team under the given AI profile. The
+    /// campaign smoke uses it to let the Krusty planner play the local side.
+    /// </summary>
+    public ScenarioDefinition WithTeamAiProfile(int teamId, int profile)
+    {
+        var teams = Teams.Select(team => team.TeamId == teamId ? team with { AiProfile = profile } : team).ToArray();
+        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, teams, Placements, Vents);
+    }
+
     private static int SelectedWarRosterEntity(int entityId, int faction, int rank) => entityId switch
     {
         // The paired basic ground units used by free-War SCN starter slots.

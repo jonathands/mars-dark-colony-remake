@@ -178,6 +178,9 @@ public sealed class ActiveMoveOrder
     /// <summary>The destination currently being segmented into packed local paths.</summary>
     public CellCoordinate Target { get; private set; }
     public int PendingWaypointCount => waypoints.Count;
+
+    /// <summary>Replaces the current destination (the impassable-target search of <c>0x414CE4</c>).</summary>
+    internal void ReplaceTarget(CellCoordinate target) => Target = target;
     /// <summary>
     /// Remaining player destinations in execution order. This is a read-only
     /// projection for HUD/replay inspection; queue mutation remains internal

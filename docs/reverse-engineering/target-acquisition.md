@@ -160,3 +160,12 @@ Before each step of a move, the word at command +8 selects a mode:
   built without the ring table.
 - Without the executable's ring table (synthetic checks), automatic acquisition
   is disabled.
+
+## Move targets in region 0
+
+`0x414CE4` prepares every move segment. After clamping the target to the map
+(fliers to row H-3), a ground mover whose target cell lies in PTH region 0
+scans square rings of radius 0-255 around it, x outer and z inner. It
+retargets to the first cell with a nonzero region (`0x414E32`), centered in
+the cell. The port applies this in `StartSegment`. Before it did, a move into
+region 0 failed its route and retried forever.

@@ -42,6 +42,11 @@ public sealed partial class ScenarioSimulation
 
         var finder = localPathfinder ??= new DiagnosticLocalPathfinder(path, GroundOccupancy, AlternateOccupancy);
         var definition = EffectiveDefinition(actor);
+        if (definition.MovementClass == 0 && path.RegionAt(order.Target) == 0 && NearestPassableCell(order.Target) is { } passable)
+        {
+            order.ReplaceTarget(passable);
+            if (actor.Movement.OccupiedCell == passable) return StartSegment(actor);
+        }
         var local = finder.Find(actor.Movement.OccupiedCell, order.Target, definition.MovementClass, actor.Seed.InstanceId);
         if (local.Steps.Count == 0)
         {
@@ -143,6 +148,27 @@ public sealed partial class ScenarioSimulation
         var definition = EffectiveDefinition(mover);
         var occupancy = definition.MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
         mover.Playback = new PackedPathPlayback(mover.Seed.InstanceId, definition.MovementSpeed, mover.Movement, steps, occupancy, mover.Facing);
+    }
+
+    /// <summary>
+    /// <c>0x414E32</c>: a ground move whose target cell is in region 0 heads for
+    /// the first cell with a region on square rings of radius 0-255 around it,
+    /// x outer and z inner.
+    /// </summary>
+    private CellCoordinate? NearestPassableCell(CellCoordinate target)
+    {
+        for (var radius = 0; radius < 0x100; radius++)
+            for (var x = target.X - radius; x <= target.X + radius; x++)
+            {
+                if ((uint)x >= (uint)path.Width) continue;
+                for (var z = target.Z - radius; z <= target.Z + radius; z++)
+                {
+                    if ((uint)z >= (uint)path.Height) continue;
+                    var cell = new CellCoordinate(x, z);
+                    if (path.RegionAt(cell) != 0) return cell;
+                }
+            }
+        return null;
     }
 
     private int NextMovementJitter() => (int)(NextNativeRandom() % 3) - 1;

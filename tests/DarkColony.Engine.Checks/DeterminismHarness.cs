@@ -373,7 +373,7 @@ internal static class DeterminismCli
         var update = args.Contains("--update-goldens");
         var dump = Array.IndexOf(args, "--dump-digest");
         var summary = Array.IndexOf(args, "--event-summary");
-        string[] modes = ["--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report"];
+        string[] modes = ["--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke"];
         if (!args.Any(modes.Contains)) return false;
 
         var dataIndex = Array.IndexOf(args, "--data");
@@ -451,6 +451,15 @@ internal static class DeterminismCli
             return true;
         }
 
+        var campaignSmoke = Array.IndexOf(args, "--campaign-smoke");
+        if (campaignSmoke >= 0)
+        {
+            var smokeFilter = campaignSmoke + 2 < args.Length && !args[campaignSmoke + 2].StartsWith("--") ? args[campaignSmoke + 2] : null;
+            foreach (var line in CampaignSmoke(installation, rules, ulong.Parse(args[campaignSmoke + 1]), smokeFilter, args.Contains("--strike"), args.Contains("--sweep"), args.Contains("--trace")))
+                Console.WriteLine(line);
+            return true;
+        }
+
         var aiReport = Array.IndexOf(args, "--ai-report");
         if (aiReport >= 0)
         {
@@ -505,6 +514,181 @@ internal static class DeterminismCli
                 }
             }
         }
+    }
+
+    /// <summary>The campaign and training missions, in campaign order.</summary>
+    public static IReadOnlyList<string> CampaignMissions(GameInstallation installation) => DeterminismHarness.InstalledScenarios(installation)
+        .Where(scenario => scenario.StartsWith("human/human", StringComparison.OrdinalIgnoreCase) ||
+                           scenario.StartsWith("alien/alien", StringComparison.OrdinalIgnoreCase) ||
+                           scenario.StartsWith("test/", StringComparison.OrdinalIgnoreCase))
+        .ToArray();
+
+    /// <summary>
+    /// <c>--campaign-smoke &lt;ticks&gt; [filter]</c>: each campaign mission with
+    /// the local team (0) played by the Krusty planner, until the script ends
+    /// it or the tick limit. One line per mission: outcome, tick, units left.
+    /// </summary>
+    public static IReadOnlyList<string> CampaignSmoke(GameInstallation installation, SimulationRules rules, ulong ticks, string? filter, bool strike = false, bool sweep = false, bool trace = false)
+    {
+        var missions = CampaignMissions(installation)
+            .Where(mission => filter is null || mission.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var lines = new string[missions.Length];
+        Parallel.For(0, missions.Length, index =>
+        {
+            var mission = missions[index];
+            var file = installation.DataFile(["scenario", .. mission.Split('/')]) + ".scn";
+            var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+            var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+            var definition = ScenarioDefinition.Load(file).WithTeamAiProfile(0, ScenarioSimulation.KrustyAiProfile);
+            var script = MissionScript.LoadForScenario(file);
+            var simulation = ScenarioSimulation.Create(definition, path, rules, script, map);
+            var tripCells = TripCells(script, path);
+            var tripAttempts = new Dictionary<int, int>();
+            var sweepTeams = VictoryTeams(Path.ChangeExtension(file, ".tro"));
+            ulong tick = 0;
+            try
+            {
+                while (tick < ticks && simulation.Outcome is not { } done)
+                {
+                    var orders = new List<ScheduledWorldCommand>();
+                    if (sweep && tick % 64 == 32)
+                    {
+                        SweepHostiles(simulation, 0, sweepTeams);
+                        orders.AddRange(TripVisits(simulation, script, tripCells, tripAttempts, 0));
+                    }
+                    if (strike && tick % 16 == 0) orders.AddRange(StrikeOrders(simulation, 0));
+                    if (trace && tick % 4000 == 0 && script is not null)
+                    {
+                        var open = script.Triggers.Where(trigger => simulation.MissionLives[trigger.Slot] > 0)
+                            .Select(trigger => $"{(trigger.Trip ? "t" : "n")}{trigger.Slot}");
+                        var units = simulation.Actors.Where(actor => actor.Seed.Team == 0 && !actor.IsDestroyed)
+                            .Select(actor => $"{simulation.EffectiveDefinition(actor).Code}@{actor.Movement.OccupiedCell.X},{actor.Movement.OccupiedCell.Z}{(actor.MoveOrder is { } order ? $"->{order.Target.X},{order.Target.Z} seg{order.SegmentCount} blk{order.BlockedTicksRemaining}{(order.BlockedWaiting ? "w" : "")} pb{(actor.Playback is null ? 0 : 1)}" : "")}");
+                        Console.WriteLine($"{mission} {tick}: open {string.Join(' ', open)} | {string.Join(' ', units)}");
+                        foreach (var actor in simulation.Actors.Where(actor => actor.Seed.Team == 0 && !actor.IsDestroyed && actor.MoveOrder is not null))
+                        {
+                            var at = actor.Movement.OccupiedCell;
+                            var near = simulation.GroundOccupancy.Claims.Where(claim => Math.Abs(claim.Key.X - at.X) <= 2 && Math.Abs(claim.Key.Z - at.Z) <= 1)
+                                .Select(claim => $"{claim.Key.X},{claim.Key.Z}=#{claim.Value}:{(simulation.Actor(claim.Value) is { } o ? $"{simulation.EffectiveDefinition(o).Code}/t{o.Seed.Team}/hp{o.Health}{(o.IsDying ? "dying" : "")}" : "gone")}");
+                            Console.WriteLine($"   near {at.X},{at.Z}: {string.Join(' ', near)} region {path.RegionAt(at)} -> {path.RegionAt(actor.MoveOrder!.Target)}");
+                        }
+                    }
+                    simulation.Step(orders);
+                    tick++;
+                }
+            }
+            catch (Exception error)
+            {
+                lines[index] = $"{mission,-16} FAULT at {tick}: {error.GetType().Name}: {error.Message}";
+                return;
+            }
+            var own = simulation.Actors.Count(actor => actor.Seed.Team == 0 && !actor.IsDestroyed);
+            lines[index] = simulation.Outcome is { } outcome
+                ? $"{mission,-16} {(outcome.Victory ? "victory" : $"defeat r{outcome.Result}"),-10} text {outcome.OutcomeText,2} at {outcome.RequestedAtTick,6}  own {own}"
+                : $"{mission,-16} {"none",-10} after {tick,6}  own {own}";
+        });
+        return lines;
+    }
+
+    /// <summary>
+    /// The smoke's strike helper: each idle armed mobile unit of the team
+    /// (commanders excluded) attacks the nearest live hostile actor.
+    /// </summary>
+    public static IReadOnlyList<ScheduledWorldCommand> StrikeOrders(ScenarioSimulation simulation, int team)
+    {
+        var targets = simulation.Actors.Where(actor => !actor.IsDestroyed && actor.Seed.Team is >= 0 and < 8 &&
+                                                       simulation.TeamRelations.IsHostile(team, actor.Seed.Team) &&
+                                                       !simulation.EffectiveDefinition(actor).IsNativeUntargetable).ToArray();
+        var commands = new List<ScheduledWorldCommand>();
+        if (targets.Length == 0) return commands;
+        foreach (var attacker in simulation.Actors.Where(actor => !actor.IsDestroyed && actor.Seed.Team == team &&
+                     actor.AttackTargetInstanceId is null && simulation.EffectiveDefinition(actor).MovementSpeed > 0 &&
+                     simulation.EffectiveDefinition(actor).WeaponSlots[0] >= 0 &&
+                     simulation.EffectiveDefinition(actor).Id is < 69 or > 76))
+        {
+            var from = attacker.Movement.OccupiedCell;
+            var target = targets.MinBy(candidate => Math.Abs(candidate.Movement.OccupiedCell.X - from.X) +
+                                                    Math.Abs(candidate.Movement.OccupiedCell.Z - from.Z))!;
+            commands.Add(new ScheduledWorldCommand(simulation.TickCount, (ulong)commands.Count,
+                new AttackIntent(attacker.Seed.InstanceId, target.Seed.InstanceId)));
+        }
+        return commands;
+    }
+
+    /// <summary>
+    /// The players a mission's victory triggers (those whose actions include
+    /// <c>bail 0</c>) test with <c>b(p, ...)</c> or <c>s(p, ...)</c>, so the sweep
+    /// spares the teams the player must protect. Null when none are named.
+    /// </summary>
+    private static IReadOnlySet<int>? VictoryTeams(string troPath)
+    {
+        if (!File.Exists(troPath)) return null;
+        var teams = new HashSet<int>();
+        var text = File.ReadAllText(troPath, System.Text.Encoding.Latin1).Replace("\r", "");
+        foreach (var block in System.Text.RegularExpressions.Regex.Split(text, @"\n\s*\n"))
+        {
+            var lines = block.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (lines.Length == 0 || !lines.Skip(1).Any(line => line.StartsWith("bail 0", StringComparison.Ordinal))) continue;
+            foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(lines[0], @"[bs]\((\d+),"))
+                teams.Add(int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+        }
+        return teams.Count == 0 ? null : teams;
+    }
+
+    /// <summary>The passable cells of each trip trigger's area in the mission's MTG.</summary>
+    private static Dictionary<int, List<CellCoordinate>> TripCells(MissionScript? script, PathRegionMap path)
+    {
+        var cells = new Dictionary<int, List<CellCoordinate>>();
+        if (script?.TripMap is not { } trips) return cells;
+        for (var z = 0; z < Math.Min(trips.Height, path.Height); z++)
+            for (var x = 0; x < Math.Min(trips.Width, path.Width); x++)
+            {
+                var cell = new CellCoordinate(x, z);
+                var slot = trips.TriggerAt(cell);
+                if (slot == 0 || path.RegionAt(cell) == 0) continue;
+                if (!cells.TryGetValue(slot, out var list)) cells[slot] = list = [];
+                list.Add(cell);
+            }
+        return cells;
+    }
+
+    /// <summary>
+    /// The smoke's trip visits: each trip trigger that still has lives gets
+    /// the nearest idle mobile unit of the team, sent to the nearest cell of its area.
+    /// </summary>
+    private static IEnumerable<ScheduledWorldCommand> TripVisits(ScenarioSimulation simulation, MissionScript? script,
+        Dictionary<int, List<CellCoordinate>> tripCells, Dictionary<int, int> attempts, int team)
+    {
+        if (script is null) yield break;
+        var lives = simulation.MissionLives;
+        var idle = simulation.Actors.Where(actor => !actor.IsDestroyed && actor.Seed.Team == team && actor.MoveOrder is null &&
+                                                    actor.AttackTargetInstanceId is null &&
+                                                    simulation.EffectiveDefinition(actor).MovementSpeed > 0).ToList();
+        ulong sequence = 1000;
+        // The least tried trip first, so an unreachable area does not starve the rest.
+        foreach (var trigger in script.Triggers.Where(trigger => trigger.Trip && lives[trigger.Slot] > 0)
+                     .OrderBy(trigger => attempts.GetValueOrDefault(trigger.Slot)).ThenBy(trigger => trigger.Slot))
+        {
+            if (idle.Count == 0 || !tripCells.TryGetValue(trigger.Slot, out var cells)) continue;
+            static int Distance(CellCoordinate a, CellCoordinate b) => Math.Abs(a.X - b.X) + Math.Abs(a.Z - b.Z);
+            var unit = idle.MinBy(actor => cells.Min(cell => Distance(cell, actor.Movement.OccupiedCell)))!;
+            idle.Remove(unit);
+            attempts[trigger.Slot] = attempts.GetValueOrDefault(trigger.Slot) + 1;
+            var target = cells.MinBy(cell => Distance(cell, unit.Movement.OccupiedCell));
+            yield return new ScheduledWorldCommand(simulation.TickCount, sequence++, new MoveIntent(unit.Seed.InstanceId, target));
+        }
+    }
+
+    /// <summary>
+    /// The smoke's sweep: destroys every live actor of a player hostile to the
+    /// team (allies and teams 8-9 stay), so a script's own victory checks can run.
+    /// </summary>
+    public static void SweepHostiles(ScenarioSimulation simulation, int team, IReadOnlySet<int>? only = null)
+    {
+        var destroyed = new List<DestroyedActorEvent>();
+        foreach (var actor in simulation.Actors.Where(actor => !actor.IsDestroyed && actor.Seed.Team is >= 0 and < 8 &&
+                                                              simulation.TeamRelations.IsHostile(team, actor.Seed.Team) &&
+                                                              (only is null || only.Contains(actor.Seed.Team))).ToArray())
+            simulation.Kill(actor, team, destroyed);
     }
 
     private static bool RunDump(GameInstallation installation, SimulationRules rules, string[] args, int dump)
