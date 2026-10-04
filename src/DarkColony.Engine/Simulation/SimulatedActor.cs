@@ -87,6 +87,13 @@ public sealed class SimulatedActor
     public int IdleMissCount { get; internal set; }
     /// <summary>Ticks left in the wait (15, or 45 after three misses) before the next idle scan.</summary>
     public int IdleWaitTicks { get; internal set; }
+    /// <summary>
+    /// The move the idle command pushed itself (approach or yield). The idle
+    /// record stays below it on the native command stack.
+    /// </summary>
+    internal ActiveMoveOrder? IdleIssuedMove { get; set; }
+    /// <summary>The target the idle command started attacking; the idle record stays below the attack.</summary>
+    internal int? IdleIssuedAttackTarget { get; set; }
 }
 
 /// <summary>Persistent player intent, segmented by the native 32-step buffer.</summary>

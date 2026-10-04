@@ -25,9 +25,14 @@ public sealed partial class ScenarioSimulation
         if (targetRings is null) return;
         if (!IsIdle(actor))
         {
-            actor.IdleCommandActive = false;
+            // Approach, yield, and acquired-attack orders are pushed above the
+            // idle record, which resumes when they end; any other order
+            // replaces the command stack.
+            if (!IsIdleIssuedOrder(actor)) actor.IdleCommandActive = false;
             return;
         }
+        actor.IdleIssuedMove = null;
+        actor.IdleIssuedAttackTarget = null;
         if (!actor.IdleCommandActive)
         {
             // Idle state 1 (0x412654) pushes command 3 with no target, the
@@ -42,15 +47,30 @@ public sealed partial class ScenarioSimulation
             actor.IdleWaitTicks--;
             return;
         }
-        // Unarmed forms (vents, harvesters, healers, stealing stances) run
-        // their own native idle handlers.
-        if (!TryGetWeapon(actor, out var weapon)) return;
+        var definition = EffectiveDefinition(actor);
+        if (!TryGetWeapon(actor, out var weapon))
+        {
+            // Unarmed path 0x4149C0: a moving actor honors a yield notification
+            // first. Vents, mines, and stealing stances never move; their own
+            // handlers, like the healers' rest, are not part of this command.
+            if (actor.YieldNotificationDirection is not null && definition.MovementSpeed > 0)
+                YieldToBlockedAlly(actor, hostileInRange: false);
+            return;
+        }
 
         var target = ScanForTarget(actor, weapon, weapon.Range);
+        // 0x414A99: a pending yield notification takes precedence over the
+        // first scan's hit, which only selects the yield order.
+        if (actor.YieldNotificationDirection is not null && definition.MovementSpeed > 0)
+        {
+            YieldToBlockedAlly(actor, hostileInRange: target is not null);
+            return;
+        }
         if (target is not null)
         {
             actor.IdleMissCount = 0;
             actor.AttackTargetInstanceId = target.Seed.InstanceId;
+            actor.IdleIssuedAttackTarget = target.Seed.InstanceId;
             events.IdleAcquisitions.Add(new IdleAcquisitionEvent(actor.Seed.InstanceId, target.Seed.InstanceId, Approach: false));
             return;
         }
@@ -58,7 +78,6 @@ public sealed partial class ScenarioSimulation
         var damaged = actor.Health < actor.IdleHealthSnapshot;
         if (damaged) actor.IdleMissCount = 0;
         actor.IdleHealthSnapshot = actor.Health;
-        var definition = EffectiveDefinition(actor);
         if (definition.MovementSpeed > 0 && SecondScanRadius(actor, definition, damaged) is { } radius &&
             ScanForTarget(actor, weapon, radius) is { } distant &&
             FindAttackApproachCell(actor, distant, weapon) is { } approachCell)
@@ -70,6 +89,7 @@ public sealed partial class ScenarioSimulation
             // pursuit uses (port adapter).
             actor.IdleMissCount = 0;
             actor.MoveOrder = new ActiveMoveOrder(approachCell) { StopOnContact = true };
+            actor.IdleIssuedMove = actor.MoveOrder;
             _ = StartSegment(actor);
             events.IdleAcquisitions.Add(new IdleAcquisitionEvent(actor.Seed.InstanceId, distant.Seed.InstanceId, Approach: true));
             return;
@@ -90,6 +110,16 @@ public sealed partial class ScenarioSimulation
             actor.IdleWaitTicks = NativeIdleLongWaitTicks;
         }
     }
+
+    /// <summary>
+    /// Whether the actor is only busy with an order its own idle command
+    /// issued. A player order clears the attack target or replaces the move.
+    /// </summary>
+    private static bool IsIdleIssuedOrder(SimulatedActor actor) =>
+        actor.IdleCommandActive &&
+        (actor.AttackTargetInstanceId is { } attackTarget
+            ? attackTarget == actor.IdleIssuedAttackTarget
+            : actor.MoveOrder is not null && ReferenceEquals(actor.MoveOrder, actor.IdleIssuedMove));
 
     /// <summary>
     /// 0x414B79: computer players and the internal teams 8/9 look 16 rings

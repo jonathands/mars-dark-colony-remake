@@ -528,14 +528,93 @@ const string AcquisitionWeapons = "2\n1 BULLET 0 0 1 10 90 3 0 0 0 0 0\n2 BULLET
 
 Check("players and critter team 9 start mutually cooperative", () =>
 {
-    // SCN loader 0x41BFFC: the matrix is zeroed, the diagonal set through
-    // 0x41E7D8, then [player][9] = [9][player] = 1 for players 0-7.
+    // SCN loader 0x41B920: the matrix is zeroed, the diagonal set through
+    // 0x41E7D8, then (0x41C00E) [player][9] = [9][player] = 1 for players 0-7.
     var relations = TeamRelationMatrix.CreateDefault();
     Equal(false, relations.IsHostile(0, 9));
     Equal(false, relations.IsHostile(9, 7));
     Equal(false, relations.IsHostile(3, 3));
     Equal(true, relations.IsHostile(0, 1));
     Equal(true, relations.IsHostile(8, 0));
+});
+
+Check("notified idle blockers step aside, never back toward the mover", () =>
+{
+    // A mover heading east notified the idle unarmed blocker at (5,5). The
+    // sideways order (0x479288) tries south first, then north once south is
+    // taken.
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    ScenarioSimulation Notified(string extra)
+    {
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 1 0 100 0\n" + extra),
+            catalog, OpenPath(12, 12), targetRings: EuclideanRings());
+        simulation.Actor(1)!.YieldNotificationDirection = PathDirection.East;
+        simulation.Step([]);
+        return simulation;
+    }
+    var open = Notified("");
+    var blocker = open.Actor(1)!;
+    Equal(new CellCoordinate(5, 6), blocker.MoveOrder!.Target);
+    Equal(true, blocker.YieldNotificationDirection is null);
+    for (var tick = 0; tick < 40 && blocker.MoveOrder is not null; tick++) open.Step([]);
+    Equal(new CellCoordinate(5, 6), blocker.Movement.OccupiedCell);
+
+    var southTaken = Notified("5 6 4 0 100 0\n");
+    Equal(new CellCoordinate(5, 4), southTaken.Actor(1)!.MoveOrder!.Target);
+});
+
+Check("armed blockers with a hostile in range yield straight ahead instead of attacking", () =>
+{
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    var weapons = WeaponCatalog.Parse(AcquisitionWeapons);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 0 0 1000 0\n8 5 1 1 100 0\n"),
+        catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
+    var blocker = simulation.Actor(1)!;
+    blocker.YieldNotificationDirection = PathDirection.East;
+    simulation.Step([]);
+    // 0x412A50 tries the notified direction first (0x4792A4).
+    Equal(new CellCoordinate(6, 5), blocker.MoveOrder!.Target);
+    Equal(true, blocker.AttackTargetInstanceId is null);
+});
+
+Check("a fully blocked yield shuffles its order with the shared random stream", () =>
+{
+    // Every sideways candidate around (5,5) is held, so 0x4126A8 fails and
+    // 0x412820 draws: entry 1 = 3 swaps preference 3 (offset -1) to the
+    // front, which turns east into north-east. Held live cells are accepted.
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    var placements = "5 5 1 0 100 0\n" + string.Concat(
+        new[] { (5, 6), (5, 4), (6, 6), (6, 4), (4, 6), (4, 4), (6, 5) }.Select(cell => $"{cell.Item1} {cell.Item2} 4 0 100 0\n"));
+    var stream = new uint[NativeRandomTable.Length];
+    stream[1] = 3;
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + placements), catalog, OpenPath(12, 12),
+        randomTable: NativeRandomTable.FromValues(stream), targetRings: EuclideanRings());
+    var blocker = simulation.Actor(1)!;
+    blocker.YieldNotificationDirection = PathDirection.East;
+    simulation.Step([]);
+    Equal(new CellCoordinate(6, 4), blocker.MoveOrder!.Target);
+});
+
+Check("the idle record survives the moves it pushes itself", () =>
+{
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "5 5 1 0 100 0\n"),
+        catalog, OpenPath(12, 12), targetRings: EuclideanRings());
+    var blocker = simulation.Actor(1)!;
+    simulation.Step([]);
+    blocker.IdleMissCount = 2;
+    blocker.YieldNotificationDirection = PathDirection.East;
+    simulation.Step([]);
+    for (var tick = 0; tick < 40 && blocker.MoveOrder is not null; tick++) simulation.Step([]);
+    simulation.Step([]);
+    Equal(true, blocker.IdleCommandActive);
+    Equal(2, blocker.IdleMissCount);
+
+    // A player move replaces the command stack, so the record restarts.
+    simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new MoveIntent(1, new CellCoordinate(5, 8)))]);
+    for (var tick = 0; tick < 60 && blocker.MoveOrder is not null; tick++) simulation.Step([]);
+    simulation.Step([]);
+    Equal(0, blocker.IdleMissCount);
 });
 
 Check("idle armed actors acquire a visible hostile in weapon range", () =>

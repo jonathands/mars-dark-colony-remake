@@ -1,2 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <!-- Engine checks may set native state that only the simulation writes. -->
+    <InternalsVisibleTo Include="DarkColony.Engine.Checks" />
+  </ItemGroup>
 </Project>

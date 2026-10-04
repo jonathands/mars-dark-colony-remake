@@ -43,7 +43,40 @@ For an armed actor (weapon slot != -1), every time its wait has elapsed:
    (`0x412274`).
 
 Unarmed actors take type-specific paths instead: vents (`0x413490`), mines
-(`0x4131BC`), stealing stances (`0x413BC0`), healers (`0x413C20`).
+(`0x4131BC`), stealing stances (`0x413BC0`), healers (`0x413C20`). City
+buildings (actors 0-119) run troop production (`0x414314`) from the same
+handler.
+
+The 15/45-tick wait is a separate command pushed above the idle command
+(`0x412274`), so nothing in this handler runs while it lasts. Moves and
+attacks the handler starts itself (approach, yield, acquired target) are
+pushed above the idle record too. When they end, the record resumes with its
+health snapshot and miss counter intact. A player order replaces the whole
+stack.
+
+## Yielding to a blocked ally
+
+A path step that finds an allied actor in its next cell stores its own travel
+direction in that actor's byte `+0x35` (`0x415795`, only when the byte is
+`0xFF`). The blocker reacts the next time its idle handler runs. Movers are
+checked after the first (weapon-range) scan: `0x414A99` for armed actors and
+`0x4149C0` for unarmed ones. `0x412BC8` clears the byte and picks a
+neighbor:
+
+- Directions use the `0x479208` delta order (the port's `PathDirection`).
+  `0x479268` and `0x479248` convert between it and compass rotation.
+- Mode 1 (no hostile in range) tries rotation offsets `2, -2, 1, -1, 3, -3,
+  0` (`0x479288`): sideways first, never back toward the mover
+  (`0x4126A8`). The cell must have no occupant in the actor's grid, a
+  nonzero PTH region (cell record `+0x0C`, filled by the PTH loader
+  `0x442B7C`), and for a diagonal step one passable orthogonal neighbor. If
+  every candidate fails, `0x412820` shuffles the same seven offsets with the
+  shared random stream. In that pass it also accepts reserved cells and cells
+  held by a live actor.
+- Mode 2 (a hostile was found) tries `0, 1, -1, 2, -2` (`0x4792A4`,
+  `0x412A50`), with no random fallback. The hostile is not attacked on that
+  pass.
+- A chosen cell becomes a plain move (mode 0) pushed by `0x414CE4`.
 
 ## Ring selector `0x435570`
 
