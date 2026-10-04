@@ -428,11 +428,11 @@ public sealed partial class MainForm
             : _world.TickCount - combatPresentation.StartedAtTick;
         var frame = (ushort)(candidate.FirstFrame + frameAge % (ulong)span);
         var fileName = Path.GetFileName(candidate.FinPath);
-        var bitmap = AnimationBitmap(fileName, frame);
+        var bitmap = WorldAnimationBitmap(fileName, frame);
         if (bitmap is null) return false;
-        var key = $"{fileName}:{frame}";
-        var origin = AnimationOrigin(fileName, frame);
-        var position = ActorPosition(entity);
+        var key = $"{fileName}:{frame}:world";
+        var origin = WorldAnimationOrigin(fileName, frame);
+        var position = _scenarioSimulation.CityArtAnchor(entity.InstanceId) ?? ActorPosition(entity);
         var canvas = new Rectangle(
             position.XRaw / 8 - _cameraX + origin.X,
             WorldPixelY(position.ZRaw) - _cameraY + origin.Y,
@@ -543,10 +543,10 @@ public sealed partial class MainForm
                     var fileName = Path.GetFileName(candidate.FinPath);
                     var span = candidate.LastFrame - candidate.FirstFrame + 1;
                     var frame = candidate.FirstFrame + (ushort)(projectile.AnimationTicks % span);
-                    var bitmap = AnimationBitmap(fileName, frame);
+                    var bitmap = WorldAnimationBitmap(fileName, frame);
                     if (bitmap is not null)
                     {
-                        var origin = AnimationOrigin(fileName, frame);
+                        var origin = WorldAnimationOrigin(fileName, frame);
                         canvas.Draw(GpuBitmap(bitmap), x + origin.X, y + origin.Y);
                         rendered = true;
                     }
@@ -667,9 +667,9 @@ public sealed partial class MainForm
             }
             var frame = candidate.FirstFrame + (ushort)age;
             var fileName = Path.GetFileName(candidate.FinPath);
-            var bitmap = AnimationBitmap(fileName, frame);
+            var bitmap = WorldAnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
-            var origin = AnimationOrigin(fileName, frame);
+            var origin = WorldAnimationOrigin(fileName, frame);
             canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + origin.Y);
         }
     }
@@ -687,9 +687,9 @@ public sealed partial class MainForm
             var span = candidate.LastFrame - candidate.FirstFrame + 1;
             var frame = candidate.FirstFrame + (ushort)((_world.TickCount / 3) % (ulong)span);
             var fileName = Path.GetFileName(candidate.FinPath);
-            var bitmap = AnimationBitmap(fileName, frame);
+            var bitmap = WorldAnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
-            var origin = AnimationOrigin(fileName, frame);
+            var origin = WorldAnimationOrigin(fileName, frame);
             canvas.Draw(GpuBitmap(bitmap),
                 transport.Position.XRaw / 8 - _cameraX + origin.X,
                 WorldPixelY(transport.Position.ZRaw) - transport.HeightRaw / 8 - _cameraY + origin.Y);
@@ -726,9 +726,9 @@ public sealed partial class MainForm
             }
             var frame = candidate.FirstFrame + (ushort)age;
             var fileName = Path.GetFileName(candidate.FinPath);
-            var bitmap = AnimationBitmap(fileName, frame);
+            var bitmap = WorldAnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
-            var origin = AnimationOrigin(fileName, frame);
+            var origin = WorldAnimationOrigin(fileName, frame);
             canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + origin.Y);
         }
     }
@@ -870,8 +870,8 @@ public sealed partial class MainForm
     // the top), so terrain is drawn as stored and the camera stays in screen
     // pixels; only world positions and cells are mirrored here.
 
-    /// <summary>Screen-space pixel row (before the camera offset) of a world 8.8 Z.</summary>
-    private int WorldPixelY(int zRaw) => (MapCellHeight * FixedPointPosition.One - zRaw) / 8;
+    /// <summary>Screen-space pixel row (before the camera offset) of a world 8.8 Z (<c>0x436072</c>).</summary>
+    private int WorldPixelY(int zRaw) => (MapCellHeight * FixedPointPosition.One - zRaw - 1) >> 3;
 
     /// <summary>Screen-space pixel row of the top edge of a world cell row.</summary>
     private int CellPixelTop(int cellZ) => (MapCellHeight - 1 - cellZ) * TerrainRasterizer.TileSize;

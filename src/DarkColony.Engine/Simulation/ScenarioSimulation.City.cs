@@ -156,6 +156,26 @@ public sealed partial class ScenarioSimulation
         }
     }
 
+    /// <summary>
+    /// Where the renderer hangs a city building's art. For a city slot actor
+    /// <c>0x4398AB</c> subtracts the slot's offset (<c>0x444C58</c>, table
+    /// <c>0x47AB70</c>) from the actor's position, so the art is laid out from
+    /// the city origin's corner rather than from the actor. Null for any other
+    /// actor.
+    /// </summary>
+    public FixedPointPosition? CityArtAnchor(int instanceId)
+    {
+        if (footprints is null || !actorsById.TryGetValue(instanceId, out var actor)) return null;
+        foreach (var ((_, slot), id) in cityBuildings)
+        {
+            if (id != instanceId) continue;
+            var offset = footprints.CitySlotPosition(new CellCoordinate(0, 0), slot);
+            var position = actor.Movement.VisualPosition;
+            return new FixedPointPosition(position.XRaw - offset.XRaw, position.ZRaw - offset.ZRaw);
+        }
+        return null;
+    }
+
     /// <summary>The actor in a team's city slot, if that building exists and is alive.</summary>
     public SimulatedActor? CityBuilding(int team, int slot) =>
         cityBuildings.TryGetValue((team, slot), out var instanceId) && actorsById.TryGetValue(instanceId, out var actor) && !actor.IsDestroyed

@@ -2780,6 +2780,33 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal((ContactRole.Pickup, 0, 20), (pickup.Role, pickup.Team, pickup.Amount));
     });
 
+    Check("world sprites hang from their layer's bottom row and city art from the city origin", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        // TRSCSTAND0: one layer of trsc frame 0 (28 x 45, canvas x 147) at FIN
+        // offset (-159, 4). The world blit (0x454751) puts the frame's bottom
+        // row on the layer's Y, so the feet sit 4 pixels below the position.
+        var definition = AnimationDefinition.Load(install.DataFile("animate", "trsc.fin"));
+        Sprite Load(string name) => Sprite.Load(install.DataFile("sprites", $"{name}.spr"));
+        var world = definition.Compose(0, Load, bottomAnchored: true);
+        Equal((-12, -41, 28, 45), (world.X, world.Y, world.Width, world.Height));
+        // The interface layout adds the frame's own Y instead.
+        Equal(4 + 99, definition.Compose(0, Load).Y);
+
+        // 0x4398AB: a city building's art hangs from the city origin corner,
+        // not from its slot position (origin + 0x47AB70 offset).
+        var rules = SimulationRules.Load(install);
+        var (simulation, _) = DeterminismHarness.Load(install, rules, "mplayer/j4play01");
+        var scenario = ScenarioDefinition.Load(install.DataFile("scenario", "mplayer", "j4play01") + ".scn");
+        var team = scenario.Teams.First(candidate => candidate.HasCity && simulation.CityBuilding(candidate.TeamId, 0) is not null);
+        var headquarters = simulation.CityBuilding(team.TeamId, 0)!;
+        var origin = team.CityOrigin!.Value;
+        Equal(new FixedPointPosition(origin.X * FixedPointPosition.One, origin.Z * FixedPointPosition.One),
+            simulation.CityArtAnchor(headquarters.Seed.InstanceId)!.Value);
+        Equal(true, headquarters.Movement.VisualPosition != simulation.CityArtAnchor(headquarters.Seed.InstanceId)!.Value);
+        Equal(false, simulation.CityArtAnchor(simulation.Actors.First(actor => actor.Definition.MovementSpeed > 0).Seed.InstanceId).HasValue);
+    });
+
     Check("losing the mining colony ends human01 in defeat with outcome text 4", () =>
     {
         var install = GameInstallation.Open(dataPath);

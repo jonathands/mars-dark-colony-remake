@@ -267,10 +267,20 @@ public sealed partial class MainForm
     private Point AnimationOrigin(string fileName, int frameIndex) =>
         _animationOrigins.GetValueOrDefault($"{fileName}:{frameIndex}:base");
 
-    private Bitmap? AnimationBitmap(string fileName, int frameIndex, bool remapWarControlPalette = false)
+    /// <summary>Composite origin of a world sprite frame loaded by <see cref="WorldAnimationBitmap"/>.</summary>
+    private Point WorldAnimationOrigin(string fileName, int frameIndex) =>
+        _animationOrigins.GetValueOrDefault($"{fileName}:{frameIndex}:world");
+
+    /// <summary>
+    /// A frame as the world sprite blit draws it: each layer's bottom row sits
+    /// on its FIN Y (see <see cref="AnimationDefinition.Compose"/>).
+    /// </summary>
+    private Bitmap? WorldAnimationBitmap(string fileName, int frameIndex) => AnimationBitmap(fileName, frameIndex, world: true);
+
+    private Bitmap? AnimationBitmap(string fileName, int frameIndex, bool remapWarControlPalette = false, bool world = false)
     {
         if (_installation is null) return null;
-        var key = $"{fileName}:{frameIndex}:{(remapWarControlPalette ? "war-controls" : "base")}";
+        var key = $"{fileName}:{frameIndex}:{(world ? "world" : remapWarControlPalette ? "war-controls" : "base")}";
         try
         {
             if (_animationFrames.TryGetValue(key, out var cached)) return cached;
@@ -280,7 +290,7 @@ public sealed partial class MainForm
                 _animationDefinitions[fileName] = definition;
             }
 
-            var composite = definition.Compose(frameIndex, LoadSprite);
+            var composite = definition.Compose(frameIndex, LoadSprite, bottomAnchored: world);
             if (remapWarControlPalette && fileName.Equals("knobe.fin", StringComparison.OrdinalIgnoreCase))
             {
                 // `multie` uses the same knobe sprites as the green menus,

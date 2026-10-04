@@ -91,7 +91,17 @@ public sealed class AnimationDefinition
         return new AnimationDefinition(spriteNames, animations, logicalFrames);
     }
 
-    public CompositeFrame Compose(int frameIndex, Func<string, Sprite> spriteLoader)
+    /// <summary>
+    /// Composes one logical frame. Every layer starts at its FIN X plus the
+    /// sprite frame's X. Vertically, <paramref name="bottomAnchored"/> places
+    /// the frame's bottom row at the layer's Y, as the world sprite blit does
+    /// (<c>0x454751</c> culls a queued sprite to <c>[y - height, y]</c>, and
+    /// <c>0x4399AD</c> queues each layer at the actor's position plus its
+    /// FIN offsets); the frame's own Y is only its place on the artist's
+    /// canvas. Otherwise the frame's Y is added to the layer's, which is how
+    /// the interface art is laid out.
+    /// </summary>
+    public CompositeFrame Compose(int frameIndex, Func<string, Sprite> spriteLoader, bool bottomAnchored = false)
     {
         ArgumentNullException.ThrowIfNull(spriteLoader);
         var logical = LogicalFrames[frameIndex];
@@ -100,19 +110,20 @@ public sealed class AnimationDefinition
         {
             var sprite = spriteLoader(layer.SpriteName);
             var frame = sprite.Frames[layer.SpriteFrame];
-            return (Layer: layer, Frame: frame, Rgba: sprite.FrameRgba(layer.SpriteFrame));
+            var y = bottomAnchored ? layer.Y - frame.Height : layer.Y + frame.AnchorY;
+            return (Layer: layer, Frame: frame, Y: y, Rgba: sprite.FrameRgba(layer.SpriteFrame));
         }).ToArray();
         var left = sources.Min(item => item.Layer.X + item.Frame.AnchorX);
-        var top = sources.Min(item => item.Layer.Y + item.Frame.AnchorY);
+        var top = sources.Min(item => item.Y);
         var right = sources.Max(item => item.Layer.X + item.Frame.AnchorX + item.Frame.Width);
-        var bottom = sources.Max(item => item.Layer.Y + item.Frame.AnchorY + item.Frame.Height);
+        var bottom = sources.Max(item => item.Y + item.Frame.Height);
         var width = right - left;
         var height = bottom - top;
         var target = new byte[checked(width * height * 4)];
         foreach (var source in sources)
         {
             var targetX = source.Layer.X + source.Frame.AnchorX - left;
-            var targetY = source.Layer.Y + source.Frame.AnchorY - top;
+            var targetY = source.Y - top;
             for (var y = 0; y < source.Frame.Height; y++)
             {
                 for (var x = 0; x < source.Frame.Width; x++)
