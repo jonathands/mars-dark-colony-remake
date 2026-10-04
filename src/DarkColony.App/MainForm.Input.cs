@@ -62,10 +62,16 @@ public sealed partial class MainForm
         // F1-F10 are native unit-type selections. Keep diagnostics in a
         // port-owned F12 namespace so Ctrl/Alt/Shift remain available to the
         // original selection filters rather than being stolen by debug UI.
-        if (key == Keys.F12 && !shift)
+        if (key == Keys.F12 && !shift && !control)
         {
             _showAssetNames = !_showAssetNames;
             _status = $"Gameplay asset names {(_showAssetNames ? "on" : "off")} (F12).";
+            return true;
+        }
+        if (key == Keys.F12 && control)
+        {
+            _revealMap = !_revealMap;
+            _status = $"Map reveal diagnostic {(_revealMap ? "on" : "off")} (Ctrl+F12): no fog, every actor drawn.";
             return true;
         }
         if (key == Keys.F12 && shift)

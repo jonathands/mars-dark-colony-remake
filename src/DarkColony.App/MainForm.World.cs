@@ -107,7 +107,7 @@ public sealed partial class MainForm
         if (_scenarioSimulation is not null)
         {
             foreach (var actor in _scenarioSimulation.Actors.Where(actor => !actor.IsDestroyed)
-                         .Where(actor => actor.Seed.Team == _localPlayerTeam || _scenarioSimulation.IsActorVisibleToTeam(_localPlayerTeam, actor)))
+                         .Where(actor => _revealMap || actor.Seed.Team == _localPlayerTeam || _scenarioSimulation.IsActorVisibleToTeam(_localPlayerTeam, actor)))
             {
                 var position = RenderActorPosition(actor.Seed.InstanceId, actor.Movement.VisualPosition);
                 var x = GameplayMinimapBounds.X + position.XRaw / 256d / _gameplayMap.Width * GameplayMinimapBounds.Width;
@@ -305,7 +305,7 @@ public sealed partial class MainForm
 
     private void DrawGameplayFogOfWar(Graphics graphics)
     {
-        if (_scenarioSimulation is null || _gameplayMap is null) return;
+        if (_scenarioSimulation is null || _gameplayMap is null || _revealMap) return;
         // The original leaves map space no stamp has reached black (grid bit 31,
         // explored memory). Hostile units outside current sight are hidden by
         // the actor pass, not here.

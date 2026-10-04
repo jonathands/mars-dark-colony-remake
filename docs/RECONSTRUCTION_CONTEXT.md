@@ -300,7 +300,8 @@ one harvester may own or prepare on a vent.
   packaging evidence only; ambiguous candidates are retained and the preferred
   candidate favors an exact code filename. Gameplay draws these actors using
   FIN logical origins and ordinary world Z/X ordering. F12 exposes the resolved
-  entity ID, code, and FIN for visual auditing; Shift+F12 toggles PTH regions.
+  entity ID, code, and FIN for visual auditing; Shift+F12 toggles PTH regions;
+  Ctrl+F12 (or `--reveal-map`) drops the fog and draws every actor.
 - The gameplay camera is presentation state, pans by 16 screen pixels, clamps
   to decoded MAP dimensions, and only invalidates its terrain viewport cache.
   Arrow keys are intercepted before WinForms control navigation. Normal left

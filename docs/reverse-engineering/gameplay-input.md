@@ -104,8 +104,8 @@ The F1 handler calls the selection adapter four times and sets gameplay
 append/toggle flag for assembling all commander ranks, not another physical
 modifier or a double-click state. The compiled port applies each recovered
 identity set in one deterministic selection operation. Its debug overlays have
-moved from conflicting F3/F4 bindings to F12 (asset names) and Shift+F12 (PTH
-regions).
+moved from conflicting F3/F4 bindings to F12 (asset names), Shift+F12 (PTH
+regions) and Ctrl+F12 (map reveal, also `--reveal-map`).
 
 Click and rectangle selection now share the renderer's active-frame projection:
 deployed, firing, hit, moving, and standing forms all resolve the same FIN frame,

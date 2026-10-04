@@ -31,7 +31,9 @@ internal static class Program
             argument.Equals("--single-player-war", StringComparison.OrdinalIgnoreCase))
             ? MenuScreenId.SinglePlayer
             : MenuScreenId.Main;
-        Application.Run(new MainForm(installation, initialScreen));
+        // --reveal-map starts with the Ctrl+F12 diagnostic on (no fog, every actor drawn).
+        var revealMap = arguments.Any(argument => argument.Equals("--reveal-map", StringComparison.OrdinalIgnoreCase));
+        Application.Run(new MainForm(installation, initialScreen) { RevealMap = revealMap });
         RuntimeLog.Info("Exited normally.");
         return 0;
     }

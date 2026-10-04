@@ -139,6 +139,7 @@ public sealed partial class MainForm : Form
     private ScenarioChoice? _selectedScenario;
     private bool _showAssetNames;
     private bool _showPathRegions;
+    private bool _revealMap;
     private GameplayCommandMode _gameplayCommandMode = GameplayCommandMode.MoveOnly;
     private int? _pendingBuildingItemId;
     private GameplayHudTab _gameplayHudTab = GameplayHudTab.Build;
@@ -180,6 +181,13 @@ public sealed partial class MainForm : Form
     private string _status;
     private string? _lastLoggedStatus;
     private ulong _screenStartedAtTick;
+
+    /// <summary>The map reveal diagnostic (Ctrl+F12).</summary>
+    public bool RevealMap
+    {
+        get => _revealMap;
+        init => _revealMap = value;
+    }
 
     public MainForm(GameInstallation? installation, MenuScreenId initialScreen = MenuScreenId.Main)
     {
