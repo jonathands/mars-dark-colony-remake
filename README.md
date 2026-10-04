@@ -145,7 +145,7 @@ this authoritative movement state.
 Gameplay now renders positions from an engine-owned `ScenarioSimulation`.
 Right-click intents are consumed on deterministic ticks and mobile actors play
 their diagnostic packed path with native occupancy/interpolation behavior.
-Across all 101 missions the aggregate seeds 4,450 actors. Ordinary SCN
+Across all 101 missions the authoritative simulation seeds 4,608 actors. Ordinary SCN
 construction preserves the executable's overwrite behavior for deliberately
 stacked records (for example LUNA formations), while autonomous groups still
 search for distinct empty cells. MOVE-facing animation and blockage recovery
