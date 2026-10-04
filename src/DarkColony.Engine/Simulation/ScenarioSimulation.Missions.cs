@@ -110,6 +110,12 @@ public sealed partial class ScenarioSimulation
         if ((uint)team < 8) playerStats[team, 1] += amount;
     }
 
+    /// <summary><c>0x413B9C</c>: stat 5 counts the harvester pulses that paid their owner.</summary>
+    private void RecordHarvestPulse(int team)
+    {
+        if ((uint)team < 8) playerStats[team, 5]++;
+    }
+
     /// <summary>The trigger block of the world update (<c>0x419A4E</c>), every eighth tick.</summary>
     private void RunNormTriggers(List<MissionMessageEvent> messages, List<MissionUnmodeledActionEvent> unmodeled)
     {

@@ -49,8 +49,8 @@ public static class UnitSpecialCommandCatalog
             ["XENO"] = new(UnitSpecialCommand.DeployTurret, "DEPLOY TURRET", 68, UnitCommandActivation.Immediate, ""),
             // SARG/PSYC own DEPLOY FIN transitions into SARGSTL/PSYCSTL.
             // The static stealing forms are the result, not the command owner.
-            ["SARG"] = new(UnitSpecialCommand.StealMoney, "STEAL MONEY", 75, UnitCommandActivation.Immediate, "The 50% transfer is live; exact native range and competing-thief arbitration remain unresolved."),
-            ["PSYC"] = new(UnitSpecialCommand.StealMoney, "STEAL MONEY", 75, UnitCommandActivation.Immediate, "The 50% transfer is live; exact native range and competing-thief arbitration remain unresolved."),
+            ["SARG"] = new(UnitSpecialCommand.StealMoney, "STEAL MONEY", 75, UnitCommandActivation.Immediate, "Native: state-13 transition, cross-shaped victim search, one thief per harvester, half of each pulse."),
+            ["PSYC"] = new(UnitSpecialCommand.StealMoney, "STEAL MONEY", 75, UnitCommandActivation.Immediate, "Native: state-13 transition, cross-shaped victim search, one thief per harvester, half of each pulse."),
         };
 
     public static bool TryGet(string entityCode, out UnitSpecialCommandDefinition definition) =>

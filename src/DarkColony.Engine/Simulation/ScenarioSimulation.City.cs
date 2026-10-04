@@ -60,6 +60,16 @@ public sealed partial class ScenarioSimulation
     public bool HasCity(int teamId) => cityOrigins.ContainsKey(teamId);
 
     /// <summary>
+    /// True only for scenarios that declare no city at all (synthetic engine
+    /// fixtures). They keep two port adapters: buildings dropped anywhere
+    /// (<see cref="PlaceBuildingIntent"/>) and troops spawned at once beside
+    /// their building. In the original every building is a city slot at the
+    /// player's origin, and <c>0x444C80</c> does nothing for a zero origin, so
+    /// in shipped scenarios a team without a city builds and trains nothing.
+    /// </summary>
+    public bool UsesPortConstructionAdapters() => !citiesDeclared;
+
+    /// <summary>
     /// A paid building order of a team with a city is native command 9
     /// (<c>0x41C8D4</c>): the slot's building is (re)created at once with full
     /// health by <c>0x444F14</c>, replacing any earlier variant, and the slot's

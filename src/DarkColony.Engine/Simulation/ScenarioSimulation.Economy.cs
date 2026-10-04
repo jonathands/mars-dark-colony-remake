@@ -183,6 +183,7 @@ public sealed partial class ScenarioSimulation
         }
         actor.HarvestVentId = null;
         actor.DeployedEntityId = null;
+        actor.ThiefInstanceId = null;
     }
 
     /// <summary>
@@ -244,52 +245,43 @@ public sealed partial class ScenarioSimulation
                 vent.HarvesterInstanceId = null;
                 continue;
             }
-            if (!teamEconomies.TryGetValue(harvester.Seed.Team, out var economy) || !CanEarnP7(harvester.Seed.Team)) continue;
-            // Native 0x413856 tests the source reservoir with a strict
-            // `remaining - baseRate > 0` check before the 16-step payout, then
-            // subtracts the credited source amount at 0x413bdf. The exact
-            // authored rate is still unrecovered, so the explicit port pulse
-            // amount remains the replaceable base rate here.
-            // 0x413A26: the vent's +0x32 rate; a computer player's +0x19B8 8.8
-            // multiplier (session percentage, not decoded: x1) would apply here.
+            // 0x413826 tests the reservoir with a strict `remaining - rate > 0`
+            // before the pulse. 0x413A06: the vent's +0x32 rate; a computer
+            // player's +0x19B8 8.8 multiplier (session percentage, not
+            // decoded: x1) would apply here.
             var attachedIncome = petraFlowRules.UseVentRates ? vent.Rate : petraFlowRules.EffectiveAttachedP7;
             if (!petraFlowRules.CanCreditReservoir(vent.RemainingReservoir, attachedIncome)) continue;
+            // 0x413BA9 drains the full amount whether or not anyone is paid.
             vent.RemainingReservoir -= attachedIncome;
-            var thief = FindPetraThief(harvester);
-            var stolen = thief is null ? 0 : petraStealRules.StolenAmount(attachedIncome);
-            var retained = attachedIncome - stolen;
-            economy.AddP7(retained);
-            RecordP7Earned(harvester.Seed.Team, retained);
-            if (retained > 0) income.Add(new P7IncomeEvent(harvester.Seed.Team, retained, vent.Id));
-            if (thief is null || stolen <= 0 || !teamEconomies.TryGetValue(thief.Seed.Team, out var thiefEconomy)) continue;
-            thiefEconomy.AddP7(stolen);
-            income.Add(new P7IncomeEvent(thief.Seed.Team, stolen, vent.Id));
-            thefts.Add(new P7TheftEvent(thief.Seed.InstanceId, harvester.Seed.InstanceId,
-                thief.Seed.Team, harvester.Seed.Team, stolen, vent.Id));
+            var paid = attachedIncome;
+            if (harvester.ThiefInstanceId is { } thiefId)
+            {
+                // 0x413A30: a live SARGSTL/PSYCSTL halves the payout and takes
+                // the other half (an odd unit is lost). Any other state of the
+                // linked actor clears the link (0x413B0D).
+                if (actorsById.TryGetValue(thiefId, out var thief) && !thief.IsDestroyed &&
+                    EffectiveDefinition(thief).Code is "SARGSTL" or "PSYCSTL")
+                {
+                    paid = attachedIncome / 2;
+                    if (CanEarnP7(thief.Seed.Team) && teamEconomies.TryGetValue(thief.Seed.Team, out var thiefEconomy))
+                    {
+                        thiefEconomy.AddP7(paid);
+                        RecordP7Earned(thief.Seed.Team, paid);
+                        income.Add(new P7IncomeEvent(thief.Seed.Team, paid, vent.Id));
+                        thefts.Add(new P7TheftEvent(thief.Seed.InstanceId, harvester.Seed.InstanceId,
+                            thief.Seed.Team, harvester.Seed.Team, paid, vent.Id));
+                    }
+                }
+                else harvester.ThiefInstanceId = null;
+            }
+            // 0x413B6A: the owner is paid only while its headquarters stands.
+            if (!teamEconomies.TryGetValue(harvester.Seed.Team, out var economy) || !CanEarnP7(harvester.Seed.Team)) continue;
+            economy.AddP7(paid);
+            RecordP7Earned(harvester.Seed.Team, paid);
+            RecordHarvestPulse(harvester.Seed.Team);
+            if (paid > 0) income.Add(new P7IncomeEvent(harvester.Seed.Team, paid, vent.Id));
         }
         LastP7Thefts = thefts;
         return income;
-    }
-
-    private SimulatedActor? FindPetraThief(SimulatedActor harvester)
-    {
-        var source = harvester.Movement.OccupiedCell;
-        return Actors
-            .Where(candidate => !candidate.IsDestroyed && candidate.Seed.Team >= 0 &&
-                teamEconomies.ContainsKey(candidate.Seed.Team) &&
-                TeamRelations.IsHostile(candidate.Seed.Team, harvester.Seed.Team) &&
-                EffectiveDefinition(candidate).Code is "SARGSTL" or "PSYCSTL")
-            .Select(candidate => new
-            {
-                Actor = candidate,
-                Distance = Math.Max(
-                    Math.Abs(candidate.Movement.OccupiedCell.X - source.X),
-                    Math.Abs(candidate.Movement.OccupiedCell.Z - source.Z)),
-            })
-            .Where(candidate => candidate.Distance <= petraStealRules.MaximumCellDistance)
-            .OrderBy(candidate => candidate.Distance)
-            .ThenBy(candidate => candidate.Actor.Seed.InstanceId)
-            .Select(candidate => candidate.Actor)
-            .FirstOrDefault();
     }
 }

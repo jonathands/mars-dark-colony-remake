@@ -60,7 +60,17 @@ public enum MineDeploymentOutcome { Preparing, Deployed, SourceInvalid, AlreadyD
 public sealed record MineDeploymentEvent(int SourceActorInstanceId, int EntityInstanceId, int EntityId, CellCoordinate Target, MineDeploymentOutcome Outcome);
 public enum TowerDeploymentOutcome { Deployed, SourceInvalid, AlreadyDeployed, EntityUnresolved }
 public sealed record TowerDeploymentEvent(int EntityInstanceId, int EntityId, TowerDeploymentOutcome Outcome);
-public enum StealDeploymentOutcome { Deployed, Retracted, SourceInvalid, AlreadyDeployed, EntityUnresolved }
+/// <summary>
+/// Steal Money transitions. <c>Preparing</c>: the state-13 timer started.
+/// <c>Deployed</c>: the stance formed and linked a victim. <c>NoVictim</c> /
+/// <c>VictimTaken</c>: the stance formed but found no free victim and starts
+/// retracting. <c>VictimLost</c>: the victim died or retracted, so the stance
+/// starts retracting. <c>Retracted</c>: the unit is mobile again.
+/// </summary>
+public enum StealDeploymentOutcome
+{
+    Deployed, Retracted, SourceInvalid, AlreadyDeployed, EntityUnresolved, Preparing, NoVictim, VictimTaken, VictimLost,
+}
 public sealed record StealDeploymentEvent(int EntityInstanceId, int EntityId, StealDeploymentOutcome Outcome);
 public sealed record P7IncomeEvent(int TeamId, int Amount, int? VentId);
 public sealed record P7TheftEvent(
@@ -71,9 +81,9 @@ public sealed record P7TheftEvent(
     int Amount,
     int VentId);
 public sealed record DayNightChangedEvent(DayNightPhase Phase);
-public enum BuildingDropOutcome { Placed, CatalogUnavailable, UnknownItem, NotBuilding, NotReserved, WrongFaction, EntityUnresolved, InvalidFootprint, OutOfBounds, Occupied }
+public enum BuildingDropOutcome { Placed, CatalogUnavailable, UnknownItem, NotBuilding, NotReserved, WrongFaction, EntityUnresolved, InvalidFootprint, OutOfBounds, Occupied, NoCity }
 public sealed record BuildingPlacedEvent(int TeamId, int DependencyItemId, int EntityInstanceId, int EntityId, CellCoordinate Origin, BuildingDropOutcome Outcome);
-public enum UnitProductionOutcome { Produced, CatalogUnavailable, UnknownItem, NotTroop, NotReserved, SourceInvalid, PrerequisiteMissing, SpawnBlocked, Queued, NoProductionQueue, CapReached }
+public enum UnitProductionOutcome { Produced, CatalogUnavailable, UnknownItem, NotTroop, NotReserved, SourceInvalid, PrerequisiteMissing, SpawnBlocked, Queued, NoProductionQueue, CapReached, NoCity }
 public sealed record UnitProducedEvent(int TeamId, int DependencyItemId, int EntityInstanceId, int EntityId, int SourceBuildingInstanceId, UnitProductionOutcome Outcome);
 public enum ResearchOutcome { Completed, CatalogUnavailable, UnknownItem, NotUpgrade, NotReserved, SourceInvalid, PrerequisiteMissing }
 public sealed record ResearchCompletedEvent(int TeamId, int DependencyItemId, int SourceBuildingInstanceId, ResearchOutcome Outcome);

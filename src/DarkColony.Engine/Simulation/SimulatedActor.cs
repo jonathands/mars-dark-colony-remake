@@ -54,6 +54,12 @@ public sealed class SimulatedActor
     /// commands do not pretend this is a separately spawned building.
     /// </summary>
     public int? DeployedEntityId { get; internal set; }
+    /// <summary>Remaining ticks of the native state-13 change between SARG/PSYC and SARGSTL/PSYCSTL.</summary>
+    public int StealTransitionTicksRemaining { get; internal set; }
+    /// <summary>Stealing stance: the deployed harvester it drains (its command record word +0, <c>0x417E75</c>).</summary>
+    public int? StealVictimInstanceId { get; internal set; }
+    /// <summary>Deployed harvester: the stance draining it (its command record word +4, <c>0x417EB8</c>).</summary>
+    public int? ThiefInstanceId { get; internal set; }
     public int? AttackTargetInstanceId { get; internal set; }
     /// <summary>Pending one-shot opcode-0x1b/state-18 ground target.</summary>
     public CellCoordinate? GroundSpecialAttackTarget { get; internal set; }

@@ -51,6 +51,8 @@ public sealed partial class ScenarioSimulation
             return new BuildingPlacedEvent(intent.TeamId, intent.DependencyItemId, 0, 0, intent.Origin, BuildingDropOutcome.UnknownItem);
         if (!item.IsBuilding)
             return new BuildingPlacedEvent(intent.TeamId, intent.DependencyItemId, 0, 0, intent.Origin, BuildingDropOutcome.NotBuilding);
+        if (!UsesPortConstructionAdapters())
+            return new BuildingPlacedEvent(intent.TeamId, intent.DependencyItemId, 0, 0, intent.Origin, BuildingDropOutcome.NoCity);
         if (!teamRaces.TryGetValue(intent.TeamId, out var teamRace) || teamRace != item.BuildingFaction)
             return new BuildingPlacedEvent(intent.TeamId, intent.DependencyItemId, 0, 0, intent.Origin, BuildingDropOutcome.WrongFaction);
         if (!teamEconomies.TryGetValue(intent.TeamId, out var economy) || !economy.ReservedItems.Contains(intent.DependencyItemId))
@@ -89,9 +91,11 @@ public sealed partial class ScenarioSimulation
         if (!teamEconomies.TryGetValue(intent.TeamId, out var economy) || !economy.ReservedItems.Contains(intent.DependencyItemId))
             return new UnitProducedEvent(intent.TeamId, intent.DependencyItemId, 0, entityId, intent.SourceBuildingInstanceId, UnitProductionOutcome.NotReserved);
         // A team with a city orders into its player queue like the native
-        // command 10; the immediate spawn below is a port adapter for teams
-        // without one.
+        // command 10. The immediate spawn below is a port adapter kept only
+        // for scenarios that declare no city (UsesPortConstructionAdapters).
         if (cityOrigins.ContainsKey(intent.TeamId)) return EnqueueTroop(intent, entityId, economy);
+        if (!UsesPortConstructionAdapters())
+            return new UnitProducedEvent(intent.TeamId, intent.DependencyItemId, 0, entityId, intent.SourceBuildingInstanceId, UnitProductionOutcome.NoCity);
         if (!actorsById.TryGetValue(intent.SourceBuildingInstanceId, out var source) || source.IsDestroyed || source.Seed.Team != intent.TeamId || source.Definition.MovementSpeed > 0)
             return new UnitProducedEvent(intent.TeamId, intent.DependencyItemId, 0, entityId, intent.SourceBuildingInstanceId, UnitProductionOutcome.SourceInvalid);
         if (!item.PrerequisiteItemIds.Any(prerequisite => SourceMatchesBuildItem(source, prerequisite)))

@@ -24,6 +24,8 @@ public sealed partial class ScenarioSimulation
     /// </summary>
     public const int NativeProjectileSubstepsPerTick = 4;
     public const int NativeImmediateSpecialTicks = 0x32;
+    /// <summary>Ring count of the steal victim search <c>0x417944</c>.</summary>
+    public const int NativeStealSearchRings = 11;
     public const int NativeInspireCountdownCadence = 0x10;
     public const int NativeInspireMinimumCountdown = 0x14;
     public const int NativeInspireCountdownMask = 0x0f;
@@ -59,7 +61,6 @@ public sealed partial class ScenarioSimulation
     private readonly DependencyCatalog? dependencyCatalog;
     private readonly BuildingFootprintCatalog? footprints;
     private readonly PetraFlowRules petraFlowRules;
-    private readonly PetraStealRules petraStealRules;
     private int petraPulseTicks;
     private int nextProjectileInstanceId = 1;
     private uint inspireRandomState = 0x494e5350; // "INSP"
@@ -123,7 +124,6 @@ public sealed partial class ScenarioSimulation
         IReadOnlyDictionary<int, int?> teamRaces,
         DependencyCatalog? dependencyCatalog,
         PetraFlowRules petraFlowRules,
-        PetraStealRules petraStealRules,
         DayNightCycle dayNight,
         BuildingFootprintCatalog? footprints,
         TeamRelationMatrix teamRelations)
@@ -143,7 +143,6 @@ public sealed partial class ScenarioSimulation
         this.teamRaces = teamRaces.ToDictionary(pair => pair.Key, pair => pair.Value);
         this.dependencyCatalog = dependencyCatalog;
         this.petraFlowRules = petraFlowRules;
-        this.petraStealRules = petraStealRules;
         DayNight = dayNight;
         this.footprints = footprints;
         TeamRelations = teamRelations;
@@ -216,7 +215,6 @@ public sealed partial class ScenarioSimulation
         DamageMatrix? damageMatrix = null,
         DependencyCatalog? dependencyCatalog = null,
         PetraFlowRules? petraFlowRules = null,
-        PetraStealRules? petraStealRules = null,
         DayNightCycle? dayNight = null,
         TeamRelationMatrix? teamRelations = null,
         AreaEffectCatalog? areaEffects = null,
@@ -268,11 +266,10 @@ public sealed partial class ScenarioSimulation
         var races = scenario.Teams.Where(team => team.Enabled)
             .ToDictionary(team => team.TeamId, team => team.Race);
         var simulation = new ScenarioSimulation(path, catalog, actors, ground, alternate, mine, weaponCatalog, damageMatrix, areaEffects, resources, races, dependencyCatalog,
-            petraFlowRules ?? PetraFlowRules.ProvisionalDefault, petraStealRules ?? PetraStealRules.ProvisionalDefault,
+            petraFlowRules ?? PetraFlowRules.ProvisionalDefault,
             dayNight ?? (scenario.DayNight.IsNativeValid ? DayNightCycle.FromNativeScenario(scenario.DayNight) : new DayNightCycle()), footprints,
             teamRelations ?? TeamRelationMatrix.CreateDefault());
         if (!simulation.petraFlowRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraFlowRules));
-        if (!simulation.petraStealRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraStealRules));
         simulation.nativeRandomTable = randomTable ?? NativeRandomTable.Synthetic;
         simulation.targetRings = targetRings;
         simulation.computerTeams = scenario.Teams.Where(team => team.Enabled && team.AiProfile > 0).Select(team => team.TeamId).ToHashSet();
@@ -445,6 +442,7 @@ public sealed partial class ScenarioSimulation
         var events = new TickEvents(UpdateInspireState());
         UpdateAbilityCharge();
         events.MineDeployments.AddRange(UpdateMineDeploymentState());
+        events.StealDeployments.AddRange(UpdateStealStances());
         UpdateBattlefieldTransports(events.BattlefieldTransports);
         DispatchCommands(commands, events);
         LastMoveOutcomes = events.MoveOutcomes;
@@ -531,9 +529,11 @@ public sealed partial class ScenarioSimulation
         {
             if (scheduled.Command is PurchaseIntent purchase)
             {
-                var eligibility = teamEconomies.TryGetValue(purchase.TeamId, out var economy)
-                    ? economy.TryReserve(dependencyCatalog, purchase.DependencyItemId)
-                    : PurchaseEligibility.UnknownItem;
+                var eligibility = !teamEconomies.TryGetValue(purchase.TeamId, out var economy)
+                    ? PurchaseEligibility.UnknownItem
+                    : !UsesPortConstructionAdapters() && !HasCity(purchase.TeamId)
+                        ? PurchaseEligibility.NoCity
+                        : economy.TryReserve(dependencyCatalog, purchase.DependencyItemId);
                 purchases.Add(new PurchaseReservedEvent(purchase.TeamId, purchase.DependencyItemId, eligibility));
                 if (eligibility == PurchaseEligibility.Available && BuildPurchasedCitySlot(purchase) is { } built)
                     buildingPlacements.Add(built);

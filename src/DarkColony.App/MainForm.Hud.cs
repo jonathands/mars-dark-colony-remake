@@ -379,7 +379,9 @@ public sealed partial class MainForm
     }
 
     private PurchaseEligibility PurchaseEligibilityFor(DependencyDefinition item) =>
-        _scenarioSimulation?.EconomyForTeam(_localPlayerTeam)?.Evaluate(_dependencyCatalog, item.Id) ?? PurchaseEligibility.CatalogUnavailable;
+        _scenarioSimulation is { } simulation && !simulation.UsesPortConstructionAdapters() && !simulation.HasCity(_localPlayerTeam)
+            ? PurchaseEligibility.NoCity
+            : _scenarioSimulation?.EconomyForTeam(_localPlayerTeam)?.Evaluate(_dependencyCatalog, item.Id) ?? PurchaseEligibility.CatalogUnavailable;
 
     private string HarvesterHudStatus(SimulatedActor actor, int ventId)
     {

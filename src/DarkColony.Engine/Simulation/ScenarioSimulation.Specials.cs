@@ -239,25 +239,13 @@ public sealed partial class ScenarioSimulation
         if (!actorsById.TryGetValue(intent.EntityInstanceId, out var source) || source.IsDestroyed || source.Seed.Team < 0 ||
             source.Definition.Code is not ("SARG" or "PSYC"))
             return new StealDeploymentEvent(intent.EntityInstanceId, 0, StealDeploymentOutcome.SourceInvalid);
+        if (source.StealTransitionTicksRemaining > 0)
+            return new StealDeploymentEvent(intent.EntityInstanceId, EffectiveDefinition(source).Id, StealDeploymentOutcome.Preparing);
         if (source.DeployedEntityId is not null)
             return new StealDeploymentEvent(intent.EntityInstanceId, source.DeployedEntityId.Value, StealDeploymentOutcome.AlreadyDeployed);
-
-        var deployedCode = source.Definition.Code == "SARG" ? "SARGSTL" : "PSYCSTL";
-        var form = entityDefinitions.FirstOrDefault(definition => definition.Faction == source.Definition.Faction && definition.Code == deployedCode);
-        if (form is null)
+        if (StealingForm(source) is null)
             return new StealDeploymentEvent(intent.EntityInstanceId, 0, StealDeploymentOutcome.EntityUnresolved);
-
-        // Source data proves the mobile->static transition; campaign scripts
-        // additionally establish that this stance intercepts enemy-miner P7.
-        source.Playback?.Cancel();
-        source.Playback = null;
-        source.MoveOrder = null;
-        source.AttackTargetInstanceId = null;
-        source.AttackMoveDestination = null;
-        source.DeployedEntityId = form.Id;
-        source.MaximumHealth = form.Health;
-        source.Health = Math.Min(source.Health, source.MaximumHealth);
-        return new StealDeploymentEvent(intent.EntityInstanceId, form.Id, StealDeploymentOutcome.Deployed);
+        return BeginStealTransition(source);
     }
 
     private StealDeploymentEvent RetractSteal(RetractStealIntent intent)
@@ -267,16 +255,133 @@ public sealed partial class ScenarioSimulation
             EffectiveDefinition(source).Code is not ("SARGSTL" or "PSYCSTL"))
             return new StealDeploymentEvent(intent.EntityInstanceId, source?.DeployedEntityId ?? 0,
                 StealDeploymentOutcome.SourceInvalid);
+        if (source.StealTransitionTicksRemaining > 0)
+            return new StealDeploymentEvent(intent.EntityInstanceId, EffectiveDefinition(source).Id, StealDeploymentOutcome.Preparing);
+        return BeginStealTransition(source);
+    }
 
-        // dc.exe 0x417c40 reverses entity 77 -> 4 and 78 -> 12 while retaining
-        // the same actor and world-grid membership.
-        source.DeployedEntityId = null;
-        source.MaximumHealth = source.Definition.Health;
-        source.Health = Math.Min(source.Health, source.MaximumHealth);
+    /// <summary>
+    /// State 13 (<c>0x416784</c>) in both directions: the unit stops and the
+    /// 50-tick timer starts; the completion (<c>0x417B0C</c>) swaps the type.
+    /// </summary>
+    private StealDeploymentEvent BeginStealTransition(SimulatedActor source)
+    {
+        source.Playback?.Cancel();
+        source.Playback = null;
+        source.MoveOrder = null;
         source.AttackTargetInstanceId = null;
         source.AttackMoveDestination = null;
-        return new StealDeploymentEvent(source.Seed.InstanceId, source.Definition.Id,
-            StealDeploymentOutcome.Retracted);
+        source.StealTransitionTicksRemaining = NativeImmediateSpecialTicks;
+        return new StealDeploymentEvent(source.Seed.InstanceId, EffectiveDefinition(source).Id, StealDeploymentOutcome.Preparing);
+    }
+
+    private EntityDefinition? StealingForm(SimulatedActor source)
+    {
+        var code = source.Definition.Code == "SARG" ? "SARGSTL" : "PSYCSTL";
+        return entityDefinitions.FirstOrDefault(definition => definition.Faction == source.Definition.Faction && definition.Code == code);
+    }
+
+    /// <summary>
+    /// Runs the steal transition timers, then the stance handler
+    /// <c>0x413BC0</c>: a stance keeps its victim only while that actor lives
+    /// as a deployed harvester (47/48). Otherwise the stance retracts.
+    /// </summary>
+    private IReadOnlyList<StealDeploymentEvent> UpdateStealStances()
+    {
+        var events = new List<StealDeploymentEvent>();
+        // The victim search reads this update's visibility, not the snapshot
+        // left by the previous update's actors.
+        scanVisibility.Clear();
+        foreach (var actor in actors.Where(actor => actor.StealTransitionTicksRemaining > 0 ||
+                     actor.DeployedEntityId is not null && actor.Definition.Code is "SARG" or "PSYC").ToArray())
+        {
+            if (actor.IsDestroyed)
+            {
+                actor.StealTransitionTicksRemaining = 0;
+                actor.StealVictimInstanceId = null;
+                continue;
+            }
+            if (actor.StealTransitionTicksRemaining > 0)
+            {
+                if (--actor.StealTransitionTicksRemaining == 0) events.Add(CompleteStealTransition(actor));
+                continue;
+            }
+            if (actor.StealVictimInstanceId is { } victimId && actorsById.TryGetValue(victimId, out var victim) &&
+                !victim.IsDestroyed && EffectiveDefinition(victim).Code is "EDPLY" or "SDPL")
+                continue;
+            actor.StealVictimInstanceId = null;
+            BeginStealTransition(actor);
+            events.Add(new StealDeploymentEvent(actor.Seed.InstanceId, EffectiveDefinition(actor).Id, StealDeploymentOutcome.VictimLost));
+        }
+        return events;
+    }
+
+    /// <summary>
+    /// <c>0x417D0D</c> swaps SARG/PSYC (4/12) with SARGSTL/PSYCSTL (77/78). A
+    /// new stance then searches for its victim (<c>0x417944</c>). It links the
+    /// victim unless another stance already drains it (<c>0x417E91</c>: the
+    /// first thief keeps the harvester). Without a victim it retracts at once.
+    /// </summary>
+    private StealDeploymentEvent CompleteStealTransition(SimulatedActor actor)
+    {
+        if (actor.DeployedEntityId is not null)
+        {
+            actor.DeployedEntityId = null;
+            actor.StealVictimInstanceId = null;
+            actor.MaximumHealth = actor.Definition.Health;
+            actor.Health = Math.Min(actor.Health, actor.MaximumHealth);
+            return new StealDeploymentEvent(actor.Seed.InstanceId, actor.Definition.Id, StealDeploymentOutcome.Retracted);
+        }
+        if (StealingForm(actor) is not { } form)
+            return new StealDeploymentEvent(actor.Seed.InstanceId, 0, StealDeploymentOutcome.EntityUnresolved);
+        actor.DeployedEntityId = form.Id;
+        actor.MaximumHealth = form.Health;
+        actor.Health = Math.Min(actor.Health, actor.MaximumHealth);
+        var victim = FindStealVictim(actor);
+        if (victim is null || victim.ThiefInstanceId is not null)
+        {
+            BeginStealTransition(actor);
+            return new StealDeploymentEvent(actor.Seed.InstanceId, form.Id,
+                victim is null ? StealDeploymentOutcome.NoVictim : StealDeploymentOutcome.VictimTaken);
+        }
+        actor.StealVictimInstanceId = victim.Seed.InstanceId;
+        victim.ThiefInstanceId = actor.Seed.InstanceId;
+        return new StealDeploymentEvent(actor.Seed.InstanceId, form.Id, StealDeploymentOutcome.Deployed);
+    }
+
+    /// <summary>
+    /// <c>0x417944</c>: for rings 0 to 11 around the stance's cell, and for
+    /// offsets -22 to 22, it probes the columns x - ring and x + ring at
+    /// z + offset, then the rows z - ring and z + ring at x + offset. The area
+    /// is a cross: |dx| &lt;= 11 with |dz| &lt;= 22, or |dz| &lt;= 11 with
+    /// |dx| &lt;= 22. The first ground-grid actor of another team (allies
+    /// included) that is a live deployed harvester whose cell the stance's
+    /// team sees wins. (The hidden-entity check on gamestat value 15 never
+    /// applies to harvesters.)
+    /// </summary>
+    private SimulatedActor? FindStealVictim(SimulatedActor thief)
+    {
+        var origin = thief.Movement.OccupiedCell;
+        for (var ring = 0; ring <= NativeStealSearchRings; ring++)
+        for (var offset = -2 * NativeStealSearchRings; offset <= 2 * NativeStealSearchRings; offset++)
+        for (var side = 0; side < 4; side++)
+        {
+            var (x, z) = side switch
+            {
+                0 => (origin.X - ring, origin.Z + offset),
+                1 => (origin.X + ring, origin.Z + offset),
+                2 => (origin.X + offset, origin.Z - ring),
+                _ => (origin.X + offset, origin.Z + ring),
+            };
+            if (x < 0 || z < 0 || x >= path.Width || z >= path.Height) continue;
+            if (!GroundOccupancy.TryGetOwner(new CellCoordinate(x, z), out var owner) ||
+                !actorsById.TryGetValue(owner, out var candidate)) continue;
+            if (candidate.IsDestroyed || candidate.Seed.Team == thief.Seed.Team ||
+                EffectiveDefinition(candidate).Code is not ("EDPLY" or "SDPL")) continue;
+            if (!IsCellVisibleForScan(thief.Seed.Team, candidate.Movement.OccupiedCell)) continue;
+            return candidate;
+        }
+        return null;
     }
 
     private GroundSpecialAttackEvent IssueGroundSpecialAttack(GroundSpecialAttackIntent intent)

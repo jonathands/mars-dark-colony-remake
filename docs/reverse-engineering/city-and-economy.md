@@ -95,8 +95,12 @@ rate-20 vent (j4play01): 20 from the vent plus the passive 3.
   nonzero gains `+0x19B4` (default 3) P7. Script action 12 (in `0x43D814`)
   changes the rate; the port does not have it until the mission script engine
   exists. The 1500 → 1506 step in the native War capture matches two pulses.
-- **Vent income.** The vent producer also requires `+0xBD4 != 0` for the
-  harvester's owner (`0x413B31`).
+- **Vent income.** The vent producer pays the harvester's owner only while
+  its `+0xBD4` is nonzero (`0x413B6A`), and then adds 1 to the owner's stat 5
+  (`0x413B9C`, harvest pulses). The vent's reservoir loses the amount even
+  when nobody is paid (`0x413BA9`). A linked stealing stance takes half the
+  amount (`0x413A30`, gated on the thief's own headquarters at `0x413B31`);
+  see [unit-special-commands.md](unit-special-commands.md).
 - The port applies both gates only when the SCN declares cities, so
   synthetic engine scenarios keep their configured `PetraFlowRules`. The
   passive pulse follows `world + 0x94C` and the vent pulse the day/night phase
@@ -155,6 +159,7 @@ cannot direct-attack critters, and their projectiles pass through critters.
 | Placement race substitution (`0x41C4E3`) | confirmed; check "the SCN loader swaps a placement of the other race for its counterpart" |
 | Network-session slot gating | deferred to goal 8 (networking): single-player sessions build every slot |
 | Role of `%AISlots` line 1 | confirmed: starting view center (`0x41EBD8`) and AI home fallback (`0x457210`) |
+| Team without a city | decided from the executable: every building is a city slot at the origin, and the footprint routine `0x444C80` does nothing for a zero origin. In a scenario that declares cities, such a team's purchases return `NoCity`, and it cannot drop buildings or train troops. Scenarios without any `%AISlots` (engine fixtures) keep the port's free drop and immediate-spawn adapters (`UsesPortConstructionAdapters`) |
 | Building purchase builds the slot at once (command 9) | confirmed; see [production-flow.md](production-flow.md) |
 | Building prerequisite = live slot building of at least that variant (`0x438220`) | confirmed; completed building items follow each slot |
 | Building sprite anchor | open: the HQ draws about two tiles lower and left of the original captures |

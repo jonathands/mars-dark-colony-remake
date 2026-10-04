@@ -300,18 +300,25 @@ public sealed partial class MainForm
         foreach (var deployment in _scenarioSimulation.LastStealDeployments)
         {
             var source = _scenarioSimulation.Actor(deployment.EntityInstanceId);
-            if (deployment.Outcome == StealDeploymentOutcome.Deployed && source is not null)
+            if (source is null) continue;
+            if (deployment.Outcome is StealDeploymentOutcome.Deployed or StealDeploymentOutcome.NoVictim or StealDeploymentOutcome.VictimTaken)
             {
                 _formDeploymentStartedAt[deployment.EntityInstanceId] = _world.TickCount;
                 PlayGameplaySound(source.Definition.Id, "DPY");
-                _status = $"{source.Definition.DisplayName} deployed; nearby enemy mining income will be intercepted.";
             }
-            else if (deployment.Outcome == StealDeploymentOutcome.Retracted && source is not null)
-            {
+            else if (deployment.Outcome == StealDeploymentOutcome.Retracted)
                 _formRetractionStartedAt[deployment.EntityInstanceId] = _world.TickCount;
-                _status = $"{source.Definition.DisplayName} retracted from its stealing stance and is mobile.";
-            }
-            else _status = $"Steal deployment rejected: {deployment.Outcome}.";
+            if (source.Seed.Team != _localPlayerTeam) continue;
+            _status = deployment.Outcome switch
+            {
+                StealDeploymentOutcome.Preparing => $"{source.Definition.DisplayName} changing stance ({ScenarioSimulation.NativeImmediateSpecialTicks} ticks).",
+                StealDeploymentOutcome.Deployed => $"{source.Definition.DisplayName} is draining miner #{source.StealVictimInstanceId}.",
+                StealDeploymentOutcome.NoVictim => $"{source.Definition.DisplayName} sees no deployed miner in reach and retracts.",
+                StealDeploymentOutcome.VictimTaken => $"{source.Definition.DisplayName}: that miner is already drained; retracting.",
+                StealDeploymentOutcome.VictimLost => $"{source.Definition.DisplayName} lost its miner and retracts.",
+                StealDeploymentOutcome.Retracted => $"{source.Definition.DisplayName} retracted from its stealing stance and is mobile.",
+                _ => $"Steal deployment rejected: {deployment.Outcome}.",
+            };
         }
         foreach (var theft in _scenarioSimulation.LastP7Thefts)
         {

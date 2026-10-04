@@ -108,10 +108,3 @@ public sealed record PetraFlowRules(
 /// Campaign text establishes 50%, long range, and no sight requirement; the
 /// executable's exact distance metric and competing-thief arbitration remain open.
 /// </summary>
-public sealed record PetraStealRules(int MaximumCellDistance, int Numerator, int Denominator)
-{
-    public static PetraStealRules ProvisionalDefault => new(12, 1, 2);
-    public bool IsValid => MaximumCellDistance >= 0 && Numerator >= 0 && Denominator > 0 && Numerator <= Denominator;
-
-    public int StolenAmount(int attachedIncome) => attachedIncome * Numerator / Denominator;
-}

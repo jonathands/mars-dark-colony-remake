@@ -132,7 +132,10 @@ Before each step of a move, the word at command +8 selects a mode:
 - Hostile mines are never auto-targeted because the revealed bit is not
   modeled.
 - Visibility uses a per-tick snapshot computed with the same rule as
-  `IsCellVisibleToTeam`.
+  `IsCellVisibleToTeam`. The original clears and restamps the grid's
+  visibility bits only every 16 updates (`0x419A30`: `world + 0x94C & 15`,
+  then `0x4456F0` and `0x44A6D4`), and once when the clock is zero
+  (`0x41988C`), so between refreshes it uses a stale picture.
 - The mode-2 approach targets the closest free cell within weapon range of the
   hostile (the pursuit helper), because the port's local search has no partial
   routes to an occupied cell.

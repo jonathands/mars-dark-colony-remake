@@ -12,6 +12,8 @@ public enum PurchaseEligibility
     MissingPrerequisite,
     InsufficientP7,
     Disabled,
+    /// <summary>The scenario declares cities and this team has none: nothing can be built or trained.</summary>
+    NoCity,
 }
 
 /// <summary>

@@ -61,12 +61,11 @@ one harvester may own or prepare on a vent.
   [`reverse-engineering/city-and-economy.md`](reverse-engineering/city-and-economy.md).
   The former global 900-tick half-day has been replaced by the recovered
   per-SCN clock.
-- Human 10 and Alien 11 campaign text establishes that a deployed S.A.R.G.E.
-  or Gorrem near an enemy mining unit intercepts 50% of its resource income,
-  has long range, and does not require sight. The deterministic engine now
-  applies that split on the attached-harvester pulse. Its 12-cell Chebyshev
-  range and nearest/lowest-instance-ID non-stacking arbitration are explicit
-  provisional policies pending the exact executable distance routine.
+- Steal Money follows `dc.exe`: a 50-tick state-13 transition, a
+  cross-shaped victim search (`0x417944`) that needs the victim's cell to be
+  visible at deploy time, one thief per harvester (the first keeps it),
+  automatic retraction without a victim, and a half/half split of each pulse.
+  See [`reverse-engineering/unit-special-commands.md`](reverse-engineering/unit-special-commands.md).
 - `intrface/maine` explicitly declares its read-only “days counter” as text
   control 234 at `(613,433)`. The compiled HUD renders the deterministic count
   of completed full day/night pairs at that native location; phase text remains

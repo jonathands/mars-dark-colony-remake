@@ -17,7 +17,7 @@ matching members.
 | Heal Units | 122 | Human `BEON`, Gray `ZISP` | None established. | Implemented: native radius-7 scan order, first damaged ally only, class-7 amount, charge threshold/drain/recovery, HUD charge, animation, and sound. | Exact UI button-disable predicate, if any. |
 | Deploy Turret | 68 | Human `TURR`, Gray `XENO` | `T` (41), `XDEPLOY` (42) | Implemented: in-place static form, original deploy FIN, and decoded tower weapons. | Native cancellation/redeployment policy. |
 | Inspire Troops | 121 | Commander entity IDs 69–76 | None (temporary actor state). | Implemented: native 50-tick cast, occupancy scan, rank limits, recipient filter, randomized countdown, HUD marker, and exact-center aim state. | Exact native random-table sequence and the normal shot-spread weight table. |
-| Steal Money | 75 | Human `SARG`, Gray `PSYC` | `SARGSTL` (77), `PSYCSTL` (78) | Implemented: recovered bidirectional mobile/static transition, DEPLOY/RETRACT FIN presentation, and campaign-authored 50% interception on the miner income pulse. | Exact native range and competing-thief arbitration. |
+| Steal Money | 75 | Human `SARG`, Gray `PSYC` | `SARGSTL` (77), `PSYCSTL` (78) | Implemented from `dc.exe`: 50-tick state-13 transition both ways, cross-shaped victim search, one thief per harvester, automatic retraction, and the half/half pulse split. See "Steal Money" below. | Presentation: the DEPLOY/RETRACT FIN plays after the transition rather than during it. |
 
 ## Sixth-slot special attacks
 
@@ -123,15 +123,47 @@ first victim. Only shared random-stream parity remains open in this path.
   transform destination: `SARG` (4) links to `PSYC` (12), `BEON` (49) to
   `ZISP` (50), and `SARGSTL` (77) to `PSYCSTL` (78). That eliminates a
   tempting but incorrect generic deployment rule for the Steal Money forms.
-- No shipped SCN placement uses entity 77 (`SARGSTL`) or 78 (`PSYCSTL`), so
-  placement alone cannot establish a victim or range. Human 10 and Alien 11
-  campaign briefings supply the gameplay contract: a deployed S.A.R.G.E. or
-  Gorrem near an enemy mining unit intercepts 50% of that miner's income, has
-  long range, and does not require visual sight. The port applies that share
-  on the deterministic attached-harvester pulse. Until the executable yields
-  an exact metric, it uses a documented 12-cell Chebyshev range and assigns a
-  miner to the nearest eligible thief (then lowest instance ID) without
-  stacking.
+- No shipped SCN placement uses entity 77 (`SARGSTL`) or 78 (`PSYCSTL`).
+
+### Steal Money
+
+Recovered from `dc.exe` on 2026-10-04 (`Simulation/ScenarioSimulation.Specials.cs`,
+`ScenarioSimulation.Economy.cs`):
+
+1. **Transition.** The command enters state 13 (`0x416784`): the unit stops,
+   the 50-tick timer runs, and the completion (`0x417D0D`) swaps SARG/PSYC
+   (4/12) with SARGSTL/PSYCSTL (77/78). Retracting takes the same path.
+2. **Victim search** (`0x417944`, right after the swap to the stance). For
+   rings 0 to 11 around the stance's cell, and offsets -22 to 22, it probes
+   the columns `x - ring` and `x + ring` at `z + offset`, then the rows
+   `z - ring` and `z + ring` at `x + offset`. The area is a cross: |dx| ≤ 11
+   with |dz| ≤ 22, or |dz| ≤ 11 with |dx| ≤ 22. The first ground-grid actor
+   that qualifies wins:
+   - it belongs to another team (allies included);
+   - it is a live deployed harvester (EDPLY 47 or SDPL 48);
+   - the grid word of its cell has the stance team's visibility bit
+     (`player + 0x19C0`). Briefing text says the stance "does not require
+     sight"; the executable does require it, but only at this moment;
+   - entities with gamestat value 15 (mines) would also need the revealed bit
+     `+0xCA`; harvesters do not have it.
+3. **Link.** The stance stores the victim in its command record (word +0,
+   `0x417E75`). If the victim's record already names a thief (word +4,
+   `0x417E91`), the newcomer gives up: the first thief keeps the harvester.
+   Otherwise the victim's word +4 takes the stance's index.
+4. **Automatic retraction.** Without a victim, or with a taken one, the
+   stance immediately re-enters state 13 and becomes mobile 50 ticks later.
+   The stance handler `0x413BC0` does the same once its victim dies or stops
+   being a deployed harvester.
+5. **Pulse** (`0x413A30`). When the harvester's link names a live
+   SARGSTL/PSYCSTL, the amount is halved (`x / 2`, so an odd unit is lost).
+   The thief's player gets half if its headquarters stands. Any other state
+   of the linked actor clears the link (`0x413B0D`). The owner then gets the
+   (halved) amount if its headquarters stands. The vent loses the full
+   amount either way (`0x413BA9`).
+
+The check "a steal stance links the first visible deployed harvester and
+halves its pulses" covers the link, first-thief arbitration, the split, and
+retraction on victim loss.
 
 ## Executable immediate-special path
 

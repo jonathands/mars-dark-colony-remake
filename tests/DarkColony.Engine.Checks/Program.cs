@@ -1207,7 +1207,7 @@ Check("tower builders deploy into their paired armed static forms", () =>
     Equal(0, simulation.LastMoveOutcomes.Single().StepCount);
 });
 
-Check("Cyborg stealing stance deploys and retracts through recovered forms", () =>
+Check("a stealing stance forms after state 13 and retracts when it finds no victim", () =>
 {
     var catalog = EntityCatalog.Parse("2\nSARG 0 10 45 10 10 13 14 14 125 150 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 12 0\nSARGSTL 0 10 0 10 10 -1 -1 -1 125 150 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 78 0\n");
     const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n";
@@ -1216,18 +1216,27 @@ Check("Cyborg stealing stance deploys and retracts through recovered forms", () 
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4));
     simulation.Step([new ScheduledWorldCommand(1, 0, new DeployStealIntent(1))]);
     var thief = simulation.Actor(1)!;
-    Equal(StealDeploymentOutcome.Deployed, simulation.LastStealDeployments.Single().Outcome);
-    Equal(1, thief.DeployedEntityId!.Value);
+    Equal(StealDeploymentOutcome.Preparing, simulation.LastStealDeployments.Single().Outcome);
+    Equal(ScenarioSimulation.NativeImmediateSpecialTicks, thief.StealTransitionTicksRemaining);
+    // The timer counts down from the next update; the type swaps on its 50th.
+    for (var tick = 1; tick < ScenarioSimulation.NativeImmediateSpecialTicks; tick++) simulation.Step([]);
+    Equal("SARG", simulation.EffectiveDefinition(thief).Code);
+    simulation.Step([]);
+    Equal(StealDeploymentOutcome.NoVictim, simulation.LastStealDeployments.Single().Outcome);
     Equal("SARGSTL", simulation.EffectiveDefinition(thief).Code);
     Equal(0, simulation.EffectiveDefinition(thief).MovementSpeed);
     Equal(800, thief.Health);
-    simulation.Step([new ScheduledWorldCommand(2, 0, new MoveIntent(1, new CellCoordinate(2, 1)))]);
+    // Without a victim the stance starts retracting at once (0x416784).
+    Equal(ScenarioSimulation.NativeImmediateSpecialTicks, thief.StealTransitionTicksRemaining);
+    simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new MoveIntent(1, new CellCoordinate(2, 1)))]);
     Equal(0, simulation.LastMoveOutcomes.Single().StepCount);
-    simulation.Step([new ScheduledWorldCommand(3, 0, new RetractStealIntent(1))]);
+    for (var tick = 2; tick < ScenarioSimulation.NativeImmediateSpecialTicks; tick++) simulation.Step([]);
+    Equal("SARGSTL", simulation.EffectiveDefinition(thief).Code);
+    simulation.Step([]);
     Equal(StealDeploymentOutcome.Retracted, simulation.LastStealDeployments.Single().Outcome);
     Equal(false, thief.DeployedEntityId.HasValue);
     Equal("SARG", simulation.EffectiveDefinition(thief).Code);
-    simulation.Step([new ScheduledWorldCommand(4, 0, new MoveIntent(1, new CellCoordinate(2, 1)))]);
+    simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new MoveIntent(1, new CellCoordinate(2, 1)))]);
     Equal(true, simulation.LastMoveOutcomes.Single().StepCount > 0);
 });
 
@@ -1259,28 +1268,49 @@ Check("vents pay their own SCN rate per pulse, and a zero-rate vent pays nothing
     Equal(0, Earned(0));
 });
 
-Check("deployed SARGE intercepts half of nearby hostile miner income without visibility", () =>
+Check("a steal stance links the first visible deployed harvester and halves its pulses", () =>
 {
-    var catalog = EntityCatalog.Parse("4\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nSARG 0 10 45 1 1 -1 -1 -1 1 1 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 3 0\nSARGSTL 0 10 0 1 1 -1 -1 -1 1 1 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 2 0\n");
-    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n11 1 2 0 100 0\n1 1 0 1 100 0\n1 1 40 0 100\n";
+    // SARGSTL sees 12 cells, so both stances see the harvester at (1,1).
+    var catalog = EntityCatalog.Parse("4\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nSARG 0 10 45 1 1 -1 -1 -1 1 1 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 3 0\nSARGSTL 0 10 0 12 12 -1 -1 -1 1 1 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 2 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
+        "11 1 2 0 100 0\n12 1 2 0 100 0\n1 1 0 1 100 0\n1 1 40 0 5000\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
     bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 16, 4),
-        petraFlowRules: new PetraFlowRules(1, 0, 10), petraStealRules: new PetraStealRules(12, 1, 2));
+        petraFlowRules: new PetraFlowRules(1, 0, 11));
+    var harvester = simulation.Actor(3)!;
+    simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new HarvestVentIntent(3, 0))]);
+    for (var tick = 0; tick < ScenarioSimulation.NativeHarvesterAttachTicks; tick++) simulation.Step([]);
+    Equal("EDPLY", simulation.EffectiveDefinition(harvester).Code);
 
     simulation.Step([
-        new ScheduledWorldCommand(1, 0, new DeployStealIntent(1)),
-        new ScheduledWorldCommand(1, 1, new HarvestVentIntent(2, 0)),
+        new ScheduledWorldCommand(simulation.TickCount, 0, new DeployStealIntent(1)),
+        new ScheduledWorldCommand(simulation.TickCount, 1, new DeployStealIntent(2)),
     ]);
-    for (var tick = 0; tick < ScenarioSimulation.NativeHarvesterAttachTicks; tick++) simulation.Step([]);
+    for (var tick = 0; tick < ScenarioSimulation.NativeImmediateSpecialTicks; tick++) simulation.Step([]);
+    // 0x417E91: the first stance keeps the harvester; the second retracts.
+    Equal(new[] { StealDeploymentOutcome.Deployed, StealDeploymentOutcome.VictimTaken },
+        simulation.LastStealDeployments.Select(deployment => deployment.Outcome).ToArray());
+    Equal(3, simulation.Actor(1)!.StealVictimInstanceId!.Value);
+    Equal(1, harvester.ThiefInstanceId!.Value);
 
-    Equal(5, simulation.ResourceForTeam(0));
-    Equal(5, simulation.ResourceForTeam(1));
+    // An 11-unit pulse pays 5 to each side; the odd unit is lost, and the
+    // vent still loses all 11.
+    var reservoir = simulation.PetraVents[0].RemainingReservoir;
+    simulation.Step([]);
     var theft = simulation.LastP7Thefts.Single();
     Equal(1, theft.ThiefInstanceId);
-    Equal(2, theft.VictimHarvesterInstanceId);
+    Equal(3, theft.VictimHarvesterInstanceId);
     Equal(5, theft.Amount);
     Equal(new[] { 5, 5 }, simulation.LastP7Income.OrderBy(entry => entry.TeamId).Select(entry => entry.Amount).ToArray());
+    Equal(reservoir - 11, simulation.PetraVents[0].RemainingReservoir);
+
+    // A retracted harvester is no victim: the stance notices and retracts.
+    simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new RetractHarvesterIntent(3))]);
+    simulation.Step([]);
+    Equal(StealDeploymentOutcome.VictimLost,
+        simulation.LastStealDeployments.Single(deployment => deployment.EntityInstanceId == 1).Outcome);
+    Equal(false, harvester.ThiefInstanceId.HasValue);
 });
 
 Check("engineer mine deployment resolves the faction-matched HMINE form", () =>
@@ -2331,6 +2361,25 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(counterpart, EntityAt(2, 1));
         Equal(0, EntityAt(3, 0));
         Equal(0, EntityAt(4, 4));
+    });
+
+    Check("a team without a city builds and trains nothing in a scenario with cities", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var file = install.DataFile("scenario", "human", "human01") + ".scn";
+        var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+        var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Load(file), path, rules);
+        Equal(false, simulation.HasCity(0));
+        Equal(false, simulation.UsesPortConstructionAdapters());
+        var start = simulation.ResourceForTeam(0);
+        // Item 0 (Human exo center) has no prerequisite, so only the missing city refuses it.
+        simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new PurchaseIntent(0, 0))]);
+        Equal(PurchaseEligibility.NoCity, simulation.LastPurchaseReservations.Single().Eligibility);
+        Equal(start, simulation.ResourceForTeam(0));
+        simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new PlaceBuildingIntent(0, 0, new CellCoordinate(20, 20)))]);
+        Equal(BuildingDropOutcome.NoCity, simulation.LastBuildingPlacements.Single().Outcome);
     });
 
     Check("the troop cap shares the free actor slots and refunds orders beyond it", () =>
