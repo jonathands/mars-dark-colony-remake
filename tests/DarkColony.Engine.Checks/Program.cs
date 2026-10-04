@@ -4228,6 +4228,28 @@ Check("faction-selected War rosters complete a local movement order", () =>
         Equal("320x200", $"{troop.Frames[0].Width}x{troop.Frames[0].Height}");
     });
 
+    Check("game options step like lopte and set the update interval", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        // 0x478CC4: detail 2, sound 5, CD 5, interval 66 ms.
+        var options = GameOptions.Load(install.ExecutablePath);
+        Equal(new GameOptions(100, 5, 5, 2), options);
+        Equal(FixedStepClock.NativeDefaultIntervalMilliseconds, options.UpdateIntervalMilliseconds);
+        Equal(55, options.Faster().Faster().UpdateIntervalMilliseconds);
+        Equal(200, GameOptions.SpeedFromInterval(33));
+        Equal(90, GameOptions.SpeedFromInterval(70));
+        var slowest = options;
+        for (var step = 0; step < 20; step++) slowest = slowest.Slower();
+        Equal(10, slowest.SpeedPercent);
+        Equal(660, slowest.UpdateIntervalMilliseconds);
+        Equal(2, options.MoreDetail().Detail);
+        Equal(0, options.LessDetail().LessDetail().LessDetail().Detail);
+        Equal(10, Enumerable.Range(0, 8).Aggregate(options, (current, _) => current.CdLouder()).CdVolume);
+        Equal(0, GameOptions.AuxVolume(0));
+        Equal(5 * 0x1800, GameOptions.AuxVolume(5));
+        Equal(0xF000, GameOptions.AuxVolume(10));
+    });
+
     Check("CD music plays the image from track 2 on the native poll", () =>
     {
         const string cue = """

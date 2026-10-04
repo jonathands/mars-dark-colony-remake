@@ -9,8 +9,12 @@ implemented in `Simulation/ScenarioSimulation.Vision.cs` and
 Each ground-grid word (`map + 0x804`) holds the actor index in bits 0-9 and
 one "seen" bit per player: player p uses `0x40000000 >> p` (bits 30 down to
 23). Bit 31 is set for the local player's display and is never cleared
-(explored-terrain memory). Bits 10-17 hold display shading that only the
-local player's stamps rewrite.
+(explored-terrain memory). Bits 10-17 hold a per-cell display value that
+the local player's stamps clear (`and 0xFFFC03FF`). The terrain pass
+(`0x438A22`) hands any non-zero value on a cell outside the local player's
+current sight to `0x4387B0`. That routine reads `value >> 3` through
+`0x454DAC` and `value & 7` as an index into 0xE30-byte records (`+0xC98`): a
+remembered overlay, not a brightness.
 
 The world update (`0x4196F4`) rebuilds the player bits in two places:
 
@@ -79,4 +83,6 @@ checks), and bit 3 a flier (no opacity test).
 | Dying actors' shrinking radius | implemented (see combat-damage.md, Dying state) |
 | Placements waiting for contact (`+0xCB` 1 or 2) | implemented: they do not stamp |
 | Allied vision in `player + 0x19C0` | pending (A3 `vision` / `ally`) |
-| Explored memory (bit 31) for the display | pending (goal 7) |
+| Explored memory (bit 31) for the display | implemented as cells the local team has ever seen; the main view blacks out unexplored cells |
+| Explored-edge look | not recovered. The minimap (`0x439FF8`) draws unexplored cells black, cell by cell, as the port does. The native main view instead fades into black over roughly 40-60 px (`pedestal-exploiter-stationary.png`, lower left). Bit 31 is only tested by the minimap and the actor code, and bits 10-17 are not that fade, so its source is still unknown. The port keeps hard 32-px cells |
+| Remembered overlays (bits 10-17) | not modelled |

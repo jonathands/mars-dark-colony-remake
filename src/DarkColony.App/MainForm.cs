@@ -59,7 +59,7 @@ public sealed partial class MainForm : Form
     private readonly GameInstallation? _installation;
     private readonly GameplayHudLayout _gameplayHudLayout;
     private readonly WorldSimulation _world = new();
-    private readonly FixedStepClock _clock;
+    private FixedStepClock _clock;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 15 };
     // Presentation retains one completed authoritative step so rendering can
     // interpolate movement at the display cadence. This has no simulation use:
@@ -279,7 +279,7 @@ public sealed partial class MainForm : Form
             _clock.Advance(Environment.TickCount64, () =>
             {
                 UpdateGameplayEdgeScroll();
-                if (!_gameplayPaused)
+                if (!_gameplayPaused && _optionsDraft is null)
                 {
                     CapturePreviousActorRenderPositions();
                     _world.Step();
@@ -432,6 +432,7 @@ public sealed partial class MainForm : Form
             DrawGameplayMinimap(graphics);
             DrawGameplayUnitHud(graphics);
             DrawGameplayPanelPrompt(graphics);
+            DrawGameOptions(graphics);
             DrawGameplayCursor(graphics);
             // Keep the native gameplay viewport clear. The previous
             // developer-control panel covered the upper-left map area, which

@@ -29,6 +29,8 @@ internal sealed partial class WaveOutStream : IDisposable
     private volatile bool _stopping;
     private volatile bool _finished;
     private long _playedBytes;
+    private IntPtr _device;
+    private int _volume = -1;
 
     private WaveOutStream(int channels, int samplesPerSecond, int bitsPerSample, Func<Stream> openSource, string name)
     {
@@ -52,6 +54,17 @@ internal sealed partial class WaveOutStream : IDisposable
 
     /// <summary>The source ran out and the device played it all, or the device failed.</summary>
     public bool Finished => _finished;
+
+    /// <summary>
+    /// The stream's own volume, one 16-bit word per channel (0xFFFF full),
+    /// as <c>auxSetVolume</c> takes it.
+    /// </summary>
+    public void SetVolume(int word)
+    {
+        _volume = Math.Clamp(word, 0, 0xFFFF);
+        var device = _device;
+        if (device != IntPtr.Zero) waveOutSetVolume(device, (uint)(_volume | _volume << 16));
+    }
 
     /// <summary>Audio the device has finished playing, in seconds.</summary>
     public double PlayedSeconds => Interlocked.Read(ref _playedBytes) / (double)BytesPerSecond;
@@ -77,6 +90,8 @@ internal sealed partial class WaveOutStream : IDisposable
             return;
         }
 
+        _device = device;
+        if (_volume >= 0) waveOutSetVolume(device, (uint)(_volume | _volume << 16));
         var bufferBytes = Math.Max(BlockAlign, BytesPerSecond / 4 / BlockAlign * BlockAlign);
         var headerSize = Marshal.SizeOf<WaveHeader>();
         var flagsOffset = (int)Marshal.OffsetOf<WaveHeader>(nameof(WaveHeader.Flags));
@@ -146,6 +161,7 @@ internal sealed partial class WaveOutStream : IDisposable
                 Marshal.FreeHGlobal(headers[index]);
                 Marshal.FreeHGlobal(buffers[index]);
             }
+            _device = IntPtr.Zero;
             waveOutClose(device);
             _finished = true;
         }
@@ -252,4 +268,7 @@ internal sealed partial class WaveOutStream : IDisposable
 
     [LibraryImport("winmm.dll")]
     private static partial int waveOutClose(IntPtr device);
+
+    [LibraryImport("winmm.dll")]
+    private static partial int waveOutSetVolume(IntPtr device, uint volume);
 }

@@ -265,6 +265,11 @@ public sealed partial class MainForm
     {
         _surface.Focus();
         if (_video is not null) return;
+        if (_optionsDraft is not null)
+        {
+            if (eventArgs.Button == MouseButtons.Left) HandleGameOptionsClick(eventArgs.Location);
+            return;
+        }
         if (_screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left &&
             new Rectangle(596, 227, 10, 61).Contains(eventArgs.Location))
         {
@@ -309,7 +314,7 @@ public sealed partial class MainForm
 
     private void SurfaceMouseUp(object? sender, MouseEventArgs eventArgs)
     {
-        if (_video is not null) return;
+        if (_video is not null || _optionsDraft is not null) return;
         var wasMapDrag = _mapDragged;
         var wasMinimapDrag = _minimapDragging;
         var wasSinglePlayerScrollDrag = _singlePlayerScrollDragging;
@@ -634,6 +639,11 @@ public sealed partial class MainForm
                             ? $"Team {_localPlayerTeam + 1} and team {otherTeam + 1} are now allies."
                             : $"Alliance offered to team {otherTeam + 1}; it holds once they agree.";
                 }
+                return true;
+            }
+            if (_gameplayHudLayout.Options.Bounds.Contains(point))
+            {
+                OpenGameOptions();
                 return true;
             }
             if (_gameplayHudLayout.Quit.Bounds.Contains(point))

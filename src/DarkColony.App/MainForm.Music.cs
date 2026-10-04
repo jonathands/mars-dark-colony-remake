@@ -1,6 +1,7 @@
 using DarkColony.App.Audio;
 using DarkColony.App.Diagnostics;
 using DarkColony.Engine.Audio;
+using DarkColony.Engine.Interface;
 
 namespace DarkColony.App;
 
@@ -41,6 +42,7 @@ public sealed partial class MainForm
         if (pass.Count == 0) return;
         _cdMusic?.Dispose();
         _cdMusic = WaveOutStream.ForCdTracks(pass);
+        _cdMusic.SetVolume(GameOptions.AuxVolume(CurrentGameOptions().CdVolume));
         RuntimeLog.Info($"CD music: track {pass[0].Number} playing.");
     }
 
