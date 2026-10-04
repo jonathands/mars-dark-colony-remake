@@ -1,3 +1,4 @@
+using DarkColony.Engine.Audio;
 using DarkColony.Engine.Data;
 using DarkColony.App.Diagnostics;
 using DarkColony.App.Ui;
@@ -43,6 +44,7 @@ internal static class Program
             RevealMap = revealMap,
             ForcedOutcomeAfterSeconds = outcomeAfter,
             ForcedVictory = forcedVictory,
+            CdImagePath = CdImageLocator.Locate(arguments, installation?.RootPath),
         });
         RuntimeLog.Info("Exited normally.");
         return 0;

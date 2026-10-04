@@ -7,7 +7,8 @@ param(
     [string[]] $Actions = @(),
     [ValidateRange(1, 600)] [int] $Seconds = 6,
     [string] $Name = 'run',
-    [switch] $Keep
+    [switch] $Keep,
+    [switch] $Music
 )
 
 <#+
@@ -40,7 +41,9 @@ $logPath = Join-Path $logDirectory "$Name.log"
 $start = [Diagnostics.ProcessStartInfo]::new($exe)
 $start.WorkingDirectory = $repo
 $start.UseShellExecute = $false
-foreach ($argument in @('--data', (Resolve-Path $DataPath).Path, '--no-dialogs', '--log', $logPath) + $ExtraArguments) {
+# Unattended runs stay quiet unless -Music asks for the CD soundtrack.
+$musicArguments = if ($Music) { @() } else { @('--no-music') }
+foreach ($argument in @('--data', (Resolve-Path $DataPath).Path, '--no-dialogs', '--log', $logPath) + $musicArguments + $ExtraArguments) {
     $start.ArgumentList.Add($argument)
 }
 $process = [Diagnostics.Process]::Start($start)

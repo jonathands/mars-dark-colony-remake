@@ -11,6 +11,7 @@ using DarkColony.Engine.Terrain;
 using DarkColony.Engine.Scenario;
 using DarkColony.Engine.Commands;
 using DarkColony.Engine.Interface;
+using DarkColony.Engine.Audio;
 using System.Buffers.Binary;
 
 if (DeterminismCli.TryRun(args, out var determinismExitCode)) return determinismExitCode;
@@ -4174,6 +4175,47 @@ Check("faction-selected War rosters complete a local movement order", () =>
         Equal(string.Join(',', first), string.Join(',', credits.Visible(credits.StepsPerCycle + 1)));
         Equal(false, credits.Typed(credits.StepsPerCycle - 1));
         Equal(67, credits.TopLine(credits.StepsPerCycle - 1));
+    });
+
+    Check("CD music plays the image from track 2 on the native poll", () =>
+    {
+        const string cue = """
+            FILE "disc.bin" BINARY
+              TRACK 01 MODE1/2352
+                INDEX 01 00:00:00
+              TRACK 02 AUDIO
+                INDEX 01 00:02:00
+              TRACK 03 AUDIO
+                INDEX 01 00:03:10
+            """;
+        var sheet = CueSheet.Parse(cue, name => (name, 300L * CueSheet.SectorBytes));
+        Equal(3, sheet.Tracks.Count);
+        Equal(new CueTrack(1, false, "disc.bin", 0, 150L * CueSheet.SectorBytes), sheet.Tracks[0]);
+        Equal(new CueTrack(2, true, "disc.bin", 150L * CueSheet.SectorBytes, 85L * CueSheet.SectorBytes), sheet.Tracks[1]);
+        Equal(new CueTrack(3, true, "disc.bin", 235L * CueSheet.SectorBytes, 65L * CueSheet.SectorBytes), sheet.Tracks[2]);
+        Equal("2,3", string.Join(',', CdMusic.Pass(sheet).Select(track => track.Number)));
+        // 0x431F0F: poll once more than 5000 ms have passed; the first loop polls.
+        var poll = new CdMusicPoll();
+        Equal(true, poll.Due(10_000));
+        Equal(false, poll.Due(15_000));
+        Equal(true, poll.Due(15_001));
+        Equal(false, poll.Due(20_001));
+
+        var folder = Path.Combine(Path.GetTempPath(), $"dc-cue-{Environment.ProcessId}");
+        var install = Path.Combine(folder, "Dark Colony");
+        Directory.CreateDirectory(install);
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "disc.cue"), cue);
+            File.WriteAllBytes(Path.Combine(folder, "disc.bin"), new byte[300 * CueSheet.SectorBytes]);
+            Equal(Path.Combine(folder, "disc.cue"), CdImageLocator.Locate([], install) ?? "");
+            Equal(true, CdImageLocator.Locate(["--no-music"], install) is null);
+            Equal("x.cue", CdImageLocator.Locate(["--cd-image", "x.cue"], install) ?? "");
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
     });
 
     Check("native colour remap reproduces dc16 interface text", () =>

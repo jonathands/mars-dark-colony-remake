@@ -283,6 +283,7 @@ public sealed partial class MainForm : Form
                     CaptureConstructionFeedback();
                 }
             });
+            if (_screen == MenuScreenId.Gameplay) PollCdMusic();
             LogStatusChange();
             _surface.RenderAndPresent();
         };
@@ -319,6 +320,7 @@ public sealed partial class MainForm : Form
             foreach (var image in _remappedFontGlyphs.Values) image.Dispose();
             foreach (var image in _nativeGlyphs.Values) image.Dispose();
             _teletypeBeep?.Dispose();
+            StopCdMusic();
             _minimapPreview?.Dispose();
         }
 
@@ -371,6 +373,7 @@ public sealed partial class MainForm : Form
             _cameraX = 30 * 32;
             _cameraY = 22 * 32;
             LoadGameplayScenario();
+            if (_scenarioSimulation is not null) StartCdMusic();
         }
         _resumeGameplayFromStory = false;
         RuntimeLog.Info($"Screen {_screen} -> {screen}");
