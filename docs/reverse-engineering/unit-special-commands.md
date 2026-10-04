@@ -232,6 +232,25 @@ carry value 7 and Enter invokes their proven reverse transition. Likewise,
 SARGSTL/PSYCSTL retain value 5 and toggle back to SARG/PSYC. Deployed towers
 and mines carry zero, so the port does not invent reverse transitions for them.
 
+### Artifact activation (not modeled)
+
+Artifact sites (see mission-triggers.md) hand out the flying artifacts
+63-67 (LENS, MAKT, LUNA, HYYK, TEKT). Their value 27 is 7, so opcode `0x1a`
+puts them in state 13, which accepts them unconditionally (`0x41680A`). The
+state-13 completion `0x417B0C` then uses each one up:
+
+| Entity | Completion | Effect, as far as traced |
+| --- | --- | --- |
+| 63 LENS | `0x417B57` | Health word `+0x0C` = 1, then the projectile constructor `0x441710` fires its weapon (46: damage 2000, range 9) in projectile mode 3 with zero target and offsets; then the kill routine `0x416308` |
+| 64 MAKT | `0x417BD1` | Killed, then `0x416C3C(x, z)`: for every ground and alternate occupant in the 15 x 15 square around it, `0x416970` (untraced) |
+| 65 LUNA | `0x417C10` | Killed, then `0x416D5C(x, z)`: every live player-team ground occupant in the 15 x 15 square gets its pending-order bytes `+0x36/+0x37` = 1 and a byte set to `(r & 0x1F) + 0x19` |
+| 66 HYYK | `0x417C97` | `0x4177D4(actor)` (untraced) |
+| 67 TEKT | `0x417C4F` | Killed, then `0x4173AC(x, z, team)` (untraced; it reads the troop cap minus the player's stat 6, so it probably creates units) |
+
+Projectile mode 3 keeps the projectile's height word at 0 (`0x4424BF`), and
+mode 2 uses the constructor's random byte `+0x1F` as a wobble phase
+(`0x4424D4`). The port has no artifact command yet.
+
 ## Harvester vent-target path
 
 The separate path is now recovered. Gameplay target dispatch at `0x414970`
