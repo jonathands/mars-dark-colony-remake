@@ -112,9 +112,9 @@ their line as an expression. Command → action type:
 | `exomoney p r` | 12 | player passive rate +0x19B4 = r |
 | `setmoney x z e` | 13 | the vent at (x, z) holds e × multiplier >> 8; creates one if absent |
 | `newrate2 x z e` | 14 | `newrate` with an expression |
-| `reinforce2 t x z (type n)×5` | 15 | units created at once (`0x41B634`, square-ring free cell `0x41B4A0`) |
+| `reinforce2 t x z (type n)×5` | 15 | each unit joins the artifact container at (x, z) if there is one, else is created at once (`0x41B634`, square-ring free cell `0x41B4A0`) |
 | `newtype x z t` | 16 | the ground actor on (x, z) becomes entity t |
-| `artifact a b` | 17 | an artifact (entity 0x3F + r % 5) is handed to a pickup |
+| `artifact a b` | 17 | entity 0x3F + r % 5 joins the artifact container at (a, b) (`0x4404C0`); without one, only an assertion |
 | `noundeploy` | 18 | world +0x948 = 1 |
 | `abduct s d` | 19 | a transport takes player d's commander |
 | `vision a b v` | 20 | alliance visibility bits |
@@ -175,6 +175,40 @@ Per-type statistics (4 per player and entity type):
 | 2 | the `setarray` array (player 0) |
 | 3 | kills by type |
 
+**Artifact sites.** A global list at `0x4FE454` (count `0x4796B4`) holds
+up to ten containers of 0x34 bytes: x, z, an item count, and ten item words.
+
+- `0x440410` adds a container. Beyond ten the original asserts and writes
+  past the list; no corpus map has more than eight.
+- `0x4404C0` appends an entity to the first container at a cell and reports
+  whether one was there. The item count is not bounded; the corpus puts at
+  most seven items in one container.
+- `0x440520` removes and returns the first item, or -1 when the container is
+  empty or missing.
+
+The SCN loader (`0x41C5C0`) creates an artifact site (POOP, entity 37) on team
+8 with flag 0 and opens a container at its cell. Network sessions skip the
+site unless the lobby artifacts option (`0x41A538(0, 6)`) is positive; single
+player always creates it. Every later placement first tries `0x4404C0`
+(`0x41C632`), so the 142 corpus placements on the 134 site cells are buried
+instead of created. `reinforce2` and `artifact` bury units the same way.
+
+The site's idle command (`0x4148B0`) branches to `0x4131BC`, which reads the
+ground grid at the site's cell. When the occupant is an EXPL or SLUG (type
+byte 6 or 0xE, not their vent forms), its bottom command is idle (`+0x39 ==
+1`), and its player's city slot 4 is alive (`+0xBE4`), the idle record's word
+counts down, the harvester plays its digging animation, and sound 0x5F loops.
+Otherwise the word restarts at 450. The idle push (`0x412654`) leaves the
+word at -1, which no seeded scenario can reach because a site's cell holds no
+other placement. At zero the word restarts at 450 and `0x440520` runs:
+
+- an item becomes a unit of the harvester's team on the first free ring
+  cell (`0x41B634`), and sound `0x431BF4(4, 7)` plays;
+- -1 removes the site (state 0, out of the update list).
+
+The port reports each countdown end as `LastArtifactRecoveries`. Engine
+checks without declared cities skip the slot 4 test.
+
 | Rule | Status |
 | --- | --- |
 | Parser, action layout, reverse order | confirmed |
@@ -189,7 +223,8 @@ Per-type statistics (4 per player and entity type):
 | `ally` alliance bits and `vision` | implemented: both write mutual bit pairs (`0x41E7D8`). Relations and vision masks follow the mutual bits on every update (see city-and-economy.md) |
 | Commander slots | implemented (`ScenarioSimulation.Commanders.cs`). Player `+0xD98` counts and `+0xD9C` holds four commander actor indices (-1 when empty, `0x41C2BD`). The actor constructor (`0x41B223`) puts each commander (entities 69-76) into the next slot; the count never decreases. The constructor also turns 69-72 into 69 + rank and 73-76 into 73 + rank (player `+0x19BC`); the port leaves that to the War launcher. Each update right after the statistics recount (`0x4197B4`) sets every slotted live commander's ability charge to 230. Every 8 updates after the norm triggers (`0x419AB5`), a dead commander's slot becomes -1, and statistic 11 of the player whose index equals the slot index is zeroed (an apparent bug in the original, kept) |
 | `abduct s d` | implemented: when player d's first commander slot holds a live actor, a transport of team s's race carries it off. The payload is the header 0xff01 plus the actor (`0x43E2A0` -> `0x418F4C`) |
-| `artifact`, `aimsg`, `nopickup` | not modeled; reported as `LastUnmodeledMissionActions` |
+| Artifact sites, `artifact` | implemented (`ScenarioSimulation.Artifacts.cs`); see below. The corpus runs `artifact` only in multiplayer maps when `s(6,0)`, the lobby artifacts option, is set, which this build never does |
+| `aimsg`, `nopickup` | not modeled; reported as `LastUnmodeledMissionActions` |
 | `newtype` | provisional through the deployed-form override |
 | Bail delay | provisional: 152 ticks for the native 10,000 ms |
 | Malformed-condition stack floor | provisional (reads 0 below the stack) |

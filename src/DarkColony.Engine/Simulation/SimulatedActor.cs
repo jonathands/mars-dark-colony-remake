@@ -94,7 +94,7 @@ public sealed class SimulatedActor
     /// <summary>Native actor word <c>+0xd8</c>: the commander supplying Inspire.</summary>
     public int? InspirationSourceActorInstanceId { get; internal set; }
     /// <summary>
-    /// True while the actor is in the native idle command (type 3, handler
+    /// True while the actor is in the native idle command (type 1, handler
     /// <c>0x4148B0</c>) and its record below is live.
     /// </summary>
     public bool IdleCommandActive { get; internal set; }
@@ -120,6 +120,13 @@ public sealed class SimulatedActor
     internal ActiveMoveOrder? IdleIssuedMove { get; set; }
     /// <summary>The target the idle command started attacking; the idle record stays below the attack.</summary>
     internal int? IdleIssuedAttackTarget { get; set; }
+    /// <summary>
+    /// An artifact site's (entity 37) idle record word (<c>0x4131BC</c>):
+    /// updates left before the harvester standing on it digs out the next item.
+    /// </summary>
+    public int ArtifactExcavationTicks { get; internal set; }
+    /// <summary>The idle EXPL/SLUG digging at this artifact site in the last update, if any.</summary>
+    public int? ArtifactExcavatorInstanceId { get; internal set; }
 }
 
 /// <summary>Persistent player intent, segmented by the native 32-step buffer.</summary>

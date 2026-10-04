@@ -2501,6 +2501,71 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(false, simulation.CommanderInSlot(1, 0).HasValue);
     });
 
+    Check("artifact sites bury their placements and an idle harvester digs one out every 450 updates", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        // The loader (0x41C5C0) gives each POOP to team 8 with a container at
+        // its cell; the placements on that cell join the container instead.
+        var (alien06, _) = DeterminismHarness.Load(install, rules, "alien/alien06");
+        Equal(4, alien06.ArtifactContainers.Count);
+        Equal(23, alien06.ArtifactContainers.Sum(container => container.Items.Count));
+        var sites = alien06.Actors.Where(actor => actor.Seed.EntityId == ScenarioSimulation.ArtifactSiteEntity).ToArray();
+        Equal(4, sites.Length);
+        Equal(true, sites.All(site => site.Seed.Team == 8));
+        Equal(false, alien06.Actors.Any(actor => actor.Seed.EntityId != ScenarioSimulation.ArtifactSiteEntity &&
+                                                 alien06.ArtifactContainers.Any(container => container.Cell == actor.Seed.SpawnCell)));
+
+        // A site at (6,1) holding LUNA then LENS, and an EXPL at (2,1).
+        const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
+            "6 1 37 0 0 0\n6 1 65 0 0 0\n6 1 63 0 0 0\n2 1 6 0 0 0\n";
+        var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+        bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+        // Actions run in reverse order: reinforce2 buries a HYYK, then
+        // artifact buries entity 0x3F + r % 5.
+        var script = MissionScript.Compile(ScenarioTriggers.Parse(
+            "1 norm 1 (c>0)\nartifact 6 1\nreinforce2 0 6 1 66 1 0 0 0 0 0 0 0 0\nend\n"));
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), PathRegionMap.Parse(bytes, 16, 4), rules, script);
+        var site = simulation.Actors.Single(actor => actor.Seed.EntityId == ScenarioSimulation.ArtifactSiteEntity);
+        var harvester = simulation.Actors.Single(actor => actor.Seed.EntityId == 6);
+        var container = simulation.ArtifactContainers.Single();
+        Equal(new[] { 65, 63 }, container.Items.ToArray());
+        Equal(-1, site.ArtifactExcavationTicks);
+        simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new MoveIntent(harvester.Seed.InstanceId, new CellCoordinate(6, 1)))]);
+        for (var tick = 0; tick < 17; tick++) simulation.Step([]);
+        Equal(4, container.Items.Count);
+        Equal(66, container.Items[2]);
+        Equal(true, container.Items[3] is >= 0x3f and <= 0x43);
+        Equal(false, simulation.Actors.Any(actor => actor.Seed.EntityId == 66));
+        for (var tick = 0; tick < 400 && site.ArtifactExcavatorInstanceId is null; tick++) simulation.Step([]);
+        Equal(harvester.Seed.InstanceId, site.ArtifactExcavatorInstanceId!.Value);
+        Equal(ScenarioSimulation.NativeArtifactExcavationTicks - 1, site.ArtifactExcavationTicks);
+
+        var expected = container.Items.ToArray();
+        var previous = simulation.TickCount;
+        var gap = (ulong)ScenarioSimulation.NativeArtifactExcavationTicks - 1;
+        foreach (var entityId in expected)
+        {
+            ArtifactRecoveryEvent? recovery = null;
+            while (recovery is null && simulation.TickCount < previous + 500)
+            {
+                simulation.Step([]);
+                recovery = simulation.LastArtifactRecoveries.SingleOrDefault();
+            }
+            Equal(previous + gap, simulation.TickCount);
+            var item = simulation.Actor(recovery!.ItemInstanceId!.Value)!;
+            Equal(entityId, item.Seed.EntityId);
+            Equal(0, item.Seed.Team);
+            previous = simulation.TickCount;
+            gap = ScenarioSimulation.NativeArtifactExcavationTicks;
+        }
+        // The next countdown finds the container empty and removes the site.
+        for (var tick = 0; tick < ScenarioSimulation.NativeArtifactExcavationTicks; tick++) simulation.Step([]);
+        Equal(true, simulation.LastArtifactRecoveries.Single().SiteDepleted);
+        Equal(true, site.IsDestroyed);
+        Equal(false, harvester.IsDestroyed);
+    });
+
     Check("losing the mining colony ends human01 in defeat with outcome text 4", () =>
     {
         var install = GameInstallation.Open(dataPath);

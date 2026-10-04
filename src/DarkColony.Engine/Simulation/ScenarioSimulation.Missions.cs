@@ -231,8 +231,10 @@ public sealed partial class ScenarioSimulation
                 case MissionActionType.Abduct:
                     StartAbduction(v, pendingMissionTransports);
                     break;
-                case MissionActionType.NoPickup:
                 case MissionActionType.Artifact:
+                    AddScriptArtifact(v);
+                    break;
+                case MissionActionType.NoPickup:
                 case MissionActionType.AiMessage:
                     unmodeled.Add(new MissionUnmodeledActionEvent(trigger.Slot, action.Type, v));
                     break;
@@ -267,9 +269,9 @@ public sealed partial class ScenarioSimulation
     }
 
     /// <summary>
-    /// <c>reinforce2 team x z (type count) x5</c>: each unit is created by
-    /// <c>0x41B634</c> on the first free cell of the square rings around (x, z)
-    /// (<c>0x41B4A0</c>: x outer, z inner).
+    /// <c>reinforce2 team x z (type count) x5</c> (<c>0x43E349</c>): each unit
+    /// joins the artifact container at (x, z) when there is one (<c>0x4404C0</c>),
+    /// and is created at once otherwise.
     /// </summary>
     private void SpawnScriptUnits(IReadOnlyList<int> values)
     {
@@ -280,20 +282,31 @@ public sealed partial class ScenarioSimulation
             var entityId = values[3 + pair * 2];
             var count = values[4 + pair * 2];
             if ((uint)entityId >= (uint)entityDefinitions.Count) continue;
-            var definition = EntityDefinitionFor(entityId);
             for (var unit = 0; unit < count; unit++)
             {
-                if (FindNativeFreeCell(origin, definition.MovementClass) is not { } cell) break;
-                var occupancy = definition.MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
-                var instanceId = nextActorInstanceId++;
-                occupancy.ReplaceClaims(instanceId, [cell]);
-                var seed = new WorldEntity(instanceId, entityId, team, cell, FixedPointPosition.AtCellCenter(cell), 0, 0);
-                var actor = new SimulatedActor(seed, definition);
-                actors.Add(actor);
-                actorsById.Add(instanceId, actor);
-                RegisterCommander(actor);
+                if (TryAddToArtifactContainer(artifactContainers, origin, entityId)) continue;
+                if (SpawnNativeUnit(entityId, team, origin) is null) break;
             }
         }
+    }
+
+    /// <summary>
+    /// <c>0x41B634</c>: a new unit on the first free cell of the square rings
+    /// around the origin (<c>0x41B4A0</c>: x outer, z inner).
+    /// </summary>
+    private SimulatedActor? SpawnNativeUnit(int entityId, int team, CellCoordinate origin)
+    {
+        var definition = EntityDefinitionFor(entityId);
+        if (FindNativeFreeCell(origin, definition.MovementClass) is not { } cell) return null;
+        var occupancy = definition.MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
+        var instanceId = nextActorInstanceId++;
+        occupancy.ReplaceClaims(instanceId, [cell]);
+        var seed = new WorldEntity(instanceId, entityId, team, cell, FixedPointPosition.AtCellCenter(cell), 0, 0);
+        var actor = new SimulatedActor(seed, definition);
+        actors.Add(actor);
+        actorsById.Add(instanceId, actor);
+        RegisterCommander(actor);
+        return actor;
     }
 
     private CellCoordinate? FindNativeFreeCell(CellCoordinate origin, int movementClass)

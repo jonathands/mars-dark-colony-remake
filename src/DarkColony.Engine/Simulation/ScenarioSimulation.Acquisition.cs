@@ -4,7 +4,7 @@ using DarkColony.Engine.World;
 namespace DarkColony.Engine.Simulation;
 
 /// <summary>
-/// Automatic target selection: the idle command (type 3, <c>0x4148B0</c>),
+/// Automatic target selection: the idle command (type 1, <c>0x4148B0</c>),
 /// move modes 1 and 2 of the path-step handler (<c>0x4157EC</c>), and the
 /// shared ring selector <c>0x435570</c>. Disabled when no ring table was
 /// supplied (engine checks built without the executable).
@@ -35,7 +35,7 @@ public sealed partial class ScenarioSimulation
         actor.IdleIssuedAttackTarget = null;
         if (!actor.IdleCommandActive)
         {
-            // Idle state 1 (0x412654) pushes command 3 with no target, the
+            // Idle state 1 (0x412654) pushes command 1 with no target, the
             // current health, and a zero miss count.
             actor.IdleCommandActive = true;
             actor.IdleHealthSnapshot = actor.Health;

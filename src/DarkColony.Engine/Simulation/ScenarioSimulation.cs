@@ -174,6 +174,7 @@ public sealed partial class ScenarioSimulation
     public IReadOnlyList<AttackMoveOrderEvent> LastAttackMoveOrders { get; private set; } = [];
     public IReadOnlyList<AttackMoveAcquisitionEvent> LastAttackMoveAcquisitions { get; private set; } = [];
     public IReadOnlyList<IdleAcquisitionEvent> LastIdleAcquisitions { get; private set; } = [];
+    public IReadOnlyList<ArtifactRecoveryEvent> LastArtifactRecoveries { get; private set; } = [];
     public IReadOnlyList<PurchaseReservedEvent> LastPurchaseReservations { get; private set; } = [];
     public IReadOnlyList<HarvesterDeploymentEvent> LastHarvesterDeployments { get; private set; } = [];
     public IReadOnlyList<MineDeploymentEvent> LastMineDeployments { get; private set; } = [];
@@ -230,12 +231,30 @@ public sealed partial class ScenarioSimulation
         NativeVisionTrees? visionTrees = null)
     {
         var teamRaces = scenario.Teams.Where(team => team.Race is not null).ToDictionary(team => team.TeamId, team => team.Race!.Value);
-        var seeds = scenario.Placements.Where(placement => placement.Team != -1).Select((placement, index) =>
+        var seeds = new List<WorldEntity>();
+        var artifactContainers = new List<ArtifactContainer>();
+        foreach (var placement in scenario.Placements.Where(placement => placement.Team != -1))
         {
             var cell = new CellCoordinate(placement.X, placement.Z);
-            return new WorldEntity(index + 1, NativePlacementEntity(placement, teamRaces, catalog), placement.Team, cell,
-                FixedPointPosition.AtCellCenter(cell), placement.Value, placement.Flag);
-        }).ToList();
+            var entityId = NativePlacementEntity(placement, teamRaces, catalog);
+            var team = placement.Team;
+            var flag = placement.Flag;
+            if (entityId == ArtifactSiteEntity)
+            {
+                // 0x41C5C0: an artifact site belongs to team 8 and opens a
+                // container at its cell. Network sessions skip it unless
+                // lobby option 6 is set; single player always creates it.
+                team = ArtifactSiteTeam;
+                flag = 0;
+                AddArtifactContainer(artifactContainers, cell);
+            }
+            else if (TryAddToArtifactContainer(artifactContainers, cell, entityId))
+            {
+                // 0x41C632: any later placement on a container's cell is buried in it.
+                continue;
+            }
+            seeds.Add(new WorldEntity(seeds.Count + 1, entityId, team, cell, FixedPointPosition.AtCellCenter(cell), placement.Value, flag));
+        }
         var ground = new CellOccupancy();
         var alternate = new CellOccupancy();
         var mine = new CellOccupancy();
@@ -280,6 +299,9 @@ public sealed partial class ScenarioSimulation
         simulation.targetRings = targetRings;
         simulation.visionTrees = visionTrees ?? NativeVisionTrees.Flat;
         simulation.LoadAlliances(scenario);
+        simulation.artifactContainers.AddRange(artifactContainers);
+        // The idle push (0x412654) leaves the site's record word at -1.
+        foreach (var site in simulation.actors.Where(actor => actor.Seed.EntityId == ArtifactSiteEntity)) site.ArtifactExcavationTicks = -1;
         foreach (var actor in simulation.actors) simulation.RegisterCommander(actor);
         simulation.LoadTerrainSight(terrain);
         simulation.computerTeams = scenario.Teams.Where(team => team.Enabled && team.AiProfile > 0).Select(team => team.TeamId).ToHashSet();
@@ -465,6 +487,7 @@ public sealed partial class ScenarioSimulation
         LastBattlefieldTransports = [.. pendingMissionTransports, .. events.BattlefieldTransports];
         LastAttackMoveAcquisitions = events.AttackMoveAcquisitions;
         LastIdleAcquisitions = events.IdleAcquisitions;
+        LastArtifactRecoveries = events.ArtifactRecoveries;
         LastMissionMessages = pendingMissionMessages.ToArray();
         LastUnmodeledMissionActions = pendingUnmodeledMissionActions.ToArray();
         LastP7Income = [.. passiveIncome, .. ventIncome];
@@ -489,6 +512,7 @@ public sealed partial class ScenarioSimulation
         public List<AttackMoveOrderEvent> AttackMoves { get; } = [];
         public List<AttackMoveAcquisitionEvent> AttackMoveAcquisitions { get; } = [];
         public List<IdleAcquisitionEvent> IdleAcquisitions { get; } = [];
+        public List<ArtifactRecoveryEvent> ArtifactRecoveries { get; } = [];
         public List<PurchaseReservedEvent> Purchases { get; } = [];
         public List<HarvesterDeploymentEvent> HarvesterDeployments { get; } = [];
         public List<MineDeploymentEvent> MineDeployments { get; } = [];
@@ -654,6 +678,11 @@ public sealed partial class ScenarioSimulation
         foreach (var actor in actors.ToArray())
         {
             if (actor.IsDestroyed) continue;
+            if (actor.Seed.EntityId == ArtifactSiteEntity)
+            {
+                UpdateArtifactSite(actor, events);
+                continue;
+            }
             if (actor.FinishingStep is { } finishing)
             {
                 // Only the interrupted step runs. When it ends it pops, and the
