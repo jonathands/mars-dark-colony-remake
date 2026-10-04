@@ -257,8 +257,6 @@ public sealed class ScenarioSimulation
     private readonly PetraStealRules petraStealRules;
     private int petraPulseTicks;
     private int nextProjectileInstanceId = 1;
-    private uint firePresentationRandomState = 0x46495245; // "FIRE"
-    private uint aimRandomState = 0x41494d21; // "AIM!"
     private uint inspireRandomState = 0x494e5350; // "INSP"
     private uint transportRandomState = 0x5452414e; // "TRAN"
     private int nextActorInstanceId;
@@ -850,7 +848,7 @@ public sealed class ScenarioSimulation
                     if (weaponClass >= 0) impacts.Add(new ProjectileImpactEvent(projectile.SourceActorInstanceId, collision.Seed.InstanceId, projectile.WeaponId, weaponClass, projectile.Position));
                     if (weapon is { HasAreaEffect: true } && areaEffects?.TryGet(weapon.AreaEffectTemplateId, out var collisionEffect) == true)
                         ApplyAreaDamage(projectile, weapon, projectile.Position.Cell, collisionEffect, destroyed);
-                    else ApplyDamage(collision, projectile.Damage, destroyed);
+                    else ApplyDamage(collision, ResolveProjectileDamage(projectile, collision), destroyed);
                     resolved = true;
                     continue;
                 }
@@ -1308,7 +1306,17 @@ public sealed class ScenarioSimulation
         AlternateOccupancy.Release(actor.Seed.InstanceId);
         MineOccupancy.Release(actor.Seed.InstanceId);
         foreach (var other in Actors.Where(other => other.AttackTargetInstanceId == actor.Seed.InstanceId))
+        {
+            // A target can be destroyed by a different attacker while this
+            // actor has already reserved a pursuit cell.  Target loss clears
+            // that approach immediately: direct attack stops, while
+            // attack-move re-enters acquisition/pathing toward its retained
+            // destination on the following deterministic update.
             other.AttackTargetInstanceId = null;
+            other.Playback?.Cancel();
+            other.Playback = null;
+            other.MoveOrder = null;
+        }
     }
 
     private SimulatedActor? FindProjectileCollision(ProjectileState projectile)
@@ -1328,6 +1336,22 @@ public sealed class ScenarioSimulation
     {
         target.Health = Math.Max(0, target.Health - damage);
         if (target.Health == 0) Destroy(target, destroyed);
+    }
+
+    /// <summary>
+    /// Resolves the weapon/armor matrix at impact time.  The native projectile
+    /// stores the weapon's raw damage; an intervening hostile can therefore
+    /// receive a different scaled amount than the actor that was originally
+    /// selected when the shot was fired.
+    /// </summary>
+    private int ResolveProjectileDamage(ProjectileState projectile, SimulatedActor target)
+    {
+        if (weaponCatalog?.TryGet(projectile.WeaponId, out var weapon) != true)
+            return Math.Max(0, projectile.Damage);
+        return damageMatrix is null
+            ? Math.Max(0, projectile.Damage)
+            : Math.Max(0, damageMatrix.CalculateBaseDamage(
+                projectile.Damage, weapon.WeaponClass, EffectiveDefinition(target).ArmorClass));
     }
 
     private IReadOnlyList<AutonomousWanderEvent> UpdateAutonomousActors()
@@ -1926,7 +1950,16 @@ public sealed class ScenarioSimulation
         AlternateOccupancy.Release(actor.Seed.InstanceId);
         MineOccupancy.Release(actor.Seed.InstanceId);
         foreach (var other in Actors.Where(other => other.AttackTargetInstanceId == actor.Seed.InstanceId))
+        {
+            // Combat destruction can occur after other actors have already
+            // reserved their approach cells this update. Clear those stale
+            // pursuit segments immediately; an attack-move actor retains only
+            // its destination and reacquires/routes next update.
             other.AttackTargetInstanceId = null;
+            other.Playback?.Cancel();
+            other.Playback = null;
+            other.MoveOrder = null;
+        }
     }
 
     private AttackOrderEvent IssueAttackOrder(AttackIntent intent)
@@ -2225,10 +2258,9 @@ public sealed class ScenarioSimulation
         var velocityX = (int)(dx * speed / distance);
         var velocityZ = (int)(dz * speed / distance);
         var ticks = CalculateTrajectoryUpdates(dx, dz, velocityX, velocityZ);
-        var damage = damageMatrix is null ? weapon.Damage : damageMatrix.CalculateBaseDamage(weapon.Damage, weapon.WeaponClass, EffectiveDefinition(target).ArmorClass);
         CellCoordinate? timedImpactCell = weapon.HasAreaEffect ? destination.Cell : null;
         projectiles.Add(new ProjectileState(nextProjectileInstanceId++, attacker.Seed.InstanceId, target.Seed.InstanceId,
-            weapon.Id, Math.Max(0, damage), source, velocityX, velocityZ, ticks, weapon.ProjectileLifetimeTicks,
+            weapon.Id, Math.Max(0, weapon.Damage), source, velocityX, velocityZ, ticks, weapon.ProjectileLifetimeTicks,
             timedImpactCell: timedImpactCell, projectileMode: weapon.ProjectileMode));
         // dc.exe 0x413181 reads the weapon's burst limit (+0x20), increments
         // actor byte +0x34, and substitutes reload (+0x24) only after the
@@ -2260,11 +2292,10 @@ public sealed class ScenarioSimulation
     private byte NextFirePresentationRoll()
     {
         // Native 0x412e13 consumes the game's shared 256-entry random stream,
-        // then applies modulo entity.fireVariantCount. Keep the roll in the
-        // deterministic event while the rest of that global stream is not yet
-        // reconstructed into the port.
-        firePresentationRandomState = unchecked(firePresentationRandomState * 214013 + 2531011);
-        return (byte)(firePresentationRandomState >> 16);
+        // then applies modulo entity.fireVariantCount. This must share its
+        // cursor with scatter and blocked-route jitter: separate PRNGs make a
+        // correct input sequence diverge as soon as any of those paths runs.
+        return (byte)NextNativeRandom();
     }
 
     private FixedPointPosition ApplyNativeAimOffset(
@@ -2296,10 +2327,9 @@ public sealed class ScenarioSimulation
 
     private int NextAimRoll()
     {
-        // Native uses another value from its shared 256-entry stream. Keep
-        // this stream separate from presentation selection for replayability.
-        aimRandomState = unchecked(aimRandomState * 214013 + 2531011);
-        return (byte)(aimRandomState >> 16);
+        // Common fire consumes the next value from the same native table used
+        // by presentation selection and path-repair jitter.
+        return (byte)NextNativeRandom();
     }
 
     private static int CalculateTrajectoryUpdates(long dx, long dz, int velocityX, int velocityZ)

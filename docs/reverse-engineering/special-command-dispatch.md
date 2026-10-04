@@ -132,9 +132,9 @@ corresponding pointer from `+0xa0`. Because state 18 calls this same routine
 after its temporary weapon substitution, SARG ordinary and Napalm shots both
 choose between FIREA/FIREB; PSYC has one plain FIRE family.
 
-The port now retains a deterministic variant roll in each `WeaponFireEvent`
-and resolves it through the same loader ordering. Exact synchronization with
-the original shared 256-entry random stream remains open.
+The port retains a deterministic variant roll in each `WeaponFireEvent`,
+resolves it through the same loader ordering, and consumes it from the same
+recovered 256-entry native stream as area-shot scatter and movement jitter.
 
-Still open: exact projectile scatter/lifetime integration inside `0x441710`
+Still open: exact projectile lifetime integration inside `0x441710`
 and whether the original area resolver permits any friendly-fire exceptions.

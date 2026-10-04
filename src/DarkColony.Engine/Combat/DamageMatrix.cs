@@ -16,9 +16,12 @@ public sealed class DamageMatrix
 
     public int this[int weaponClass, int armorClass] => _percentages[weaponClass, armorClass];
 
-    public static DamageMatrix Load(string path)
+    public static DamageMatrix Load(string path) => Parse(File.ReadAllText(path));
+
+    public static DamageMatrix Parse(string text)
     {
-        var values = File.ReadLines(path)
+        var values = text.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n')
+            .Select(line => line.Trim())
             .Select(line => line.Split('%', 2)[0].Trim())
             .Where(line => line.Length != 0)
             .Select(line => line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
@@ -56,11 +59,26 @@ public sealed class DamageMatrix
 
     public int CalculateBaseDamage(int rawDamage, int weaponClass, int armorClass)
     {
+        return CalculateNativeDamage(rawDamage, weaponClass, armorClass, reduceToThreeQuarters: false);
+    }
+
+    /// <summary>
+    /// Applies the executable damage helper's optional caller-controlled
+    /// three-quarter branch. The branch is intentionally opt-in: static
+    /// callers expose the flag, but its mapping to a port command/projectile
+    /// is not yet recovered. Keeping it here preserves the exact arithmetic
+    /// for the eventual call-site mapping without changing ordinary impacts.
+    /// </summary>
+    public int CalculateNativeDamage(int rawDamage, int weaponClass, int armorClass, bool reduceToThreeQuarters)
+    {
         if (rawDamage < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(rawDamage));
         }
 
-        return checked(rawDamage * this[weaponClass, armorClass] / 100);
+        var damage = checked(rawDamage * this[weaponClass, armorClass] / 100);
+        // dc16.exe 0x441c80 uses (damage * 3) >> 2, i.e. signed arithmetic
+        // shift after the multiply, rather than a floating-point fraction.
+        return reduceToThreeQuarters ? (damage * 3) >> 2 : damage;
     }
 }

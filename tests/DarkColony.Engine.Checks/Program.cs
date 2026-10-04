@@ -563,14 +563,17 @@ Check("area-effect weapon applies its authored radial percentage", () =>
 Check("projectiles collide with an intervening hostile instead of remaining target locked", () =>
 {
     var catalog = EntityCatalog.Parse("3\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nBLOCKER 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    // Resolve impact damage against the intervening actor's armor class.
+    ((int[])catalog[2].Values)[10] = 1;
     var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 20 25 90 5 0 0 0 0 0\n");
+    var matrix = DamageMatrix.Parse("10\n9\n25 12 25 18 25 90 5 50 0 5\n100 25 0 25 50 100 10 50 0 10\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n100 100 100 100 100 100 100 100 100 100\n");
     const string source = "t\ni\nd\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 1 0 0 100 0\n3 1 1 1 100 0\n1 1 2 1 100 0\n";
     var bytes = new byte[PathRegionMap.RouteTableSize + 15]; bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
-    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 3), weaponCatalog: weapons);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 3), weaponCatalog: weapons, damageMatrix: matrix);
     simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
     for (var tick = 0; tick < 20 && simulation.LastProjectileImpacts.Count == 0; tick++) simulation.Step([]);
     Equal(3, simulation.LastProjectileImpacts.Single().TargetActorInstanceId);
-    Equal(75, simulation.Actor(3)!.Health);
+    Equal(97, simulation.Actor(3)!.Health);
     Equal(100, simulation.Actor(2)!.Health);
 });
 
@@ -647,6 +650,49 @@ Check("attack orders pursue an out-of-range target through normal movement", () 
     var pursuer = simulation.Actor(1)!;
     if (pursuer.Movement.OccupiedCell.X <= 1 || !simulation.IsAttackTargetInRange(pursuer) || !fired)
         throw new InvalidOperationException($"pursuit cell={pursuer.Movement.OccupiedCell}, targetCell={simulation.Actor(2)!.Movement.OccupiedCell}, range={weapons.Weapons[1].Range}, inRange={simulation.IsAttackTargetInRange(pursuer)}, fired={fired}, target={pursuer.AttackTargetInstanceId}, order={pursuer.MoveOrder?.Target}, playback={pursuer.Playback is not null}");
+});
+
+Check("target destruction cancels another attacker's reserved pursuit", () =>
+{
+    var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 200 90 2 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n6 1 1 1 100 0\n5 1 0 0 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3), weaponCatalog: weapons);
+
+    simulation.Step([
+        new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2)),
+        new ScheduledWorldCommand(1, 1, new AttackIntent(3, 2)),
+    ]);
+    for (var tick = 0; tick < 120 && !simulation.Actor(2)!.IsDestroyed; tick++) simulation.Step([]);
+
+    if (!simulation.Actor(2)!.IsDestroyed)
+        throw new InvalidOperationException($"Killer did not destroy target: health={simulation.Actor(2)!.Health}, fires={simulation.LastWeaponFires.Count}, projectileCount={simulation.Projectiles.Count}, killerTarget={simulation.Actor(3)!.AttackTargetInstanceId}");
+    var pursuer = simulation.Actor(1)!;
+    Equal(false, pursuer.AttackTargetInstanceId.HasValue);
+    Equal(true, pursuer.Playback is null && pursuer.MoveOrder is null);
+});
+
+Check("attack-move resumes its destination when another attacker destroys its target", () =>
+{
+    var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 200 90 2 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n6 1 1 1 100 0\n5 1 0 0 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 10 * 3];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 10, 3), weaponCatalog: weapons);
+
+    simulation.Step([
+        new ScheduledWorldCommand(1, 0, new AttackMoveIntent(1, new CellCoordinate(9, 1))),
+        new ScheduledWorldCommand(1, 1, new AttackIntent(3, 2)),
+    ]);
+    for (var tick = 0; tick < 120 && !simulation.Actor(2)!.IsDestroyed; tick++) simulation.Step([]);
+    Equal(true, simulation.Actor(2)!.IsDestroyed);
+    Equal(new CellCoordinate(9, 1), simulation.Actor(1)!.AttackMoveDestination!.Value);
+    for (var tick = 0; tick < 240 && simulation.Actor(1)!.AttackMoveDestination is not null; tick++) simulation.Step([]);
+    Equal(new CellCoordinate(9, 1), simulation.Actor(1)!.Movement.OccupiedCell);
+    Equal(false, simulation.Actor(1)!.AttackMoveDestination.HasValue);
 });
 
 Check("attack-move acquires a visible hostile then resumes its destination", () =>
@@ -1275,6 +1321,8 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var matrix = DamageMatrix.Load(install.DataFile("gamestat", "mbullet.txt"));
         Equal(25, matrix[0, 0]);
         Equal(25, matrix.CalculateBaseDamage(100, 0, 0));
+        Equal(18, matrix.CalculateNativeDamage(100, 0, 0, reduceToThreeQuarters: true));
+        Equal(19, matrix.CalculateNativeDamage(104, 0, 0, reduceToThreeQuarters: true));
     });
 
     Check("original area-effect templates retain radial patterns and weapon links", () =>
@@ -1683,10 +1731,14 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var ordinaryScenario = ScenarioDefinition.Parse(header +
             $"10 5 {areaSource.Id} 0 100 0\n15 5 0 1 100 0\n");
         var ordinary = ScenarioSimulation.Create(ordinaryScenario, entities, path,
-            weaponCatalog: weapons, areaEffects: forcedTopLeft);
+            weaponCatalog: weapons, areaEffects: forcedTopLeft, randomTable: NativeRandomTable.Load(install.ExecutablePath));
         ordinary.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
         for (var tick = 0; tick < 32 && ordinary.Projectiles.Count == 0; tick++) ordinary.Step([]);
         Equal(new CellCoordinate(14, 4), ordinary.Projectiles.Single().TimedImpactCell!.Value);
+        // The first native table value (index one) selected the ordinary
+        // scatter cell. Fire presentation must then consume index two from the
+        // same stream, rather than an independent cosmetic PRNG.
+        Equal((byte)0x81, ordinary.LastWeaponFires.Single().PresentationVariantRoll);
 
         var inspiredScenario = ScenarioDefinition.Parse(header +
             $"10 10 69 0 100 0\n10 5 {areaSource.Id} 0 100 0\n15 5 0 1 100 0\n");

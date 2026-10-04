@@ -182,9 +182,8 @@ eligibility, rank limit, deterministic low-nibble countdown, source link, and
 16-tick decay. The HUD enables frame 121, reports casting/completion, and marks
 inspired actors in gold. Loader `0x43b596` proves the 3x3 weights come from each
 `boomstat.txt` record's trailing square, not sprite opacity. Ordinary area
-shots now consume those row-major weights; inspired actors bypass them and aim
-at the exact center. Only synchronization with the original shared random
-table remains approximate.
+shots now consume those row-major weights from the recovered shared random
+table; inspired actors bypass the roll and aim at the exact center.
 
 The shipped training scripts also preserve a user-facing shortcut. Human and
 Alien training 3 says Enter deploys the
