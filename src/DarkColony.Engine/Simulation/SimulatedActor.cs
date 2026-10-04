@@ -96,8 +96,17 @@ public sealed class SimulatedActor
     public int IdleHealthSnapshot { get; internal set; }
     /// <summary>Idle record word <c>+4</c>: consecutive empty scans, capped at 3.</summary>
     public int IdleMissCount { get; internal set; }
-    /// <summary>Ticks left in the wait (15, or 45 after three misses) before the next idle scan.</summary>
+    /// <summary>Whether the type-3 wait (<c>0x412274</c>) sits above the idle record.</summary>
+    public bool IdleWaiting { get; internal set; }
+    /// <summary>The wait's counter (15, or 45 after three misses); it ends one update after reaching zero.</summary>
     public int IdleWaitTicks { get; internal set; }
+    /// <summary>The wait's word +2: health when it was pushed. Any change ends the wait at once.</summary>
+    public int IdleWaitHealth { get; internal set; }
+    /// <summary>
+    /// The fidget (type 4, <c>0x412338</c>): a random bearing the actor turns to
+    /// after the wait, before the idle record scans again.
+    /// </summary>
+    public byte? IdleFidgetFacing { get; internal set; }
     /// <summary>
     /// The move the idle command pushed itself (approach or yield). The idle
     /// record stays below it on the native command stack.

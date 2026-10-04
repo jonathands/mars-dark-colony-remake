@@ -37,18 +37,33 @@ For an armed actor (weapon slot != -1), every time its wait has elapsed:
    in mode 2 (`0x414CE4`).
 4. Otherwise (`0x414C29`), draw once from the shared random stream; if its low
    nibble is zero and entity +0xDC (gamestat value 20) is zero, draw again and
-   push command type 1 with that byte (a fidget whose handler `0x419238` is
-   empty; its visible effect is not recovered). Then wait 15 ticks while the
-   miss counter is below 3 (incrementing it), otherwise 45 ticks
-   (`0x412274`).
+   push the fidget, command type 4 with that byte (`0x412338`). Then push the
+   wait, command type 3 (`0x412274`): 15 while the miss counter is below 3
+   (incrementing it), otherwise 45. The handler returns 0, so the wait starts
+   on the next update.
 
 Unarmed actors take type-specific paths instead: vents (`0x413490`), mines
 (`0x4131BC`), stealing stances (`0x413BC0`), healers (`0x413C20`). City
 buildings (actors 0-119) run troop production (`0x414314`) from the same
 handler.
 
-The 15/45-tick wait is a separate command pushed above the idle command
-(`0x412274`), so nothing in this handler runs while it lasts. Moves and
+The dispatcher (`0x4194FA`) calls the top command's handler from the table at
+`0x479310` (type t at `0x4792B8 + (22 + t) * 4`) and dispatches again while
+the handler returns nonzero.
+
+- **Wait** (type 3, `0x4122C8`). Its record holds the counter and the health
+  at the push. If the health changed (or a state is pending, `+0x36`), it
+  pops and returns 1, so the idle record scans in the same update. Otherwise a
+  zero counter pops and returns 0, and a nonzero counter is decremented. A
+  wait of 15 therefore gives scans 17 updates apart, and 45 gives 47.
+- **Fidget** (type 4, `0x412358`). It turns the actor toward the drawn bearing
+  through `0x4120FC` (turn rate = gamestat value 2). The update in which the
+  facing arrives pops the record and returns 1, so the idle record scans in
+  that update. It sits below the wait, so the unit turns after waiting. The
+  state handler `0x419238` mentioned in older notes is the state table's
+  entry, not this command's.
+
+Nothing in the idle handler runs while either lasts. Moves and
 attacks the handler starts itself (approach, yield, acquired target) are
 pushed above the idle record too. When they end, the record resumes with its
 health snapshot and miss counter intact. A player order replaces the whole
@@ -136,7 +151,6 @@ Before each step of a move, the word at command +8 selects a mode:
 - The mode-2 approach targets the closest free cell within weapon range of the
   hostile (the pursuit helper), because the port's local search has no partial
   routes to an occupied cell.
-- The fidget's visible effect is not reproduced; its random draws are.
 - Move & Attack scans weapon range with the ring selector at step boundaries.
   Its former observation-range nearest-hostile rule remains only for checks
   built without the ring table.

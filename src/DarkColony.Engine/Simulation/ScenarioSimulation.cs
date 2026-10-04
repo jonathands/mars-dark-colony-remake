@@ -682,7 +682,8 @@ public sealed partial class ScenarioSimulation
                     _ = StartSegment(actor);
                 }
             }
-            if (actor.Facing.Current != actor.Facing.Target && EffectiveDefinition(actor).TurnSpeed > 0)
+            // The idle fidget turns its actor itself, once per update.
+            if (actor.IdleFidgetFacing is null && actor.Facing.Current != actor.Facing.Target && EffectiveDefinition(actor).TurnSpeed > 0)
                 actor.Facing.Step(EffectiveDefinition(actor).TurnSpeed);
             if (actor.CooldownTicks > 0) actor.CooldownTicks--;
             StopMoveOnContact(actor);

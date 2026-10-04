@@ -40,14 +40,37 @@ public sealed partial class ScenarioSimulation
             actor.IdleCommandActive = true;
             actor.IdleHealthSnapshot = actor.Health;
             actor.IdleMissCount = 0;
+            actor.IdleWaiting = false;
             actor.IdleWaitTicks = 0;
+            actor.IdleFidgetFacing = null;
         }
-        if (actor.IdleWaitTicks > 0)
+        if (actor.IdleWaiting)
         {
-            actor.IdleWaitTicks--;
-            return;
+            // 0x4122C8: a health change ends the wait and the records below run
+            // in this update; otherwise a zero counter ends it, and they run in
+            // the next one.
+            if (actor.Health != actor.IdleWaitHealth) actor.IdleWaiting = false;
+            else if (actor.IdleWaitTicks == 0)
+            {
+                actor.IdleWaiting = false;
+                return;
+            }
+            else
+            {
+                actor.IdleWaitTicks--;
+                return;
+            }
         }
         var definition = EffectiveDefinition(actor);
+        if (actor.IdleFidgetFacing is { } fidget)
+        {
+            // 0x412358: turn toward the fidget bearing (0x4120FC, turn rate =
+            // gamestat value 2). The step that arrives pops the record, and the
+            // idle record runs in the same update.
+            actor.Facing.Face(fidget);
+            if (actor.Facing.Current != fidget && (definition.TurnSpeed <= 0 || actor.Facing.Step(definition.TurnSpeed))) return;
+            actor.IdleFidgetFacing = null;
+        }
         if (!TryGetWeapon(actor, out var weapon))
         {
             // Unarmed path 0x4149C0: a moving actor honors a yield notification
@@ -96,10 +119,10 @@ public sealed partial class ScenarioSimulation
         }
 
         // Idle tail 0x414C29: one draw from the shared stream; a zero low
-        // nibble draws again for a fidget command unless entity value 20 is
-        // set. That command's visible effect is not recovered yet, so only the
-        // stream consumption is reproduced.
-        if ((NextNativeRandom() & 0xf) == 0 && !definition.SuppressesIdleFidget) _ = NextNativeRandom();
+        // nibble draws a fidget bearing unless entity value 20 is set. The
+        // fidget record goes below the wait, so it runs once the wait ends.
+        if ((NextNativeRandom() & 0xf) == 0 && !definition.SuppressesIdleFidget)
+            actor.IdleFidgetFacing = (byte)NextNativeRandom();
         if (actor.IdleMissCount < 3)
         {
             actor.IdleMissCount++;
@@ -109,6 +132,8 @@ public sealed partial class ScenarioSimulation
         {
             actor.IdleWaitTicks = NativeIdleLongWaitTicks;
         }
+        actor.IdleWaiting = true;
+        actor.IdleWaitHealth = actor.Health;
     }
 
     /// <summary>

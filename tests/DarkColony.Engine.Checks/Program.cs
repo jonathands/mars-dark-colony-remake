@@ -781,14 +781,58 @@ Check("idle scans wait 15 ticks for three misses and then 45", () =>
     var scans = new List<int>();
     for (var tick = 1; tick <= 140; tick++)
     {
-        var before = guard.IdleWaitTicks;
+        var before = guard.IdleWaiting;
         simulation.Step([]);
-        if (before == 0) scans.Add(tick);
+        if (!before && guard.IdleWaiting) scans.Add(tick);
     }
-    // A scan runs when the wait has elapsed; each miss waits 15 ticks (16-tick
-    // period) until the third, then 45 (46-tick period).
-    Equal(new[] { 1, 17, 33, 49, 95 }, scans.ToArray());
+    // Each miss pushes a wait (0x412274) and returns 0. The wait counts its
+    // word down to zero and pops one update later (0x4122C8), so a 15 wait
+    // gives a 17-tick period until the third miss, then 45 gives 47.
+    Equal(new[] { 1, 18, 35, 52, 99 }, scans.ToArray());
     Equal(3, guard.IdleMissCount);
+});
+
+Check("damage ends an idle wait and the idle record scans in the same update", () =>
+{
+    var catalog = EntityCatalog.Parse(AcquisitionEntities);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n"),
+        catalog, OpenPath(8, 8), weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: EuclideanRings());
+    var guard = simulation.Actors.Single();
+    for (var tick = 0; tick < 5; tick++) simulation.Step([]);
+    Equal(true, guard.IdleWaiting);
+    Equal(ScenarioSimulation.NativeIdleShortWaitTicks - 4, guard.IdleWaitTicks);
+    // 0x4122C8 compares the health stored at the push: a change pops the wait
+    // and returns 1, so the idle record scans (and misses) in this update.
+    guard.Health -= 10;
+    simulation.Step([]);
+    Equal(true, guard.IdleWaiting);
+    Equal(ScenarioSimulation.NativeIdleShortWaitTicks, guard.IdleWaitTicks);
+    Equal(guard.Health, guard.IdleWaitHealth);
+});
+
+Check("an idle fidget turns to its random bearing after the wait before scanning again", () =>
+{
+    // Turn rate 2: the fidget record (type 4, 0x412358) steps the facing by 2
+    // per update and pops on arrival, letting the idle record scan in the same
+    // update.
+    var catalog = EntityCatalog.Parse("1\nSLOW 0 2 25 8 8 1 -1 -1 1 1 0 1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(AcquisitionHeader + "2 2 0 0 1000 0\n"),
+        catalog, OpenPath(8, 8), weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: EuclideanRings());
+    var guard = simulation.Actors.Single();
+    for (var tick = 0; tick < 5000 && guard.IdleFidgetFacing is null; tick++) simulation.Step([]);
+    var bearing = guard.IdleFidgetFacing ?? throw new InvalidOperationException("No fidget was drawn in 5000 ticks.");
+    for (var tick = 0; tick < 100 && guard.IdleWaiting; tick++) simulation.Step([]);
+    var difference = (bearing - guard.Facing.Current + 256) % 256;
+    var turns = Math.Max(1, (Math.Min(difference, 256 - difference) + 1) / 2);
+    var updates = 0;
+    while (!guard.IdleWaiting && updates < 200)
+    {
+        simulation.Step([]);
+        updates++;
+    }
+    Equal(turns, updates);
+    Equal(bearing, guard.Facing.Current);
+    Equal(false, guard.IdleFidgetFacing.HasValue);
 });
 
 Check("idle selection skips critters, untargetable props, and unseen cells", () =>
