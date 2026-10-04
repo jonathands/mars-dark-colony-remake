@@ -419,7 +419,7 @@ public sealed partial class MainForm
         var bitmap = AnimationBitmap(fileName, frame);
         if (bitmap is null) return false;
         var key = $"{fileName}:{frame}";
-        var origin = _animationOrigins.GetValueOrDefault(key);
+        var origin = AnimationOrigin(fileName, frame);
         var position = ActorPosition(entity);
         var canvas = new Rectangle(
             position.XRaw / 8 - _cameraX + origin.X,
@@ -534,7 +534,7 @@ public sealed partial class MainForm
                     var bitmap = AnimationBitmap(fileName, frame);
                     if (bitmap is not null)
                     {
-                        var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
+                        var origin = AnimationOrigin(fileName, frame);
                         canvas.Draw(GpuBitmap(bitmap), x + origin.X, y + origin.Y);
                         rendered = true;
                     }
@@ -657,7 +657,7 @@ public sealed partial class MainForm
             var fileName = Path.GetFileName(candidate.FinPath);
             var bitmap = AnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
-            var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
+            var origin = AnimationOrigin(fileName, frame);
             canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + origin.Y);
         }
     }
@@ -677,7 +677,7 @@ public sealed partial class MainForm
             var fileName = Path.GetFileName(candidate.FinPath);
             var bitmap = AnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
-            var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
+            var origin = AnimationOrigin(fileName, frame);
             canvas.Draw(GpuBitmap(bitmap),
                 transport.Position.XRaw / 8 - _cameraX + origin.X,
                 WorldPixelY(transport.Position.ZRaw) - transport.HeightRaw / 8 - _cameraY + origin.Y);
@@ -716,7 +716,7 @@ public sealed partial class MainForm
             var fileName = Path.GetFileName(candidate.FinPath);
             var bitmap = AnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
-            var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
+            var origin = AnimationOrigin(fileName, frame);
             canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + origin.Y);
         }
     }
@@ -780,7 +780,7 @@ public sealed partial class MainForm
         if (bitmap is null) return;
         // Cursor FIN layers have their own negative hotspot offsets. Unlike a
         // UI gadget rectangle, the pointer itself is that logical origin.
-        var origin = _animationOrigins.GetValueOrDefault($"curs.fin:{frame}:base");
+        var origin = AnimationOrigin("curs.fin", frame);
         if (_activeCanvas is { } canvas)
             canvas.DrawForeground(GpuBitmap(bitmap), pointer.X + origin.X, pointer.Y + origin.Y);
         else

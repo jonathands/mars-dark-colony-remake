@@ -259,6 +259,14 @@ public sealed partial class MainForm
         return true;
     }
 
+    /// <summary>
+    /// Composite origin of a world animation frame. Origins are cached under
+    /// the same base-palette key <see cref="AnimationBitmap"/> uses, so call it
+    /// after loading the bitmap.
+    /// </summary>
+    private Point AnimationOrigin(string fileName, int frameIndex) =>
+        _animationOrigins.GetValueOrDefault($"{fileName}:{frameIndex}:base");
+
     private Bitmap? AnimationBitmap(string fileName, int frameIndex, bool remapWarControlPalette = false)
     {
         if (_installation is null) return null;
