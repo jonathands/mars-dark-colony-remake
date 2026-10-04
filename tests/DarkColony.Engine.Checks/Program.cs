@@ -364,6 +364,44 @@ Check("packed playback reserves occupancy before interpolation", () =>
     Equal(new CellCoordinate(3, 2), playback.Movement.OccupiedCell);
 });
 
+Check("cancelled playback restores its source cell while it is free", () =>
+{
+    var occupancy = new CellOccupancy();
+    occupancy.TryClaim(7, [new CellCoordinate(2, 2)]);
+    var path = new PackedLocalPath();
+    path.Append(PathDirection.East);
+    var playback = new PackedPathPlayback(7, 25, new MovementState(new CellCoordinate(2, 2)), path, occupancy);
+    Equal(PackedPathPlaybackStatus.ReservedStep, playback.Step());
+    playback.Cancel();
+    Equal(new CellCoordinate(2, 2), playback.Movement.OccupiedCell);
+    Equal(FixedPointPosition.AtCellCenter(new CellCoordinate(2, 2)), playback.Movement.VisualPosition);
+    Equal(true, occupancy.TryGetOwner(new CellCoordinate(2, 2), out var owner));
+    Equal(7, owner);
+    Equal(false, occupancy.IsOccupied(new CellCoordinate(3, 2)));
+});
+
+Check("cancelled playback completes on its destination when the source was taken", () =>
+{
+    // Found by the scripted determinism run (human01): an attacker's pursuit
+    // was cancelled after another actor walked into the cell it had vacated.
+    var occupancy = new CellOccupancy();
+    occupancy.TryClaim(7, [new CellCoordinate(2, 2)]);
+    var path = new PackedLocalPath();
+    path.Append(PathDirection.East);
+    var playback = new PackedPathPlayback(7, 25, new MovementState(new CellCoordinate(2, 2)), path, occupancy);
+    Equal(PackedPathPlaybackStatus.ReservedStep, playback.Step());
+    Equal(PackedPathPlaybackStatus.Interpolating, playback.Step());
+    Equal(true, occupancy.TryClaim(8, [new CellCoordinate(2, 2)]));
+    playback.Cancel();
+    Equal(new CellCoordinate(3, 2), playback.Movement.OccupiedCell);
+    Equal(new CellCoordinate(3, 2), playback.Movement.ReservedDestination);
+    Equal(FixedPointPosition.AtCellCenter(new CellCoordinate(3, 2)), playback.Movement.VisualPosition);
+    Equal(true, occupancy.TryGetOwner(new CellCoordinate(3, 2), out var mover));
+    Equal(7, mover);
+    Equal(true, occupancy.TryGetOwner(new CellCoordinate(2, 2), out var newcomer));
+    Equal(8, newcomer);
+});
+
 Check("packed playback reports a contested destination", () =>
 {
     var occupancy = new CellOccupancy();

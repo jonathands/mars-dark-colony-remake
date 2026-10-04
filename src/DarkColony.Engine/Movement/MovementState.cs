@@ -35,4 +35,14 @@ public sealed class MovementState
         ReservedDestination = OccupiedCell;
         VisualPosition = FixedPointPosition.AtCellCenter(OccupiedCell);
     }
+
+    /// <summary>
+    /// Ends a cancelled transition on its reserved destination instead, for
+    /// when the vacated source cell has since been claimed by another actor.
+    /// </summary>
+    public void CompleteTransitionAtDestination()
+    {
+        OccupiedCell = ReservedDestination;
+        VisualPosition = FixedPointPosition.AtCellCenter(OccupiedCell);
+    }
 }

@@ -49,13 +49,27 @@ public sealed class PackedPathPlayback
     /// currently resolves an interrupted sub-cell transition at the source cell;
     /// the native stop interpolation remains to be recovered.
     /// </summary>
+    /// <remarks>
+    /// The source cell is released when a step starts, so another actor may
+    /// have entered it before the cancel. The step then completes on the
+    /// destination this actor still owns rather than overlapping that actor
+    /// (provisional port policy, not a recovered native rule).
+    /// </remarks>
     public void Cancel()
     {
         if (transition is null) return;
-        if (!occupancy.TryMove(entityInstanceId, Movement.ReservedDestination, Movement.OccupiedCell))
-            throw new InvalidOperationException("Could not restore occupancy while cancelling movement.");
         transition = null;
-        Movement.CancelTransition();
+        if (occupancy.TryMove(entityInstanceId, Movement.ReservedDestination, Movement.OccupiedCell))
+        {
+            Movement.CancelTransition();
+            return;
+        }
+        if (occupancy.TryGetOwner(Movement.ReservedDestination, out var owner) && owner == entityInstanceId)
+        {
+            Movement.CompleteTransitionAtDestination();
+            return;
+        }
+        throw new InvalidOperationException("Cancelled movement owns neither its source nor its destination cell.");
     }
 
     public PackedPathPlaybackStatus Step()
