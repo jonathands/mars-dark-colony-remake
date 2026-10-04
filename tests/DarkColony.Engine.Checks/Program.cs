@@ -11,6 +11,8 @@ using DarkColony.Engine.Scenario;
 using DarkColony.Engine.Commands;
 using System.Buffers.Binary;
 
+if (DeterminismCli.TryRun(args, out var determinismExitCode)) return determinismExitCode;
+
 var failures = new List<string>();
 
 Check("clock uses strict comparison", () =>
@@ -2607,6 +2609,50 @@ Check("faction-selected War rosters complete a local movement order", () =>
             var frame = definition.Compose(animation.FirstFrame, LoadSprite);
             if (frame.Width <= 1 || frame.Height <= 1) throw new InvalidOperationException($"{animationName} composed empty.");
         }
+    });
+
+    Check("every installed scenario runs scripted orders without faults", () =>
+    {
+        const ulong smokeTicks = 300;
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var scenarios = DeterminismHarness.InstalledScenarios(install);
+        if (scenarios.Count < 101) throw new InvalidOperationException($"Expected at least 101 complete scenarios, found {scenarios.Count}.");
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        foreach (var scenario in scenarios)
+        {
+            try
+            {
+                DeterminismHarness.Run(install, rules, scenario, smokeTicks, [smokeTicks], digestEveryTick: false);
+            }
+            catch (Exception error)
+            {
+                throw new InvalidOperationException($"{scenario}: {error.GetType().Name}: {error.Message}", error);
+            }
+        }
+        Console.WriteLine($"  scripted smoke: {scenarios.Count} scenarios x {smokeTicks} ticks in {started.Elapsed.TotalSeconds:0.0}s");
+    });
+
+    Check("scripted scenario runs are repeatable within one process", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        ulong[] checkpoints = [50, 150, 300];
+        var first = DeterminismHarness.Run(install, rules, "mplayer/j4play01", 300, checkpoints);
+        var second = DeterminismHarness.Run(install, rules, "mplayer/j4play01", 300, checkpoints);
+        Equal(string.Join(' ', first.Checkpoints), string.Join(' ', second.Checkpoints));
+        Equal(first.FinalDescription, second.FinalDescription);
+    });
+
+    Check("scripted scenario runs match recorded golden digests", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var mismatches = DeterminismHarness.CompareGoldens(install, SimulationRules.Load(install));
+        if (mismatches.Count != 0)
+            throw new InvalidOperationException(
+                "simulation behavior changed: " + string.Join("; ", mismatches) +
+                ". If intended, rerun with --update-goldens and explain the change in the commit; " +
+                "compare states with --dump-digest <scenario> <tick> <file> on both builds.");
     });
 }
 else

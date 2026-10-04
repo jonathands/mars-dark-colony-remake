@@ -46,3 +46,6 @@ simulation requirements demonstrate that one is necessary.
   on a dialog; read the printed log before guessing at a failure, and inspect
   the captured screenshot. Drive menus and gameplay with `-Actions`.
 - Never leave a check disabled (`#if false`, early return) to make the suite pass.
+- The determinism goldens (`docs/DETERMINISM.md`) must not change in a
+  refactor. Regenerate them (`--update-goldens`) only for an intended behavior
+  change, and say in the commit message what changed and why.
