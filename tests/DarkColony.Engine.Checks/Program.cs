@@ -715,8 +715,8 @@ Check("idle second scan radius depends on player kind and damage", () =>
     Equal(ScenarioSimulation.NativeIdleShortWaitTicks, human.Actor(1)!.IdleWaitTicks);
     Equal(1, human.Actor(1)!.IdleMissCount);
 
-    const string computerTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n4\n%AI\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
-    var computer = ScenarioSimulation.Create(ScenarioDefinition.Parse(computerTeams + "2 2 0 0 1000 0\n8 2 1 1 100 0\n"),
+    const string computerTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n4\n%AI\nTEAM 1 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
+    var computer =ScenarioSimulation.Create(ScenarioDefinition.Parse(computerTeams + "2 2 0 0 1000 0\n8 2 1 1 100 0\n"),
         catalog, OpenPath(12, 12), weaponCatalog: weapons, targetRings: EuclideanRings());
     computer.Step([]);
     var approach = computer.LastIdleAcquisitions.Single();
@@ -781,7 +781,8 @@ Check("idle selection skips critters, untargetable props, and unseen cells", () 
 Check("a stop-on-contact approach ends once a hostile is in weapon range", () =>
 {
     var catalog = EntityCatalog.Parse(AcquisitionEntities);
-    const string computerTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n4\n%AI\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
+    // Both teams share race 0 so the loader's race swap leaves the fixtures alone.
+    const string computerTeams = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n4\n%AI\nTEAM 1 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
     var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(computerTeams + "1 2 0 0 1000 0\n8 2 1 1 100 0\n"),
         catalog, OpenPath(14, 6), weaponCatalog: WeaponCatalog.Parse(AcquisitionWeapons), targetRings: EuclideanRings());
     var guard = simulation.Actor(1)!;
@@ -2063,7 +2064,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var file = install.DataFile("scenario", "mplayer", "j4play01") + ".scn";
         var team0 = ScenarioDefinition.Load(file).Teams.Single(team => team.TeamId == 0);
         Equal(new CellCoordinate(10, 55), team0.CityOrigin!.Value);
-        Equal(new CellCoordinate(15, 57), team0.CitySecondaryPoint!.Value);
+        Equal(new CellCoordinate(15, 57), team0.StartPoint!.Value);
         Equal(5, team0.CitySlots.Count);
         Equal(new ScenarioCitySlot(1, -1), team0.CitySlots[0]);
         Equal(new ScenarioCitySlot(0, -1), team0.CitySlots[1]);
@@ -2307,6 +2308,29 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(4, outcome.OutcomeText);
         Equal(1, simulation.PlayerStatistic(0, 0));
         Equal(4, simulation.PlayerStatistic(7, 0));
+    });
+
+    Check("the SCN loader swaps a placement of the other race for its counterpart", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var file = install.DataFile("scenario", "mplayer", "j4play01") + ".scn";
+        var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+        var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+        // Team 1 plays the alien race (1). Marines (entity 0, human) go to
+        // team 1, to team 0 (human) and to the race-0 neutral team 4.
+        var lines = File.ReadAllLines(file).ToList();
+        lines[lines.IndexOf("TEAM 1 1") + 1] = "1";
+        lines.AddRange(["2 2 0 1 -1 0", "3 2 0 0 -1 0", "4 2 0 4 -1 0"]);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(string.Join("\n", lines) + "\n"), path, rules);
+        int EntityAt(int x, int team) =>
+            simulation.Actors.Single(actor => actor.Seed.Team == team && actor.Seed.SpawnCell == new CellCoordinate(x, 2)).Seed.EntityId;
+
+        var counterpart = rules.Entities[0].FactionCounterpartEntityId;
+        Equal(true, counterpart >= 0 && rules.Entities[counterpart].Faction == 1);
+        Equal(counterpart, EntityAt(2, 1));
+        Equal(0, EntityAt(3, 0));
+        Equal(0, EntityAt(4, 4));
     });
 
     Check("the troop cap shares the free actor slots and refunds orders beyond it", () =>

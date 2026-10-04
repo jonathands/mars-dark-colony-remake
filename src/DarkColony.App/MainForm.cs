@@ -97,7 +97,6 @@ public sealed partial class MainForm : Form
     private int _campaignMission = 1;
     private MissionOutcome? _debriefOutcome;
     private string _debriefText = string.Empty;
-    private bool _cameraAwaitsLocalUnits;
     private int _briefingScrollLine;
     private bool _storyReturnsToGameplay;
     private bool _resumeGameplayFromStory;

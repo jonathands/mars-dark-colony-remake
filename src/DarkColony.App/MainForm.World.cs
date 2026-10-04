@@ -205,18 +205,21 @@ public sealed partial class MainForm
             _autonomousEntities = _scenarioSimulation.Actors
                 .Where(actor => actor.Seed.Team == AutonomousSpawnSeeder.InternalNeutralTeam)
                 .Select(actor => actor.Seed).ToArray();
-            var localActor = _scenarioSimulation.Actors
-                .Where(actor => actor.Seed.Team == _localPlayerTeam && actor.Definition.MovementSpeed > 0)
-                .OrderBy(actor => actor.Seed.InstanceId)
-                .FirstOrDefault();
-            if (localActor is not null)
+            // 0x41EBD8 centers the view on the local player's first %AISlots
+            // point (x << 8, z << 8): the left edge of cell x, the bottom edge of
+            // row z on screen. SCN files without %AISlots fall back to the
+            // first local unit.
+            var start = definition.Teams.FirstOrDefault(team => team.TeamId == _localPlayerTeam)?.StartPoint ??
+                        _scenarioSimulation.Actors
+                            .Where(actor => actor.Seed.Team == _localPlayerTeam && actor.Definition.MovementSpeed > 0)
+                            .OrderBy(actor => actor.Seed.InstanceId)
+                            .Select(actor => (CellCoordinate?)actor.Movement.OccupiedCell)
+                            .FirstOrDefault();
+            if (start is { } point)
             {
-                _cameraX = localActor.Movement.OccupiedCell.X * 32 - 258;
-                _cameraY = CellPixelTop(localActor.Movement.OccupiedCell.Z) - 229;
+                _cameraX = point.X * 32 - 258;
+                _cameraY = CellPixelTop(point.Z) + 32 - 229;
             }
-            // Campaign maps such as human01 start without local units; the
-            // camera then follows the first ones the mission script brings in.
-            _cameraAwaitsLocalUnits = localActor is null;
             ClampGameplayCamera();
             _status = $"Loaded {scenario.Directory}\\{scenario.Name}: {_scenarioSimulation.Actors.Count} actors / {missionScript?.Triggers.Count ?? 0} triggers.";
             return true;

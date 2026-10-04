@@ -200,16 +200,6 @@ public sealed partial class MainForm
             }
             else _status = $"Building drop rejected: {placement.Outcome}.";
         }
-        if (_cameraAwaitsLocalUnits && _scenarioSimulation.Actors
-                .Where(actor => !actor.IsDestroyed && actor.Seed.Team == _localPlayerTeam && actor.Definition.MovementSpeed > 0)
-                .OrderBy(actor => actor.Seed.InstanceId)
-                .FirstOrDefault() is { } arrival)
-        {
-            _cameraAwaitsLocalUnits = false;
-            _cameraX = arrival.Movement.OccupiedCell.X * 32 - 258;
-            _cameraY = CellPixelTop(arrival.Movement.OccupiedCell.Z) - 229;
-            ClampGameplayCamera();
-        }
         foreach (var message in _scenarioSimulation.LastMissionMessages)
         {
             // msg: line N of the scenario's .msg text.

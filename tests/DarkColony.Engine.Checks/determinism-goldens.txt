@@ -42,9 +42,9 @@ mplayer/j4play01 300 2cb11a97dd7888da
 mplayer/j4play01 600 3cb037e985da0c03
 mplayer/j4play01 900 3ea0efea726c6548
 mplayer/j4play01 1200 4553fd3ebe8b07e3
-mplayer/d2play01 1 445138911e024a0f
-mplayer/d2play01 100 6a50d064bcaa401d
-mplayer/d2play01 300 262f80f704b8ddec
-mplayer/d2play01 600 2b7f6756a462cd30
-mplayer/d2play01 900 c30d9dd58eab0329
-mplayer/d2play01 1200 49bedd208bdead17
+mplayer/d2play01 1 24d0a6c74c87954e
+mplayer/d2play01 100 e6ac37b2294cacb1
+mplayer/d2play01 300 3cfaf40755fbe73d
+mplayer/d2play01 600 c8490d607279791f
+mplayer/d2play01 900 54675f63e9e1f6ba
+mplayer/d2play01 1200 6944b88566453d2e

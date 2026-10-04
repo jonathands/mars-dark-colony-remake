@@ -23,10 +23,12 @@ public sealed record ScenarioTeam(
 
     /// <summary>
     /// First <c>%AISlots</c> pair (player <c>+0xBCC/+0xBD0</c>, <c>0x41C04F</c>);
-    /// the loader replaces (0,0) with the city origin. Multiplayer maps place
-    /// the team's commander here; its gameplay role is not traced yet.
+    /// the loader replaces (0,0) with the city origin. The local player's camera
+    /// starts centered on it (<c>0x41EBD8</c>), and the AI's region search uses
+    /// it as home when the player has no city (<c>0x457210</c>). Multiplayer maps
+    /// place the team's commander here.
     /// </summary>
-    public CellCoordinate? CitySecondaryPoint { get; init; }
+    public CellCoordinate? StartPoint { get; init; }
 
     /// <summary>
     /// First <c>%City</c> line: (level, health) for building slots 0-4 (HQ,
@@ -197,7 +199,7 @@ public sealed class ScenarioDefinition
                 ValuesAfter("TeamAllies"))
             {
                 CityOrigin = PairAfter("AISlots", 2),
-                CitySecondaryPoint = PairAfter("AISlots", 1) is { X: 0, Z: 0 } ? PairAfter("AISlots", 2) : PairAfter("AISlots", 1),
+                StartPoint = PairAfter("AISlots", 1) is { X: 0, Z: 0 } ? PairAfter("AISlots", 2) : PairAfter("AISlots", 1),
                 CitySlots = CitySlotsAfter(),
             });
 

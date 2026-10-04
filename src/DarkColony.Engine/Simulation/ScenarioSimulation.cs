@@ -225,10 +225,11 @@ public sealed partial class ScenarioSimulation
         TroopBuildTimings? buildTimings = null,
         MissionScript? missionScript = null)
     {
+        var teamRaces = scenario.Teams.Where(team => team.Race is not null).ToDictionary(team => team.TeamId, team => team.Race!.Value);
         var seeds = scenario.Placements.Where(placement => placement.Team != -1).Select((placement, index) =>
         {
             var cell = new CellCoordinate(placement.X, placement.Z);
-            return new WorldEntity(index + 1, placement.EntityId, placement.Team, cell,
+            return new WorldEntity(index + 1, NativePlacementEntity(placement, teamRaces, catalog), placement.Team, cell,
                 FixedPointPosition.AtCellCenter(cell), placement.Value, placement.Flag);
         }).ToList();
         var ground = new CellOccupancy();
@@ -301,6 +302,22 @@ public sealed partial class ScenarioSimulation
         simulation.autonomousGroups.AddRange(scenario.AutonomousSpawnGroups.Select(group => new AutonomousGroupRuntime(
             group, autonomous.EntitiesByGroup.GetValueOrDefault(group.GroupId, []).Select(entity => entity.InstanceId))));
         return simulation;
+    }
+
+    /// <summary>
+    /// The SCN loader (<c>0x41C4E3</c>) swaps a player placement whose entity
+    /// race (gamestat value 1, runtime <c>+4</c>) differs from the player's race
+    /// (<c>+0xBB8</c>) for the entity's counterpart (value 31, <c>+0x114</c>),
+    /// when it has one.
+    /// </summary>
+    private static int NativePlacementEntity(ScenarioPlacement placement, IReadOnlyDictionary<int, int> teamRaces, EntityCatalog catalog)
+    {
+        if (placement.Team is < 0 or >= 8 || !teamRaces.TryGetValue(placement.Team, out var race) ||
+            (uint)placement.EntityId >= (uint)catalog.Entities.Count) return placement.EntityId;
+        var definition = catalog[placement.EntityId];
+        return definition.Faction != race && definition.FactionCounterpartEntityId != -1
+            ? definition.FactionCounterpartEntityId
+            : placement.EntityId;
     }
 
     public SimulatedActor? Actor(int instanceId) => actorsById.GetValueOrDefault(instanceId);

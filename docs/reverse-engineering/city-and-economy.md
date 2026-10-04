@@ -18,8 +18,12 @@ points at the player record `world + 0xB98 + player * 0xE30`:
 | `%City` line 1 | five `level health` pairs for slots 0-4 | loop before `0x41C3F0` |
 
 - If line 1 is `0 0`, the loader copies the city origin into it. In the
-  multiplayer maps, the team's commander (entity 69) is placed on line 1. What
-  this point does during play has not been traced.
+  multiplayer maps, the team's commander (entity 69) is placed on line 1.
+  Line 1 has two readers. `0x41EBD8` centers the local player's starting
+  view on it (`0x499068`/`0x499070` = `x << 8`, `z << 8`; the view is clamped
+  to 8 cells from the left/right edges and 7 from the top/bottom). The AI's
+  region search `0x4571AC` uses the city origin as home and falls back to
+  line 1 when the origin is zero (`0x457210`).
 - A slot is built only when the origin X (`+0xBC4`) is nonzero, the level is
   positive, and (in network sessions) the player is in the session. Level `n`
   selects build variant `n - 1`. Health `-1` means the entity's gamestat
@@ -50,7 +54,14 @@ placement. Each built slot becomes actor `player * 15 + slot` (actors 0-119):
   this for all 1960 built-slot cells in the corpus. Attribute bit 9 is the
   hexagonal pedestal painted into the MAP.
 
-SCN placements are then created from actor `0x98` onward by `0x41AF14`. That
+SCN placements are then created from actor `0x98` onward by `0x41AF14`.
+Actors 120-151 are not used by the loader. Before creating a player
+placement, the loader (`0x41C4E3`) compares the entity's race (gamestat
+value 1, runtime `+4`) with the player's race (`+0xBB8`). If they differ and
+the entity has a counterpart (value 31, runtime `+0x114`), it places the
+counterpart instead. Example: a Marine placed for a Gray player becomes a
+Gray trooper. In the corpus this changes 147 placements: 142 in the desert
+multiplayer maps (`d*play*`), 4 in `test/htrain7` and 1 in `human/human01`. That
 routine writes its cell into the ground grid without testing it, so a
 placement inside a footprint takes that cell. The port appends city actors
 after the placements, which keeps placement instance IDs stable. It claims
@@ -140,9 +151,10 @@ cannot direct-attack critters, and their projectiles pass through critters.
 | Vent income requires the HQ | confirmed (`0x413B31`) |
 | Players ↔ team 9 cooperative | confirmed (`0x41C00E`) |
 | Passive vs vent pulse phase | confirmed: passive on `world+0x94C & 15` (the update counter, incremented by `0x41E1F9` before each update); vents on `+0x530 & 15` (the day/night phase counter, reset at each phase change) |
-| Script rate changes (action 12) | not implemented (mission scripts) |
-| Network-session slot gating, placement race substitution | not implemented |
-| Role of `%AISlots` line 1 | unknown |
+| Script rate changes (action 12) | confirmed; see [mission-triggers.md](mission-triggers.md) |
+| Placement race substitution (`0x41C4E3`) | confirmed; check "the SCN loader swaps a placement of the other race for its counterpart" |
+| Network-session slot gating | deferred to goal 8 (networking): single-player sessions build every slot |
+| Role of `%AISlots` line 1 | confirmed: starting view center (`0x41EBD8`) and AI home fallback (`0x457210`) |
 | Building purchase builds the slot at once (command 9) | confirmed; see [production-flow.md](production-flow.md) |
 | Building prerequisite = live slot building of at least that variant (`0x438220`) | confirmed; completed building items follow each slot |
 | Building sprite anchor | open: the HQ draws about two tiles lower and left of the original captures |
