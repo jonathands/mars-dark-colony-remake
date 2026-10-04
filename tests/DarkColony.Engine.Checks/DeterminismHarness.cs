@@ -372,7 +372,7 @@ internal static class DeterminismCli
         var update = args.Contains("--update-goldens");
         var dump = Array.IndexOf(args, "--dump-digest");
         var summary = Array.IndexOf(args, "--event-summary");
-        string[] modes = ["--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run"];
+        string[] modes = ["--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map"];
         if (!args.Any(modes.Contains)) return false;
 
         var dataIndex = Array.IndexOf(args, "--data");
@@ -395,6 +395,13 @@ internal static class DeterminismCli
             foreach (var mismatch in mismatches) Console.WriteLine(mismatch);
             Console.WriteLine(mismatches.Count == 0 ? "All golden digests match." : $"{mismatches.Count} golden scenario(s) diverged.");
             exitCode = mismatches.Count == 0 ? 0 : 1;
+            return true;
+        }
+
+        var renderMap = Array.IndexOf(args, "--render-map");
+        if (renderMap >= 0)
+        {
+            MapDiagnostics.Render(installation, rules, args[renderMap + 1], args[renderMap + 2]);
             return true;
         }
 

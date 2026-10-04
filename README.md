@@ -143,7 +143,7 @@ to stop the selected actors and discard their active and queued movement.
 
 Press **F4** during gameplay to overlay PTH diagnostics. Region-zero cells are
 shaded red and region boundaries are cyan. This deliberately says “region
-zero,” not “blocked”: only the bottom-up row conversion and 256×256 next-region
+zero,” not “blocked”: only the file-order row reading and 256×256 next-region
 table are proven. Right-click diagnostics now report source/target regions and
 whether their coarse chain reached the target, hit zero, cycled, or exhausted
 its limit.

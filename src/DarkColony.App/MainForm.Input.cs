@@ -378,7 +378,8 @@ public sealed partial class MainForm
         // Same centred odd-numerator scaling as `0x409c94`; our camera is a
         // top-left viewport origin, so convert the requested world centre.
         var worldX = ((x * 2 + 1) * _gameplayMap.Width * TerrainRasterizer.TileSize) / (GameplayMinimapBounds.Width * 2);
-        var worldY = (((GameplayMinimapBounds.Height - 1 - y) * 2 + 1) * _gameplayMap.Height * TerrainRasterizer.TileSize) / (GameplayMinimapBounds.Height * 2);
+        // The camera is in screen pixels, top-down like the minimap itself.
+        var worldY = ((y * 2 + 1) * _gameplayMap.Height * TerrainRasterizer.TileSize) / (GameplayMinimapBounds.Height * 2);
         SetGameplayCamera(worldX - 516 / 2, worldY - 458 / 2);
     }
 
@@ -453,7 +454,8 @@ public sealed partial class MainForm
     {
         if (_scenarioSimulation is null || _entityCatalog is null || _entityAnimations is null || point.X >= 516 || point.Y >= 458) return null;
         WorldEntity? hit = null;
-        foreach (var entity in GameplayEntities().OrderBy(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
+        // Same painter's order as drawing: the last hit is the topmost sprite.
+        foreach (var entity in GameplayEntities().OrderByDescending(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
         {
             if (locallyControllableOnly && !IsLocallyControllable(entity)) continue;
             if (selectionLayerFilter is { } filter && GameplayDefinition(entity) is { } definition && !filter.Includes(definition)) continue;

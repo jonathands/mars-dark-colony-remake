@@ -123,7 +123,8 @@ public sealed partial class MainForm
         var worldHeight = _gameplayMap.Height * TerrainRasterizer.TileSize;
         var viewport = new Rectangle(
             GameplayMinimapBounds.X + (int)Math.Round(_cameraX / (double)worldWidth * GameplayMinimapBounds.Width),
-            GameplayMinimapBounds.Y + (int)Math.Round((worldHeight - _cameraY - 458) / (double)worldHeight * GameplayMinimapBounds.Height),
+            // The camera is in screen pixels, which run top-down like the minimap.
+            GameplayMinimapBounds.Y + (int)Math.Round(_cameraY / (double)worldHeight * GameplayMinimapBounds.Height),
             Math.Max(1, (int)Math.Ceiling(516d / worldWidth * GameplayMinimapBounds.Width)),
             Math.Max(1, (int)Math.Ceiling(458d / worldHeight * GameplayMinimapBounds.Height)));
         var camera = Color.FromArgb(240, 225, 245, 210);
@@ -144,10 +145,10 @@ public sealed partial class MainForm
         for (var y = 0; y < image.Height; y++)
         for (var x = 0; x < image.Width; x++)
         {
-            // Match the native handler's centred odd numerator and its
-            // vertically inverted map coordinate.
+            // Match the native handler's centred odd numerator. Its vertical
+            // inversion maps world Z; MAP rows are already in screen order.
             var mapX = Math.Min(map.Width - 1, ((x * 2 + 1) * map.Width) / (image.Width * 2));
-            var mapY = Math.Min(map.Height - 1, (((image.Height - 1 - y) * 2 + 1) * map.Height) / (image.Height * 2));
+            var mapY = Math.Min(map.Height - 1, ((y * 2 + 1) * map.Height) / (image.Height * 2));
             var cell = map[mapX, mapY];
             var tileId = cell.OverlayTileId != 0 ? cell.OverlayTileId : cell.BaseTileId;
             if (!tileset.TilesById.TryGetValue(tileId, out var tile)) continue;
@@ -205,7 +206,7 @@ public sealed partial class MainForm
             if (localActor is not null)
             {
                 _cameraX = localActor.Movement.OccupiedCell.X * 32 - 258;
-                _cameraY = localActor.Movement.OccupiedCell.Z * 32 - 229;
+                _cameraY = CellPixelTop(localActor.Movement.OccupiedCell.Z) - 229;
             }
             ClampGameplayCamera();
             _status = $"Loaded {scenario.Directory}\\{scenario.Name}: {_scenarioSimulation.Actors.Count} actors / {_scenarioTriggers.Count} triggers (not executing).";
@@ -227,16 +228,17 @@ public sealed partial class MainForm
         using var zero = canvas is null ? new SolidBrush(Color.FromArgb(65, 220, 35, 35)) : null;
         using var boundary = canvas is null ? new Pen(Color.FromArgb(150, 40, 220, 230)) : null;
         var firstX = Math.Max(0, _cameraX / 32);
-        var firstZ = Math.Max(0, _cameraY / 32);
+        var firstRow = Math.Max(0, _cameraY / 32);
         var lastX = Math.Min(_gameplayPath.Width - 1, (_cameraX + 515) / 32);
-        var lastZ = Math.Min(_gameplayPath.Height - 1, (_cameraY + 457) / 32);
-        for (var z = firstZ; z <= lastZ; z++)
+        var lastRow = Math.Min(_gameplayPath.Height - 1, (_cameraY + 457) / 32);
+        for (var row = firstRow; row <= lastRow; row++)
         for (var x = firstX; x <= lastX; x++)
         {
+            var z = _gameplayPath.Height - 1 - row;
             var cell = new CellCoordinate(x, z);
             var region = _gameplayPath.RegionAt(cell);
             var screenX = x * 32 - _cameraX;
-            var screenY = z * 32 - _cameraY;
+            var screenY = row * 32 - _cameraY;
             if (region == 0)
             {
                 if (canvas is not null) canvas.Fill(new Rectangle(screenX, screenY, 32, 32), Color.FromArgb(65, 220, 35, 35));
@@ -247,7 +249,8 @@ public sealed partial class MainForm
                 if (canvas is not null) canvas.Fill(new Rectangle(screenX, screenY, 1, 32), Color.FromArgb(150, 40, 220, 230));
                 else graphics.DrawLine(boundary!, screenX, screenY, screenX, screenY + 32);
             }
-            if (z > 0 && _gameplayPath.RegionAt(new CellCoordinate(x, z - 1)) != region)
+            // The cell drawn above this one is world row z + 1.
+            if (z + 1 < _gameplayPath.Height && _gameplayPath.RegionAt(new CellCoordinate(x, z + 1)) != region)
             {
                 if (canvas is not null) canvas.Fill(new Rectangle(screenX, screenY, 32, 1), Color.FromArgb(150, 40, 220, 230));
                 else graphics.DrawLine(boundary!, screenX, screenY, screenX + 32, screenY);
@@ -264,7 +267,7 @@ public sealed partial class MainForm
             foreach (var vent in _scenarioSimulation.PetraVents)
             {
                 var x = vent.Position.X * 32 - _cameraX;
-                var y = vent.Position.Z * 32 - _cameraY;
+                var y = CellPixelTop(vent.Position.Z) - _cameraY;
                 canvas.Ellipse(new Rectangle(x + 7, y + 7, 18, 18),
                     vent.HarvesterInstanceId is null ? Color.FromArgb(220, 230, 185, 40) : Color.FromArgb(220, 65, 230, 110),
                     thickness: 2, foreground: true);
@@ -280,7 +283,7 @@ public sealed partial class MainForm
         foreach (var vent in _scenarioSimulation.PetraVents)
         {
             var x = vent.Position.X * 32 - _cameraX;
-            var y = vent.Position.Z * 32 - _cameraY;
+            var y = CellPixelTop(vent.Position.Z) - _cameraY;
             graphics.DrawEllipse(vent.HarvesterInstanceId is null ? unclaimed : claimed, x + 7, y + 7, 18, 18);
             DrawMenuText(graphics, vent.HarvesterInstanceId is null ? "P7" : "P7+", new Rectangle(x + 6, y - 1, 24, 14), center: false, remap: Color.FromArgb(220, 230, 185, 40));
         }
@@ -298,14 +301,15 @@ public sealed partial class MainForm
         if (_activeCanvas is null) graphics.SetClip(new Rectangle(0, 0, 516, 458));
         using var unseen = _activeCanvas is null ? new SolidBrush(Color.Black) : null;
         var firstX = Math.Max(0, _cameraX / 32);
-        var firstZ = Math.Max(0, _cameraY / 32);
+        var firstRow = Math.Max(0, _cameraY / 32);
         var lastX = Math.Min(_gameplayMap.Width - 1, (_cameraX + 515) / 32);
-        var lastZ = Math.Min(_gameplayMap.Height - 1, (_cameraY + 457) / 32);
-        for (var z = firstZ; z <= lastZ; z++)
+        var lastRow = Math.Min(_gameplayMap.Height - 1, (_cameraY + 457) / 32);
+        for (var row = firstRow; row <= lastRow; row++)
         for (var x = firstX; x <= lastX; x++)
         {
+            var z = _gameplayMap.Height - 1 - row;
             if (_scenarioSimulation.IsCellVisibleToTeam(_localPlayerTeam, new CellCoordinate(x, z))) continue;
-            var bounds = new Rectangle(x * 32 - _cameraX, z * 32 - _cameraY, 32, 32);
+            var bounds = new Rectangle(x * 32 - _cameraX, row * 32 - _cameraY, 32, 32);
             if (_activeCanvas is { } canvas) canvas.Fill(bounds, Color.Black);
             else graphics.FillRectangle(unseen!, bounds);
         }
@@ -330,7 +334,7 @@ public sealed partial class MainForm
         using var border = canvas is null ? new Pen(borderColor, 2) : null;
         foreach (var cell in cells)
         {
-            var bounds = new Rectangle(cell.X * 32 - _cameraX + 1, cell.Z * 32 - _cameraY + 1, 30, 30);
+            var bounds = new Rectangle(cell.X * 32 - _cameraX + 1, CellPixelTop(cell.Z) - _cameraY + 1, 30, 30);
             if (canvas is not null)
             {
                 canvas.Fill(bounds, fillColor);
@@ -367,7 +371,7 @@ public sealed partial class MainForm
             !_buildingFootprints.TryResolveBuildingEntity(item.BuildingFaction!.Value, item.BuildingVariant!.Value, item.BuildingSlot!.Value, out entityId))
             return false;
 
-        var origin = new CellCoordinate((pointer.X + _cameraX) / 32, (pointer.Y + _cameraY) / 32);
+        var origin = CellAtPixel(pointer.X + _cameraX, pointer.Y + _cameraY);
         cells = _buildingFootprints.OccupiedCells(entityId, origin);
         if (cells.Count == 0) return false;
         valid = _gameplayMap is not null && _groundOccupancy is not null &&
@@ -419,7 +423,7 @@ public sealed partial class MainForm
         var position = ActorPosition(entity);
         var canvas = new Rectangle(
             position.XRaw / 8 - _cameraX + origin.X,
-            position.ZRaw / 8 - _cameraY + origin.Y,
+            WorldPixelY(position.ZRaw) - _cameraY + origin.Y,
             bitmap.Width,
             bitmap.Height);
         var localOpaque = AnimationOpaqueBounds(key, bitmap);
@@ -447,7 +451,8 @@ public sealed partial class MainForm
                 .Where(actor => !actor.IsDestroyed && actor.AttackTargetInstanceId is not null)
                 .Select(actor => actor.AttackTargetInstanceId!.Value)
                 .ToHashSet();
-            foreach (var entity in GameplayEntities().OrderBy(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
+            // Painter's order: higher on screen first, which is larger world Z.
+            foreach (var entity in GameplayEntities().OrderByDescending(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
             {
                 if (!TryGameplayActorVisual(entity, out var visual)) continue;
                 var actorState = visual.Actor;
@@ -459,7 +464,7 @@ public sealed partial class MainForm
                 var bitmap = visual.Bitmap;
                 var position = ActorPosition(entity);
                 var worldX = position.XRaw / 8;
-                var worldY = position.ZRaw / 8;
+                var worldY = WorldPixelY(position.ZRaw);
                 var opaque = visual.OpaqueBounds;
                 var centerX = opaque.Left + opaque.Width / 2;
                 if (_selectedEntityInstanceIds.Contains(entity.InstanceId))
@@ -518,7 +523,7 @@ public sealed partial class MainForm
             foreach (var projectile in _scenarioSimulation.Projectiles)
             {
                 var x = projectile.Position.XRaw / 8 - _cameraX;
-                var y = projectile.Position.ZRaw / 8 - projectile.HeightRaw / 8 - _cameraY;
+                var y = WorldPixelY(projectile.Position.ZRaw) - projectile.HeightRaw / 8 - _cameraY;
                 var candidate = _weaponEffects?.Bullet(projectile.WeaponId);
                 var rendered = false;
                 if (candidate is not null)
@@ -553,12 +558,12 @@ public sealed partial class MainForm
                 {
                     var points = _diagnosticPathCells.Select(cell => new Point(
                         cell.X * 32 + 16 - _cameraX,
-                        cell.Z * 32 + 16 - _cameraY)).ToArray();
+                        CellPixelTop(cell.Z) + 16 - _cameraY)).ToArray();
                     for (var index = 1; index < points.Length; index++)
                         canvas.Line(points[index - 1], points[index], Color.FromArgb(225, 255, 205, 55), thickness: 2, foreground: true);
                 }
                 var x = target.X * 32 - _cameraX;
-                var y = target.Z * 32 - _cameraY;
+                var y = CellPixelTop(target.Z) - _cameraY;
                 var marker = Color.FromArgb(80, 255, 255);
                 canvas.FillForeground(new Rectangle(x + 3, y + 3, 25, 2), marker);
                 canvas.FillForeground(new Rectangle(x + 3, y + 26, 25, 2), marker);
@@ -613,11 +618,11 @@ public sealed partial class MainForm
 
         var points = new List<Point>(destinations.Length + 1)
         {
-            new(ActorPosition(lead).XRaw / 8 - _cameraX, ActorPosition(lead).ZRaw / 8 - _cameraY),
+            new(ActorPosition(lead).XRaw / 8 - _cameraX, WorldPixelY(ActorPosition(lead).ZRaw) - _cameraY),
         };
         points.AddRange(destinations.Select(cell => new Point(
             cell.X * 32 + 16 - _cameraX,
-            cell.Z * 32 + 16 - _cameraY)));
+            CellPixelTop(cell.Z) + 16 - _cameraY)));
         for (var index = 1; index < points.Count; index++)
             canvas.Line(points[index - 1], points[index], Color.FromArgb(190, 92, 228, 255), foreground: true);
         for (var index = 0; index < destinations.Length; index++)
@@ -653,7 +658,7 @@ public sealed partial class MainForm
             var bitmap = AnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
             var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
-            canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, effect.Position.ZRaw / 8 - _cameraY + origin.Y);
+            canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + origin.Y);
         }
     }
 
@@ -675,7 +680,7 @@ public sealed partial class MainForm
             var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
             canvas.Draw(GpuBitmap(bitmap),
                 transport.Position.XRaw / 8 - _cameraX + origin.X,
-                transport.Position.ZRaw / 8 - transport.HeightRaw / 8 - _cameraY + origin.Y);
+                WorldPixelY(transport.Position.ZRaw) - transport.HeightRaw / 8 - _cameraY + origin.Y);
             if (!_showAssetNames) continue;
             using var font = new Font(FontFamily.GenericMonospace, 8, FontStyle.Regular, GraphicsUnit.Pixel);
             using var text = new SolidBrush(Color.FromArgb(245, 241, 200));
@@ -684,7 +689,7 @@ public sealed partial class MainForm
                 : string.Empty;
             graphics.DrawString($"transport #{transport.TransportEntityId}/{transport.InstanceId} · {transport.Phase}{pursuit} H{transport.HeightRaw} · {fileName}:{candidate.AnimationName}", font, text,
                 transport.Position.XRaw / 8 - _cameraX + 8,
-                transport.Position.ZRaw / 8 - transport.HeightRaw / 8 - _cameraY - 20);
+                WorldPixelY(transport.Position.ZRaw) - transport.HeightRaw / 8 - _cameraY - 20);
         }
     }
 
@@ -712,7 +717,7 @@ public sealed partial class MainForm
             var bitmap = AnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
             var origin = _animationOrigins.GetValueOrDefault($"{fileName}:{frame}");
-            canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, effect.Position.ZRaw / 8 - _cameraY + origin.Y);
+            canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + origin.Y);
         }
     }
 
@@ -845,4 +850,25 @@ public sealed partial class MainForm
             (int)Math.Round(previous.XRaw + (current.XRaw - previous.XRaw) * alpha),
             (int)Math.Round(previous.ZRaw + (current.ZRaw - previous.ZRaw) * alpha));
     }
+
+    // World/screen orientation. The engine works in the executable's world
+    // frame, where SCN placements and PTH rows share +Z, and +Z points up the
+    // screen: the native minimap handler inverts Z, and the MAP loader keeps a
+    // reversed row table. MAP tile rows are stored in screen order (row 0 at
+    // the top), so terrain is drawn as stored and the camera stays in screen
+    // pixels; only world positions and cells are mirrored here.
+
+    /// <summary>Screen-space pixel row (before the camera offset) of a world 8.8 Z.</summary>
+    private int WorldPixelY(int zRaw) => (MapCellHeight * FixedPointPosition.One - zRaw) / 8;
+
+    /// <summary>Screen-space pixel row of the top edge of a world cell row.</summary>
+    private int CellPixelTop(int cellZ) => (MapCellHeight - 1 - cellZ) * TerrainRasterizer.TileSize;
+
+    /// <summary>World cell row under a screen-space pixel row.</summary>
+    private int CellZAtPixel(int pixelY) => MapCellHeight - 1 - Math.Clamp(pixelY, 0, MapCellHeight * TerrainRasterizer.TileSize - 1) / TerrainRasterizer.TileSize;
+
+    /// <summary>World cell under a screen-space pixel.</summary>
+    private CellCoordinate CellAtPixel(int pixelX, int pixelY) => new(pixelX / TerrainRasterizer.TileSize, CellZAtPixel(pixelY));
+
+    private int MapCellHeight => _gameplayMap?.Height ?? _gameplayPath?.Height ?? 0;
 }

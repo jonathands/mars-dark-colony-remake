@@ -12,7 +12,14 @@ public enum CoarseRouteTermination
 
 public sealed record CoarseRegionRoute(IReadOnlyList<byte> Regions, CoarseRouteTermination Termination);
 
-/// <summary>Decoded PTH route table and bottom-up navigation-region grid.</summary>
+/// <summary>
+/// Decoded PTH route table and navigation-region grid. The loader at
+/// <c>0x442B7C</c> reads region rows in file order into navigation rows
+/// 0..height-1 without reversal, and SCN placements use the same world frame:
+/// across the installed corpus, no placed ground unit stands on a region-0
+/// cell in this orientation. (MAP tile rows, by contrast, are stored in screen
+/// order, with world +Z pointing up the screen.)
+/// </summary>
 public sealed class PathRegionMap
 {
     public const int RouteTableSize = 256 * 256;
@@ -22,13 +29,14 @@ public sealed class PathRegionMap
         Width = width;
         Height = height;
         Routes = routes;
-        RegionsBottomUp = regions;
+        Regions = regions;
     }
 
     public int Width { get; }
     public int Height { get; }
     public ReadOnlyMemory<byte> Routes { get; }
-    public ReadOnlyMemory<byte> RegionsBottomUp { get; }
+    /// <summary>Region bytes in file order: index <c>z * Width + x</c> in world coordinates.</summary>
+    public ReadOnlyMemory<byte> Regions { get; }
 
     public static PathRegionMap Load(string path, int width, int height) => Parse(File.ReadAllBytes(path), width, height);
 
@@ -43,8 +51,7 @@ public sealed class PathRegionMap
     public byte RegionAt(CellCoordinate cell)
     {
         if ((uint)cell.X >= (uint)Width || (uint)cell.Z >= (uint)Height) throw new ArgumentOutOfRangeException(nameof(cell));
-        var bottomUpRow = Height - 1 - cell.Z;
-        return RegionsBottomUp.Span[bottomUpRow * Width + cell.X];
+        return Regions.Span[cell.Z * Width + cell.X];
     }
 
     public byte NextRegion(byte sourceRegion, byte targetRegion) => Routes.Span[sourceRegion * 256 + targetRegion];

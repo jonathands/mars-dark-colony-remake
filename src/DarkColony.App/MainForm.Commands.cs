@@ -42,7 +42,7 @@ public sealed partial class MainForm
                 return;
             }
         }
-        var target = new CellCoordinate((point.X + _cameraX) / 32, (point.Y + _cameraY) / 32);
+        var target = CellAtPixel(point.X + _cameraX, point.Y + _cameraY);
         if (target.X < 0 || target.Z < 0 || target.X >= _gameplayMap.Width || target.Z >= _gameplayMap.Height) return;
         if (_gameplayCommandMode == GameplayCommandMode.PlaceBuilding)
         {

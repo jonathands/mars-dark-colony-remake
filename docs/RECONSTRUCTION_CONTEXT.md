@@ -334,10 +334,16 @@ one harvester may own or prepare on a vent.
   building-drop intent paths; their authoritative routing and playback belong
   to `ScenarioSimulation`, not the HUD.
 - PTH decoding validates all 101 installed files as a 65,536-byte next-region
-  table plus a bottom-up map-sized region grid. Coordinate access performs the
-  proven vertical conversion. Coarse chains terminate explicitly on target,
-  zero, repetition, or 256 steps. F4 visualizes zero and region boundaries;
-  neither the overlay nor the engine calls region zero definitively blocked.
+  table plus a map-sized region grid. World orientation (corrected
+  2026-10-04): the loader `0x442B7C` fills navigation rows in file order, and
+  SCN placements share that frame (no placed ground unit of the corpus lands
+  on a region-0 cell this way, against 564 with the former bottom-up reading).
+  MAP tile rows are stored in screen order instead, with world +Z pointing up
+  the screen: the native minimap handler inverts Z, the MAP loader keeps a
+  reversed row table, and only the mirrored reading puts SCN vents on their
+  crater art. The engine works in the world frame; the app mirrors world Z
+  when drawing and picking. Coarse chains terminate explicitly on target,
+  zero, repetition, or 256 steps. F4 visualizes zero and region boundaries.
 - The gamestat field after X/Y dimensions is now correctly named movement
   class (Bat is `2`; ground critters are `0`), and the following field is
   health. The executable-confirmed autonomous spawn validator requires class

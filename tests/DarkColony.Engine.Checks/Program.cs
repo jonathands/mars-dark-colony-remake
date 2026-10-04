@@ -1240,16 +1240,18 @@ Check("world intents reject past and current ticks", () =>
     Equal(true, rejected);
 });
 
-Check("PTH converts bottom-up regions and follows coarse next nodes", () =>
+Check("PTH reads regions in file order and follows coarse next nodes", () =>
 {
     var data = new byte[PathRegionMap.RouteTableSize + 4];
     data[1 * 256 + 3] = 2;
     data[2 * 256 + 3] = 3;
     new byte[] { 3, 4, 1, 2 }.CopyTo(data, PathRegionMap.RouteTableSize);
     var path = PathRegionMap.Parse(data, 2, 2);
-    Equal((byte)1, path.RegionAt(new CellCoordinate(0, 0)));
-    Equal((byte)2, path.RegionAt(new CellCoordinate(1, 0)));
-    Equal((byte)3, path.RegionAt(new CellCoordinate(0, 1)));
+    // 0x442B7C fills navigation rows 0..height-1 in file order.
+    Equal((byte)3, path.RegionAt(new CellCoordinate(0, 0)));
+    Equal((byte)4, path.RegionAt(new CellCoordinate(1, 0)));
+    Equal((byte)1, path.RegionAt(new CellCoordinate(0, 1)));
+    Equal((byte)2, path.RegionAt(new CellCoordinate(1, 1)));
     var route = path.BuildCoarseRoute(1, 3);
     Equal(CoarseRouteTermination.ReachedTarget, route.Termination);
     Equal(new byte[] { 1, 2, 3 }, route.Regions.ToArray());
@@ -1259,8 +1261,8 @@ Check("PTH converts bottom-up regions and follows coarse next nodes", () =>
 Check("spawn validity separates ground and alternate movement grids", () =>
 {
     var data = new byte[PathRegionMap.RouteTableSize + 9];
-    // Map-order rows become: 0 1 1 / 1 1 1 / 1 1 1.
-    new byte[] { 1, 1, 1, 1, 1, 1, 0, 1, 1 }.CopyTo(data, PathRegionMap.RouteTableSize);
+    // File-order rows: 0 1 1 / 1 1 1 / 1 1 1.
+    new byte[] { 0, 1, 1, 1, 1, 1, 1, 1, 1 }.CopyTo(data, PathRegionMap.RouteTableSize);
     var path = PathRegionMap.Parse(data, 3, 3);
     var ground = new CellOccupancy();
     var alternate = new CellOccupancy();
