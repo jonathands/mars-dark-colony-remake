@@ -47,7 +47,7 @@ holds rather than what is being tested.
 | `data` | Reads the original installation; skipped without one. |
 | `slow` | Takes seconds: whole-scenario runs. |
 | `serial` | Runs alone after the others, because it waits on sockets with timeouts. |
-| `fast` | Derived: neither `data` nor `slow`. These run anywhere, in CI too. |
+| `fast` | Derived: neither `data` nor `slow`. These run without the original game. |
 
 ## Options
 
@@ -74,17 +74,16 @@ holds rather than what is being tested.
 The rest of the suite plan, in order. Phase 1 and the catalog sweep are done.
 
 1. **Runner** (done, 2026-10-04): topic files, tags, parallel runs, timing, JUnit. The full suite went from about 85 s to about 35 s.
-2. **CI**: GitHub Actions builds with zero warnings and runs `--tag fast` on every push and pull request. The `data` checks stay local, because the original game cannot be in the public repository.
-3. **Engine gaps**:
+2. **Engine gaps**:
    - Network robustness: a full lobby, the host leaving, malformed or oversized messages, slow peers.
    - Fuzzing of every file reader with fixed seeds (SCN, SPR, MAP/PTH, TRO, AVI, ISO9660, CUE, `.dcsave`). A bad file must give a controlled error.
-4. **Simulation invariants and soak runs**: the catalog sweep's invariants checked during every scripted scenario, and long computer-only War runs.
-5. **Wider determinism**:
+3. **Simulation invariants and soak runs**: the catalog sweep's invariants checked during every scripted scenario, and long computer-only War runs.
+4. **Wider determinism**:
    - Short goldens for all installed scenarios.
    - Save and load at a random tick equals an uninterrupted run.
    - Debug equals Release.
    - Lockstep with four peers and random orders.
    - A digest per subsystem, to show where a divergence starts.
-6. **App**: move testable logic out of `MainForm` (screen flow, hit-testing, lobby state), compare rendered frames with WARP goldens, and make the two-instance network run a check.
-7. **Performance**: milliseconds per update and allocations on the heaviest maps, local only.
-8. **Native comparison**: read-only memory traces of `dc.exe` on missions that need no input, compared with the port at the same updates.
+5. **App**: move testable logic out of `MainForm` (screen flow, hit-testing, lobby state), compare rendered frames with WARP goldens, and make the two-instance network run a check.
+6. **Performance**: milliseconds per update and allocations on the heaviest maps, local only.
+7. **Native comparison**: read-only memory traces of `dc.exe` on missions that need no input, compared with the port at the same updates.
