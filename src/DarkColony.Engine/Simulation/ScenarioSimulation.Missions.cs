@@ -195,12 +195,10 @@ public sealed partial class ScenarioSimulation
                     AssignScriptWaypoints(v);
                     break;
                 case MissionActionType.Reinforce2:
-                case MissionActionType.Reinforce:
-                    // reinforce lands a transport (0x418F4C, command 13) that
-                    // unloads later; the port places its cargo at once.
-                    if (action.Type == MissionActionType.Reinforce)
-                        unmodeled.Add(new MissionUnmodeledActionEvent(trigger.Slot, action.Type, v));
                     SpawnScriptUnits(v);
+                    break;
+                case MissionActionType.Reinforce:
+                    StartMissionTransport(v, pendingMissionTransports);
                     break;
                 case MissionActionType.NewRate:
                     SetVentRate(new CellCoordinate(v[1], v[2]), v[0]);

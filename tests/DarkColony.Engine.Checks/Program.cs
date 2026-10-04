@@ -2427,8 +2427,23 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         }
         // c = ticks >> 4 first exceeds 0 at the norm pass of tick 16.
         Equal(1, messages.Single().Index);
-        Equal(before + 5, simulation.Actors.Count(actor => actor.Seed.Team == 0));
         Equal(0, simulation.MissionLives[8]);
+        // reinforce (0x43E1A4 -> 0x418F4C): a drop ship (team 0 is race 0)
+        // descends, then unloads one unit per update.
+        var transport = simulation.BattlefieldTransports.Single();
+        Equal(92, transport.TransportEntityId);
+        Equal(0, transport.TeamId);
+        Equal(before, simulation.Actors.Count(actor => actor.Seed.Team == 0));
+        var arrivals = new List<ulong>();
+        for (var tick = 0; tick < 400 && simulation.Actors.Count(actor => actor.Seed.Team == 0) < before + 5; tick++)
+        {
+            var count = simulation.Actors.Count(actor => actor.Seed.Team == 0);
+            simulation.Step([]);
+            if (simulation.Actors.Count(actor => actor.Seed.Team == 0) > count) arrivals.Add(simulation.TickCount);
+        }
+        Equal(before + 5, simulation.Actors.Count(actor => actor.Seed.Team == 0));
+        Equal(5, arrivals.Count);
+        Equal(4UL, arrivals[^1] - arrivals[0]);
         var p7 = simulation.ResourceForTeam(0);
         for (var tick = 0; tick < 48; tick++) simulation.Step([]);
         Equal(p7, simulation.ResourceForTeam(0));

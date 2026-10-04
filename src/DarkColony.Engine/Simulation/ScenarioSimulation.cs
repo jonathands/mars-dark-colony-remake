@@ -65,7 +65,6 @@ public sealed partial class ScenarioSimulation
     private int petraPulseTicks;
     private int nextProjectileInstanceId = 1;
     private uint inspireRandomState = 0x494e5350; // "INSP"
-    private uint transportRandomState = 0x5452414e; // "TRAN"
     private int nextActorInstanceId;
     private int nextTransportInstanceId = 1;
     private readonly List<SimulatedActor> actors;
@@ -109,6 +108,8 @@ public sealed partial class ScenarioSimulation
     private readonly int[] passiveRates = [3, 3, 3, 3, 3, 3, 3, 3];
     private readonly List<MissionMessageEvent> pendingMissionMessages = [];
     private readonly List<MissionUnmodeledActionEvent> pendingUnmodeledMissionActions = [];
+    // Transports that mission actions started this update (norm and trip triggers).
+    private readonly List<BattlefieldTransportEvent> pendingMissionTransports = [];
 
     private ScenarioSimulation(
         PathRegionMap path,
@@ -413,6 +414,7 @@ public sealed partial class ScenarioSimulation
         TroopCap = ComputeTroopCap();
         pendingMissionMessages.Clear();
         pendingUnmodeledMissionActions.Clear();
+        pendingMissionTransports.Clear();
         // 0x41988C stamps visibility while the clock is still zero.
         EnsureVision();
         LastDayNightChanges = DayNight.Step() ? [new DayNightChangedEvent(DayNight.Phase)] : [];
@@ -455,7 +457,7 @@ public sealed partial class ScenarioSimulation
         LastDestroyedActors = events.Destroyed;
         LastWeaponFires = events.Fired;
         LastProjectileImpacts = events.Impacts;
-        LastBattlefieldTransports = events.BattlefieldTransports;
+        LastBattlefieldTransports = [.. pendingMissionTransports, .. events.BattlefieldTransports];
         LastAttackMoveAcquisitions = events.AttackMoveAcquisitions;
         LastIdleAcquisitions = events.IdleAcquisitions;
         LastMissionMessages = pendingMissionMessages.ToArray();

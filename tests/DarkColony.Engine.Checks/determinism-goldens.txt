@@ -1,11 +1,11 @@
 # Determinism goldens: scenario tick running-digest. Regenerate only for an intended behavior
 # change and explain it in the commit: dotnet run --project tests/DarkColony.Engine.Checks -- --update-goldens
 human/human01 1 746185f461f7cc15
-human/human01 100 00b443e8af986047
-human/human01 300 c88c605fcc5b58df
-human/human01 600 be814333e8f852c3
-human/human01 900 2511cf823faa74f2
-human/human01 1200 49de4d1ee8e9356e
+human/human01 100 673d23276936ce56
+human/human01 300 9f357af35d8d0640
+human/human01 600 b59c5ac5eced12d1
+human/human01 900 d0f05727bf9b7584
+human/human01 1200 18b9de879bfe09e2
 human/human06 1 5070febf05f1e99a
 human/human06 100 2563101d35936719
 human/human06 300 06dc48bfd627f71f
@@ -19,11 +19,11 @@ human/human15 600 11de64de17c68c27
 human/human15 900 fd5aa320863a3a5f
 human/human15 1200 33e030db4e23a75a
 alien/alien06 1 82643d12c72e46ba
-alien/alien06 100 da583d99e748587c
-alien/alien06 300 7c5c296e106bf17b
-alien/alien06 600 8db73cb28ea60cce
-alien/alien06 900 fadd53d6581aad17
-alien/alien06 1200 ec9dc981fd58aa69
+alien/alien06 100 32d4335bcc4b9b5c
+alien/alien06 300 6e36579b365060cf
+alien/alien06 600 e1fc1c701cefbcff
+alien/alien06 900 fd327813656dcada
+alien/alien06 1200 9abb17e88b8d79af
 alien/alien13 1 3a1066553e104eec
 alien/alien13 100 cca9d297fbf10ad6
 alien/alien13 300 537c8a49b4f12953

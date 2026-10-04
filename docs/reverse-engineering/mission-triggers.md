@@ -183,7 +183,7 @@ Per-type statistics (4 per player and entity type):
 | Statistics 1, 2, 3, 5, 6, 8, 9, 10 and per-type 0-3 | confirmed writers. The corpus scripts read only stats 0, 1, 2, 3, 6 and 10 |
 | Statistic 11 | not modeled. Only the side sum `0x41A830` reads it. The word `+0x1934` (four words from `+0x1934`) is copied from interface state (`0x40AFBB`), and the update `0x419AC7` resets an entry to -1 when its actor dies, then zeroes stat 11 of the player whose index equals the entry's index (an apparent bug in the original). What sets the words in play was not traced |
 | Lobby options in stat 0 | confirmed: session start `0x40123C` sets them, and this build never changes the defaults. Players 1/2 hold the vent rate/money multipliers (4 << 6 = 256); players 3-6 hold 0, so the multiplayer vent-respawn scripts (`s(3,0)==1`) never fire |
-| `reinforce` transport flight | provisional: cargo placed at once like `reinforce2` |
+| `reinforce` transport flight | implemented: `0x418F4C` picks DROP (92) or, for a race-1 team, SAUC (93) on team 8, starting one cell off the target per axis (shared stream bit 0). The payload words are `type << 8 | count`. The transport descends, then unloads one unit per update on the target cell or the nearest free ring cell (`0x418D5F`, `0x41B4A0`), then leaves. A first word with high byte 0xff (abduct) collects actors instead. The eight per-team transport slots (`+0xE13`) are not limited |
 | Vent rate/reservoir multipliers | confirmed: `newrate` uses stat (1,0) and `setmoney` stat (2,0) (`0x41A538` with AL = 0), both 256 = x1 |
 | `waypoint` state 9 | provisional: one pass through the points |
 | `ally` alliance bits, `vision`, `abduct`, `artifact`, `aimsg`, `nopickup` | not modeled; reported as `LastUnmodeledMissionActions` |

@@ -49,12 +49,18 @@ public sealed class BattlefieldTransportState
         Facing = new FacingState(initialFacing);
         this.pendingEntityIds = pendingEntityIds.ToList();
         this.pendingAbducteeInstanceIds = pendingAbducteeInstanceIds.ToList();
+        Abducts = this.pendingAbducteeInstanceIds.Count > 0;
     }
 
     public int InstanceId { get; }
     public int SourceActorInstanceId { get; }
     public int TransportEntityId { get; }
     public int TeamId { get; }
+    /// <summary>
+    /// The payload starts with a word whose high byte is 0xff (<c>0x418B58</c>):
+    /// the transport collects actors instead of unloading new ones.
+    /// </summary>
+    public bool Abducts { get; }
     public CellCoordinate Target { get; }
     public FixedPointPosition Position { get; internal set; }
     public int BaseHeightRaw { get; }
@@ -73,5 +79,5 @@ public sealed class BattlefieldTransportState
     public bool IsPursuing => PursuitTarget is not null;
     internal IReadOnlyList<int> PendingEntityIds => pendingEntityIds;
     internal IReadOnlyList<int> PendingAbducteeInstanceIds => pendingAbducteeInstanceIds;
-    internal int PayloadCount => TransportEntityId == 92 ? pendingEntityIds.Count : pendingAbducteeInstanceIds.Count;
+    internal int PayloadCount => Abducts ? pendingAbducteeInstanceIds.Count : pendingEntityIds.Count;
 }

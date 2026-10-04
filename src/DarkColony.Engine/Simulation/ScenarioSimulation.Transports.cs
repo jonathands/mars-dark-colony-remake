@@ -29,7 +29,7 @@ public sealed partial class ScenarioSimulation
             var payload = new List<int> { 0, 0 };
             if (weapon.ProjectileMode >= 6) payload.Add(2);
             if (weapon.ProjectileMode >= 7) payload.Add(3);
-            StartBattlefieldTransport(source, 92, center, payload, [], events);
+            StartBattlefieldTransport(source.Seed.InstanceId, source.Seed.Team, 92, center, payload, [], events);
             return true;
         }
 
@@ -57,35 +57,53 @@ public sealed partial class ScenarioSimulation
         foreach (var group in abductees.Chunk(3))
         {
             var ids = group.Select(candidate => candidate.Seed.InstanceId).ToArray();
-            StartBattlefieldTransport(source, 93, center, [], ids, events);
+            StartBattlefieldTransport(source.Seed.InstanceId, source.Seed.Team, 93, center, [], ids, events);
         }
         return true;
     }
 
+    /// <summary>
+    /// <c>0x418F4C</c>. The transport is DROP (92), or SAUC (93) when the team
+    /// plays race 1 (<c>0x41903B</c>). It starts one cell off the target cell
+    /// center on each axis, one shared-stream draw per axis: bit 0 picks -1 or
+    /// +1 (<c>0x41906F</c>). Its units belong to <paramref name="teamId"/>.
+    /// </summary>
     private void StartBattlefieldTransport(
-        SimulatedActor source,
+        int sourceActorInstanceId,
+        int teamId,
         int transportEntityId,
         CellCoordinate target,
         IReadOnlyList<int> reinforcementEntityIds,
         IReadOnlyList<int> abducteeInstanceIds,
         ICollection<BattlefieldTransportEvent> events)
     {
-        // 0x41906F..0x4190E5 consumes two random-table entries, masks each
-        // mixed low bit, and produces target center +/- one complete cell.
-        // The original table index is global; this deterministic stream keeps
-        // the recovered two-way offset replayable until shared RNG parity.
-        var xOffset = (NextTransportRandom() & 1) == 0 ? -FixedPointPosition.One : FixedPointPosition.One;
-        var zOffset = (NextTransportRandom() & 1) == 0 ? -FixedPointPosition.One : FixedPointPosition.One;
+        var xOffset = (NextNativeRandom() & 1) == 0 ? -FixedPointPosition.One : FixedPointPosition.One;
+        var zOffset = (NextNativeRandom() & 1) == 0 ? -FixedPointPosition.One : FixedPointPosition.One;
         var position = FixedPointPosition.AtCellCenter(target).AddRaw(xOffset, zOffset);
         var baseHeight = transportEntityId == 93 ? NativeSaucerBaseHeightRaw : NativeDropShipBaseHeightRaw;
         var transportDefinition = EntityDefinitionFor(transportEntityId);
-        var state = new BattlefieldTransportState(nextTransportInstanceId++, source.Seed.InstanceId,
-            transportEntityId, source.Seed.Team, target, position, baseHeight,
+        var state = new BattlefieldTransportState(nextTransportInstanceId++, sourceActorInstanceId,
+            transportEntityId, teamId, target, position, baseHeight,
             transportDefinition.InitialFacing,
             reinforcementEntityIds, abducteeInstanceIds);
         battlefieldTransports.Add(state);
         events.Add(new BattlefieldTransportEvent(BattlefieldTransportEventKind.Started, state.InstanceId,
-            source.Seed.InstanceId, transportEntityId, target, [], []));
+            sourceActorInstanceId, transportEntityId, target, [], []));
+    }
+
+    /// <summary>
+    /// Mission action <c>reinforce t x z (type count)x5</c> (<c>0x43E1A4</c>):
+    /// a transport of team t's race flies the cargo in. It unloads one unit per
+    /// update, then leaves.
+    /// </summary>
+    private void StartMissionTransport(IReadOnlyList<int> values, ICollection<BattlefieldTransportEvent> events)
+    {
+        var team = values[0];
+        var cargo = new List<int>();
+        for (var pair = 0; pair < 5; pair++)
+            for (var unit = 0; unit < values[4 + pair * 2]; unit++) cargo.Add(values[3 + pair * 2]);
+        var transportEntityId = teamRaces.GetValueOrDefault(team) == 1 ? 93 : 92;
+        StartBattlefieldTransport(-1, team, transportEntityId, new CellCoordinate(values[1], values[2]), cargo, [], events);
     }
 
     private void UpdateBattlefieldTransports(ICollection<BattlefieldTransportEvent> events)
@@ -147,7 +165,7 @@ public sealed partial class ScenarioSimulation
                 // Saucer payload word zero has high byte 0xff. State 21 treats
                 // it as a header, advances the payload cursor, and returns
                 // before inspecting the first victim on the following update.
-                if (transport.TransportEntityId == 93 && !transport.PayloadHeaderProcessed)
+                if (transport.Abducts && !transport.PayloadHeaderProcessed)
                 {
                     transport.PayloadHeaderProcessed = true;
                     continue;
@@ -155,7 +173,7 @@ public sealed partial class ScenarioSimulation
 
                 if (transport.PayloadIndex < transport.PayloadCount)
                 {
-                    if (transport.TransportEntityId == 92)
+                    if (!transport.Abducts)
                     {
                         var entityId = transport.PendingEntityIds[transport.PayloadIndex++];
                         var spawned = TrySpawnTransportPayload(entityId, transport.TeamId, transport.Target, out var instanceId)
@@ -230,20 +248,17 @@ public sealed partial class ScenarioSimulation
         transport.PursuitTarget = target;
     }
 
-    private uint NextTransportRandom()
-    {
-        transportRandomState = unchecked(transportRandomState * 214013 + 2531011);
-        return transportRandomState >> 16;
-    }
-
+    /// <summary>
+    /// <c>0x418D5F</c>: the unit appears on the target cell when it is free,
+    /// otherwise on the first free cell of the square rings (<c>0x41B4A0</c>).
+    /// </summary>
     private bool TrySpawnTransportPayload(int entityId, int teamId, CellCoordinate center, out int instanceId)
     {
         instanceId = 0;
         if ((uint)entityId >= (uint)entityDefinitions.Count) return false;
         var definition = EntityDefinitionFor(entityId);
         var occupancy = definition.MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
-        var validator = new SpawnCellValidator(path, GroundOccupancy, AlternateOccupancy);
-        var cell = validator.FindNearestValid(center, definition.MovementClass);
+        var cell = FindNativeFreeCell(center, definition.MovementClass);
         if (cell is null) return false;
         instanceId = nextActorInstanceId++;
         if (!occupancy.TryClaim(instanceId, [cell.Value])) return false;
