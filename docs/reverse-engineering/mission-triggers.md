@@ -231,5 +231,5 @@ checks without declared cities skip the slot 4 test.
 | `aimsg` | not modeled; reported as `LastUnmodeledMissionActions` |
 | `u(i)` | implemented (`ScriptWords`) |
 | `newtype` | implemented: only the type byte changes, so the health stays. The port keeps the original identity and sets the form override, which every rule reads through `EffectiveDefinition` |
-| Bail delay | provisional: 152 ticks for the native 10,000 ms |
+| Bail delay | implemented: `bail` sets world `+0x471A9` and a deadline of `timeGetTime() + 10,000` (`0x43D973`). The main loop (`0x4011FA`) ends the game once the wall clock passes it, so the world keeps running and a pause does not stop the countdown; a second `bail` moves the deadline. The engine records the request tick; the app counts 10 s of real time, and headless hosts use 152 updates (the default 66 ms interval) |
 | Malformed-condition stack floor | confirmed: the evaluator puts a -1 sentinel word below its stack (`0x43CF4C`). In human09's trigger 1 the malformed `(b(1,3)&&==0)` leaves the chain one operand short, so the last `&&` reads the sentinel and keeps the rest; with a 0 floor the mission could never end. Deeper reads would hit unrelated stack memory; the corpus has none |

@@ -94,6 +94,8 @@ public sealed partial class MainForm : Form
     private IReadOnlyList<ScenarioTrigger> _scenarioTriggers = [];
     private ScenarioMissionText? _missionText;
     private bool _missionOutcomeReported;
+    private MissionOutcome? _bailOutcome;
+    private long _bailRequestedAtMilliseconds;
     private int _campaignMission = 1;
     private MissionOutcome? _debriefOutcome;
     private string _debriefText = string.Empty;

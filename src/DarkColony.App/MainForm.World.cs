@@ -199,6 +199,7 @@ public sealed partial class MainForm
             var missionScript = MissionScript.LoadForScenario(_installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.scn"));
             _scenarioSimulation = ScenarioSimulation.Create(definition, _gameplayPath, rules, missionScript, _gameplayMap);
             _missionOutcomeReported = false;
+            _bailOutcome = null;
             _previousActorRenderPositions.Clear();
             _groundOccupancy = _scenarioSimulation.GroundOccupancy;
             _alternateOccupancy = _scenarioSimulation.AlternateOccupancy;

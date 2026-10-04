@@ -9,11 +9,18 @@ namespace DarkColony.Engine.Simulation;
 /// <summary>
 /// A mission's end: <c>bail a b</c> stores a in stat (0,0) and b in stat (7,0).
 /// In the corpus a = 0 is a victory (text <c>.001</c>) and a = 1 a defeat whose
-/// text is <c>.00b</c>.
+/// text is <c>.00b</c>. The game ends <see cref="ScenarioSimulation.BailDelayMilliseconds"/>
+/// of wall-clock time after the request; the world keeps running meanwhile.
 /// </summary>
-public sealed record MissionOutcome(int Result, int OutcomeText, ulong EndsAtTick)
+public sealed record MissionOutcome(int Result, int OutcomeText, ulong RequestedAtTick)
 {
     public bool Victory => Result == 0;
+
+    /// <summary>
+    /// The update at which the delay runs out when every update takes the
+    /// default 66 ms (<c>0x42</c>), for hosts without a wall clock.
+    /// </summary>
+    public ulong EndsAtDefaultSpeedTick => RequestedAtTick + ScenarioSimulation.BailDelayTicksAtDefaultSpeed;
 }
 
 /// <summary>A <c>msg</c> action: line <c>Index</c> of the scenario's <c>.msg</c> text and its display fields.</summary>
@@ -36,8 +43,14 @@ public sealed partial class ScenarioSimulation
     public const int PlayerStatCount = 12;
     /// <summary>Entity types per player in the type statistics (<c>0x495860</c>).</summary>
     public const int TypeStatEntities = 0x6e;
-    /// <summary><c>bail</c> sets the game-over time 10,000 ms ahead (<c>0x43D978</c>); 152 world updates of 66 ms.</summary>
-    public const int BailDelayTicks = 152;
+    /// <summary>
+    /// <c>bail</c> sets world <c>+0x471A9</c> and a deadline of <c>timeGetTime() + 10,000</c>
+    /// (<c>0x43D973</c>); the main loop (<c>0x4011FA</c>) ends the game once the
+    /// wall clock passes it, paused or not. Another <c>bail</c> moves the deadline.
+    /// </summary>
+    public const int BailDelayMilliseconds = 10_000;
+    /// <summary>The delay in world updates at the default 66 ms interval: ceil(10,000 / 66).</summary>
+    public const int BailDelayTicksAtDefaultSpeed = (BailDelayMilliseconds + 65) / 66;
 
     public MissionOutcome? Outcome { get; private set; }
     public IReadOnlyList<MissionMessageEvent> LastMissionMessages { get; private set; } = [];
@@ -179,7 +192,7 @@ public sealed partial class ScenarioSimulation
                 case MissionActionType.Bail:
                     playerStats[0, 0] = v[0];
                     playerStats[7, 0] = v[1];
-                    Outcome = new MissionOutcome(v[0], v[1], simulationTicks + BailDelayTicks);
+                    Outcome = new MissionOutcome(v[0], v[1], simulationTicks);
                     break;
                 case MissionActionType.SetLifes:
                     if ((uint)v[0] < MissionScript.TriggerSlots)

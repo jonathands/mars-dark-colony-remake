@@ -205,11 +205,17 @@ public sealed partial class MainForm
             // msg: line N of the scenario's .msg text.
             _status = _missionText?.Messages.TryGetValue(message.Index, out var line) == true ? line : $"Mission message {message.Index}.";
         }
-        if (_scenarioSimulation.Outcome is { } outcome && _scenarioSimulation.TickCount >= outcome.EndsAtTick &&
-            !_missionOutcomeReported)
+        if (_scenarioSimulation.Outcome is { } outcome && !ReferenceEquals(outcome, _bailOutcome))
+        {
+            // Each bail restarts the 10 s wall-clock countdown (0x43D973).
+            _bailOutcome = outcome;
+            _bailRequestedAtMilliseconds = Environment.TickCount64;
+        }
+        if (_bailOutcome is { } bail && !_missionOutcomeReported &&
+            Environment.TickCount64 - _bailRequestedAtMilliseconds >= ScenarioSimulation.BailDelayMilliseconds)
         {
             _missionOutcomeReported = true;
-            ShowMissionDebrief(outcome);
+            ShowMissionDebrief(bail);
         }
         foreach (var production in _scenarioSimulation.LastUnitProductions)
         {
