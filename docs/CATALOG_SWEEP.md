@@ -23,7 +23,7 @@ Each race runs these steps in order:
 3. **Research.** Every research item is ordered from a structure that offers it, as the research tab would. It must complete, and a weapon or armor level must reach the unit.
 4. **Units.** Each trained unit, then every other mobile entity of the race, spawned directly (commanders, artifacts, drones, critters, transports), goes through four tests:
    - **Move.** It is ordered eight cells away, to a cell it can reach. It must arrive.
-   - **Attack.** An enemy infantry unit is placed three cells away, and the unit is ordered to attack it. An armed unit must damage it within 600 updates. An unarmed one must have the order refused as `Unarmed`.
+   - **Attack.** An enemy harvester is placed three cells away, in a cell a ground unit's region routes to, and the unit is ordered to attack it. A harvester is unarmed, so a fragile attacker is not killed first. An armed unit must damage it within 600 updates. An unarmed one must have the order refused as `Unarmed`, and a weapon without a range (an artifact's) is skipped.
    - **Special.** Each special must take effect:
      - Engineer and Sloom lay a mine.
      - Turret builder and Xenowort deploy their tower.
@@ -52,9 +52,7 @@ rule is not yet recovered. The sweep prints each one as `KNOWN GAP` without
 failing. It fails when a listed gap stops occurring, so that the list and its
 document can be updated.
 
-| Gap | Units | Document |
-| --- | --- | --- |
-| A range-1 weapon never fires | Human GRND, AIRD, DROA, SHRI; Gray SALY, AVII, RNAT, SPID, GRUB | [combat-range.md](reverse-engineering/combat-range.md) |
+None are open.
 
 ## Bugs it found (2026-10-04)
 
@@ -64,3 +62,4 @@ document can be updated.
 | A level-2 upgrade whose only prerequisite is its level 1 was offered on no structure, so it could never be researched. This blocked items 64, 66, 76 and 78 (Human SCGM and BARR) and 46, 48, 50 and 52 (Gray ORTU and ATRIL). | `ScenarioSimulation.StructureOffersResearch` offers it where its prerequisite upgrade is offered. |
 | A unit that drew an idle fidget and then received an attack order never turned toward its target, so it never fired. | A player order replaces the command stack, and the pending fidget goes with it. |
 | BARR's and ATRIL's Ground Attack was refused, because value 29 names weapon 0. | State 18 fires their ordinary weapon at the point until another order (`0x417EFD`, `0x41806C`). |
+| No range-1 weapon ever fired. The port held every shot to a strict 8.8 range test, and an adjacent cell is exactly one range away. This affected the Human drones (GRND, AIRD, DROA, SHRI) and the Gray critters (SALY, AVII, RNAT, SPID, GRUB). | Ring-scan targets are fired at within the weapon's rings, and ordered targets are chased by the whole-cell test, then fired at from the rings once the chase can get no closer ([combat-range.md](reverse-engineering/combat-range.md)). |

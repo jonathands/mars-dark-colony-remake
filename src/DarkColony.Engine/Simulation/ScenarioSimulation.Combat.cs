@@ -268,31 +268,44 @@ public sealed partial class ScenarioSimulation
         _ = StartSegment(attacker);
     }
 
-    private CellCoordinate? FindAttackApproachCell(SimulatedActor attacker, SimulatedActor target, WeaponDefinition weapon)
+    /// <summary>
+    /// The free cell closest to the attacker from which the target is in
+    /// chase range (<c>0x415AA5</c>: whole cells, strict). The port's local
+    /// search has no partial routes to an occupied cell, so the chase heads
+    /// for this cell. When there is none, as for any range-1 weapon, the
+    /// native chase ends beside the target and the idle scan fires. The
+    /// fallback is therefore the closest free cell from which the target lies
+    /// within the weapon's rings, unless <paramref name="chaseOnly"/> is set.
+    /// </summary>
+    private CellCoordinate? FindAttackApproachCell(SimulatedActor attacker, SimulatedActor target, WeaponDefinition weapon, bool chaseOnly = false)
     {
-        var occupancy = EffectiveDefinition(attacker).MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
-        var maxRadius = Math.Max(1, weapon.Range);
-        CellCoordinate? best = null;
-        var bestDistance = long.MaxValue;
-        for (var radius = 1; radius <= maxRadius; radius++)
-        for (var z = -radius; z <= radius; z++)
-        for (var x = -radius; x <= radius; x++)
+        var range = weapon.Range;
+        return ClosestFreeCell((x, z) => (long)x * x + (long)z * z < (long)range * range, Math.Max(1, range)) ??
+               (chaseOnly ? null : ClosestFreeCell((x, z) => targetRings?.RingOf(x, z) is { } ring
+                   ? ring <= range
+                   : (long)x * x + (long)z * z < (long)(range + 1) * (range + 1), Math.Max(1, range + 1)));
+
+        CellCoordinate? ClosestFreeCell(Func<int, int, bool> inRange, int maxRadius)
         {
-            if (Math.Max(Math.Abs(x), Math.Abs(z)) != radius) continue;
-            var cell = new CellCoordinate(target.Movement.OccupiedCell.X + x, target.Movement.OccupiedCell.Z + z);
-            if ((uint)cell.X >= (uint)path.Width || (uint)cell.Z >= (uint)path.Height || occupancy.IsOccupied(cell)) continue;
-            var dx = (long)x * FixedPointPosition.One;
-            var dz = (long)z * FixedPointPosition.One;
-            var range = (long)weapon.Range * FixedPointPosition.One;
-            if (dx * dx + dz * dz >= range * range) continue;
-            var sourceDx = cell.X - attacker.Movement.OccupiedCell.X;
-            var sourceDz = cell.Z - attacker.Movement.OccupiedCell.Z;
-            var distance = (long)sourceDx * sourceDx + (long)sourceDz * sourceDz;
-            if (distance >= bestDistance) continue;
-            best = cell;
-            bestDistance = distance;
+            var occupancy = EffectiveDefinition(attacker).MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
+            CellCoordinate? best = null;
+            var bestDistance = long.MaxValue;
+            for (var radius = 1; radius <= maxRadius; radius++)
+            for (var z = -radius; z <= radius; z++)
+            for (var x = -radius; x <= radius; x++)
+            {
+                if (Math.Max(Math.Abs(x), Math.Abs(z)) != radius || !inRange(x, z)) continue;
+                var cell = new CellCoordinate(target.Movement.OccupiedCell.X + x, target.Movement.OccupiedCell.Z + z);
+                if ((uint)cell.X >= (uint)path.Width || (uint)cell.Z >= (uint)path.Height || occupancy.IsOccupied(cell)) continue;
+                var sourceDx = cell.X - attacker.Movement.OccupiedCell.X;
+                var sourceDz = cell.Z - attacker.Movement.OccupiedCell.Z;
+                var distance = (long)sourceDx * sourceDx + (long)sourceDz * sourceDz;
+                if (distance >= bestDistance) continue;
+                best = cell;
+                bestDistance = distance;
+            }
+            return best;
         }
-        return best;
     }
 
     /// <summary>

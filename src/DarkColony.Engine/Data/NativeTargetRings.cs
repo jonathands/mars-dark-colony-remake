@@ -17,10 +17,21 @@ public sealed class NativeTargetRings
     private const short RingEnd = 99;
     private const int MaximumEntries = 2048;
 
-    private NativeTargetRings(IReadOnlyList<IReadOnlyList<CellCoordinate>> rings) => Rings = rings;
+    private readonly Dictionary<CellCoordinate, int> ringOf = [];
+
+    private NativeTargetRings(IReadOnlyList<IReadOnlyList<CellCoordinate>> rings)
+    {
+        Rings = rings;
+        for (var ring = 0; ring < rings.Count; ring++)
+            foreach (var offset in rings[ring])
+                ringOf.TryAdd(offset, ring);
+    }
 
     /// <summary>Offsets of each ring, index 0 through <see cref="MaximumRing"/>.</summary>
     public IReadOnlyList<IReadOnlyList<CellCoordinate>> Rings { get; }
+
+    /// <summary>The ring that holds an offset, or null beyond the table.</summary>
+    public int? RingOf(int dx, int dz) => ringOf.TryGetValue(new CellCoordinate(dx, dz), out var ring) ? ring : null;
 
     public static NativeTargetRings Load(string executablePath) => FromImage(PeImage.Load(executablePath));
 

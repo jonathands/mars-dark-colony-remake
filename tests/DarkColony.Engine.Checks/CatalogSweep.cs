@@ -22,23 +22,8 @@ using DarkColony.Engine.World;
 /// </remarks>
 internal sealed class CatalogSweep
 {
-    private const string MeleeGap =
-        "a range-1 weapon never fires: the port fires only inside the strict 8.8 range, while dc.exe fires at any " +
-        "hostile its idle ring scan (0x435C14, rings up to the weapon range) finds; see docs/reverse-engineering/combat-range.md";
-
-    /// <summary>Gaps the sweep expects, by race (0 Human, 1 Gray) and key.</summary>
-    public static readonly IReadOnlyDictionary<(int Race, string Key), string> KnownGaps = new Dictionary<(int, string), string>
-    {
-        [(0, "melee GRND#79")] = MeleeGap,
-        [(0, "melee AIRD#80")] = MeleeGap,
-        [(0, "melee DROA#103")] = MeleeGap,
-        [(0, "melee SHRI#104")] = MeleeGap,
-        [(1, "melee SALY#23")] = MeleeGap,
-        [(1, "melee AVII#24")] = MeleeGap,
-        [(1, "melee RNAT#25")] = MeleeGap,
-        [(1, "melee SPID#26")] = MeleeGap,
-        [(1, "melee GRUB#36")] = MeleeGap,
-    };
+    /// <summary>Gaps the sweep expects, by race (0 Human, 1 Gray) and key. None are open.</summary>
+    public static readonly IReadOnlyDictionary<(int Race, string Key), string> KnownGaps = new Dictionary<(int, string), string>();
 
     public const string Scenario = "mplayer/j4play01";
     public const int Team = 0;
@@ -321,8 +306,13 @@ internal sealed class CatalogSweep
 
     private void Attack(SimulatedActor unit, string name, List<string> notes)
     {
-        var victimType = race == 0 ? GrayTrooper : HumanMarine;
-        if (FreeCellNear(unit.Movement.OccupiedCell, 3, 0) is not { } cell ||
+        // The enemy harvester is unarmed, so a fragile attacker (a 5-health drone) is not killed before it hits.
+        var victimType = race == 0 ? GrayHarvester : HumanHarvester;
+        // A ground attacker needs a victim its region routes to (the PTH route table).
+        var home = path.RegionAt(unit.Movement.OccupiedCell);
+        Func<CellCoordinate, bool>? reachable = unit.Definition.MovementClass != 0 ? null
+            : cell => path.BuildCoarseRoute(home, path.RegionAt(cell)).Termination == CoarseRouteTermination.ReachedTarget;
+        if (FreeCellNear(unit.Movement.OccupiedCell, 3, 0, reachable) is not { } cell ||
             Spawn(victimType, Enemy, cell) is not { } victim)
         {
             Fail($"unit {name}: no room for an enemy to attack");
@@ -358,7 +348,8 @@ internal sealed class CatalogSweep
             var detail = $"unit {name}: never damaged the {Name(victimType)} at {victim.Movement.OccupiedCell} (from {unit.Movement.OccupiedCell}); " +
                 $"weapon {weapon.Id} class {weapon.WeaponClass} damage {weapon.Damage} range {weapon.Range}, {fires} shots, {impacts} impacts, " +
                 $"target {unit.AttackTargetInstanceId?.ToString() ?? "none"}, victim health {victim.Health}/{victim.MaximumHealth}";
-            if (ticks < 0 && weapon.Range == 1) Gap($"melee {name}", detail);
+            if (ticks < 0 && unit.IsDestroyed) Fail($"unit {name} died before it hit the {Name(victimType)}");
+            else if (ticks < 0 && weapon.Range == 1) Gap($"melee {name}", detail);
             else if (ticks < 0) Fail(detail);
             else notes.Add($"hit after {ticks} updates");
         }
@@ -505,6 +496,8 @@ internal sealed class CatalogSweep
 
     private const int HumanMarine = 0;
     private const int GrayTrooper = 8;
+    private const int HumanHarvester = 6;
+    private const int GrayHarvester = 14;
 
     private int? ItemRace(DependencyDefinition item)
     {

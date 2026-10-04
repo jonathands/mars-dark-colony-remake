@@ -438,21 +438,69 @@ public sealed partial class ScenarioSimulation
     }
 
     /// <summary>
-    /// Native firing compares squared 8.8 distances strictly against the
-    /// weapon range converted to fixed-point scale. This is only the firing
-    /// precondition; projectile and damage processing remain separate.
+    /// Whether the attacker may fire at its target now; see
+    /// docs/reverse-engineering/combat-range.md.
+    /// <list type="bullet">
+    /// <item><description>A target found by a ring scan (the idle command, or
+    /// a Move &amp; Attack step) is fired at while it holds a cell within the
+    /// weapon's rings. The scan hit calls <c>0x41481C</c>, which fires with no
+    /// further distance test, and the scan repeats after every reload.</description></item>
+    /// <item><description>An ordered target is chased until its cell is
+    /// strictly inside the range in whole cells (path-step mode 3,
+    /// <c>0x415AA5</c>).</description></item>
+    /// <item><description>When no free cell inside that range remains, as for
+    /// any range-1 weapon, the chase ends beside the target. The idle scan then
+    /// takes over, so a stopped attacker fires at a target within its rings.</description></item>
+    /// </list>
     /// </summary>
     public bool IsAttackTargetInRange(SimulatedActor attacker)
     {
         if (weaponCatalog is null || attacker.IsDestroyed || attacker.AttackTargetInstanceId is not { } targetId ||
             !actorsById.TryGetValue(targetId, out var target) || target.Health <= 0) return false;
         if (!TryGetWeapon(attacker, out var weapon)) return false;
-        var source = attacker.Movement.VisualPosition;
-        var destination = target.Movement.VisualPosition;
-        var dx = (long)destination.XRaw - source.XRaw;
-        var dz = (long)destination.ZRaw - source.ZRaw;
-        var range = (long)weapon.Range * FixedPointPosition.One;
-        return dx * dx + dz * dz < range * range;
+        if (attacker.AttackTargetInstanceId == attacker.IdleIssuedAttackTarget || attacker.AttackMoveDestination is not null)
+            return IsWithinWeaponRings(attacker, target, weapon.Range);
+        if (IsInChaseRange(attacker, target, weapon.Range)) return true;
+        return attacker.Playback is null && attacker.MoveOrder is null &&
+               FindAttackApproachCell(attacker, target, weapon, chaseOnly: true) is null &&
+               IsWithinWeaponRings(attacker, target, weapon.Range);
+    }
+
+    /// <summary>Path-step mode 3 (<c>0x415AA5</c>): the whole-cell squared distance is below the squared range.</summary>
+    private static bool IsInChaseRange(SimulatedActor attacker, SimulatedActor target, int range)
+    {
+        var source = attacker.Movement.VisualPosition.Cell;
+        var destination = target.Movement.VisualPosition.Cell;
+        return CellDistanceSquared(source, destination) < (long)range * range;
+    }
+
+    /// <summary>
+    /// The ring selector's reach (<c>0x435570</c>): the target owns a cell
+    /// in rings 0 through the range around the attacker's cell, in any of the
+    /// grids the scan probes. Without the executable's ring table, ring r is
+    /// the cells at whole distance r.
+    /// </summary>
+    private bool IsWithinWeaponRings(SimulatedActor attacker, SimulatedActor target, int range)
+    {
+        var origin = attacker.Movement.VisualPosition.Cell;
+        if (targetRings is null)
+            return range >= 0 && CellDistanceSquared(origin, target.Movement.VisualPosition.Cell) < (long)(range + 1) * (range + 1);
+        var rings = targetRings.Rings;
+        for (var ring = 0; ring <= Math.Min(range, rings.Count - 1); ring++)
+        foreach (var offset in rings[ring])
+        {
+            var cell = new CellCoordinate(origin.X + offset.X, origin.Z + offset.Z);
+            if ((uint)cell.X >= (uint)path.Width || (uint)cell.Z >= (uint)path.Height) continue;
+            foreach (var grid in (CellOccupancy[])[GroundOccupancy, AlternateOccupancy, MineOccupancy])
+                if (grid.TryGetOwner(cell, out var owner) && owner == target.Seed.InstanceId) return true;
+        }
+        return false;
+    }
+
+    private static long CellDistanceSquared(CellCoordinate left, CellCoordinate right)
+    {
+        long dx = left.X - right.X, dz = left.Z - right.Z;
+        return dx * dx + dz * dz;
     }
 
     /// <summary>

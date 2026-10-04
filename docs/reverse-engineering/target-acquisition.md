@@ -157,7 +157,8 @@ Before each step of a move, the word at command +8 selects a mode:
   the cells of players whose vision it shares.
 - The mode-2 approach targets the closest free cell within weapon range of the
   hostile (the pursuit helper), because the port's local search has no partial
-  routes to an occupied cell.
+  routes to an occupied cell. For a range-1 weapon that is a neighbouring cell
+  within the weapon's rings (see [combat-range.md](combat-range.md)).
 - Move & Attack scans weapon range with the ring selector at step boundaries.
   Its former observation-range nearest-hostile rule remains only for checks
   built without the ring table.
