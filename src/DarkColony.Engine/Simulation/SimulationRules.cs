@@ -1,3 +1,4 @@
+using DarkColony.Engine.Assets;
 using DarkColony.Engine.Combat;
 using DarkColony.Engine.Data;
 using DarkColony.Engine.World;
@@ -17,19 +18,22 @@ public sealed record SimulationRules(
     DamageMatrix DamageMatrix,
     BuildingFootprintCatalog Footprints,
     NativeRandomTable RandomTable,
-    NativeTargetRings TargetRings)
+    NativeTargetRings TargetRings,
+    TroopBuildTimings? BuildTimings = null)
 {
     public static SimulationRules Load(GameInstallation installation)
     {
         ArgumentNullException.ThrowIfNull(installation);
+        var entities = EntityCatalog.Load(installation.DataFile("gamestat", "gamestat.txt"));
         return new SimulationRules(
-            EntityCatalog.Load(installation.DataFile("gamestat", "gamestat.txt")),
+            entities,
             WeaponCatalog.Load(installation.DataFile("gamestat", "weapstat.txt")),
             AreaEffectCatalog.Load(installation.DataFile("gamestat", "boomstat.txt")),
             DependencyCatalog.Load(installation.DataFile("gamestat", "depend.txt")),
             DamageMatrix.Load(installation.DataFile("gamestat", "mbullet.txt")),
             BuildingFootprintCatalog.Load(installation.ExecutablePath),
             NativeRandomTable.Load(installation.ExecutablePath),
-            NativeTargetRings.Load(installation.ExecutablePath));
+            NativeTargetRings.Load(installation.ExecutablePath),
+            TroopBuildTimings.Load(entities, installation));
     }
 }

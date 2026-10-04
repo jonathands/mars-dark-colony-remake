@@ -34,6 +34,16 @@ public sealed record EntityDefinition(
     /// </summary>
     public int AbilityChargeRecovery => Values[24];
     /// <summary>
+    /// Source value 21 (runtime <c>+0xEC</c>): the player production queue a
+    /// troop order joins (<c>0x41C7F8</c>).
+    /// </summary>
+    public int ProductionQueue => Values[20];
+    /// <summary>
+    /// Source value 23 (runtime <c>+0xF0</c>): which of its queue's three exit
+    /// offsets a produced troop appears at (<c>0x414314</c>).
+    /// </summary>
+    public int ProductionExitVariant => Values[22];
+    /// <summary>
     /// Source value 20 (runtime <c>+0xdc</c>). When nonzero, the idle handler's
     /// tail skips its random fidget command.
     /// </summary>

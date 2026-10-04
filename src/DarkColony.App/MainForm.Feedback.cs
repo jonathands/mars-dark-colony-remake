@@ -214,6 +214,12 @@ public sealed partial class MainForm
                 var spawn = produced is null ? string.Empty : $" at {produced.Movement.OccupiedCell.X},{produced.Movement.OccupiedCell.Z}";
                 _status = $"{name} #{production.EntityInstanceId} produced by {sourceName}{spawn}.";
             }
+            else if (production.Outcome == UnitProductionOutcome.Queued)
+            {
+                var name = _entityCatalog is not null && (uint)production.EntityId < (uint)_entityCatalog.Entities.Count
+                    ? _entityCatalog[production.EntityId].DisplayName : $"entity {production.EntityId}";
+                _status = $"{name} queued.";
+            }
             else _status = $"Unit production rejected: {production.Outcome}.";
         }
         foreach (var research in _scenarioSimulation.LastResearchCompletions)

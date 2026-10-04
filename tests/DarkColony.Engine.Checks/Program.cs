@@ -538,6 +538,17 @@ Check("players and critter team 9 start mutually cooperative", () =>
     Equal(true, relations.IsHostile(8, 0));
 });
 
+Check("troop build animations convert FIN frame delays to ticks like 0x425674", () =>
+{
+    // The first tick leaves frame 0; each later frame lasts (d + 3) * 15 / 100
+    // ticks with d = 0 read as 15; a zero result wraps the byte to 256.
+    Equal(1, TroopBuildTimings.PlayOnceTicks([6]));
+    Equal(3, TroopBuildTimings.PlayOnceTicks([0, 6, 6]));
+    Equal(5, TroopBuildTimings.PlayOnceTicks([6, 13, 0]));
+    Equal(1 + 256, TroopBuildTimings.PlayOnceTicks([6, 1]));
+    Equal(1 + 1, TroopBuildTimings.PlayOnceTicks([6, 4]));
+});
+
 Check("notified idle blockers step aside, never back toward the mover", () =>
 {
     // A mover heading east notified the idle unarmed blocker at (5,5). The
@@ -2052,6 +2063,88 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         }
         if (checkedCells == 0) throw new InvalidDataException("No built city slots found.");
         Console.WriteLine($"  city pedestals: {checkedCells} built slot cells on attribute bit 9");
+    });
+
+    Check("installed troop build timings come from the anim.dat FIN order", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var entities = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+        var timings = TroopBuildTimings.Load(entities, install);
+        int Ticks(string code) => timings.BuildTicks(entities.Entities.First(entity => entity.Code == code).Id)!.Value;
+        Equal(22, Ticks("TRSC"));
+        Equal(9, Ticks("EXPL"));
+        Equal(37, Ticks("GRAY"));
+    });
+
+    Check("city buildings produce queued troops at their native exit after the build animation", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var (simulation, _) = DeterminismHarness.Load(install, rules, "mplayer/j4play01");
+        var headquarters = simulation.CityBuilding(0, 0)!;
+        // depend.txt item 7: the Human exploiter (entity 6), queue 2 (the
+        // headquarters slot), exit variant 0 = origin (10,55) + (-4,0).
+        const int exploiterItem = 7;
+        simulation.Step([
+            new ScheduledWorldCommand(simulation.TickCount, 0, new PurchaseIntent(0, exploiterItem)),
+            new ScheduledWorldCommand(simulation.TickCount, 1, new ProduceUnitIntent(0, exploiterItem, headquarters.Seed.InstanceId)),
+        ]);
+        Equal(UnitProductionOutcome.Queued, simulation.LastUnitProductions.Single().Outcome);
+        var queue = simulation.ProductionQueues.Single(item => item.TeamId == 0 && item.Queue == 2);
+        var exit = new CellCoordinate(6, 55);
+        Equal(false, queue.Ready);
+        Equal(exit, queue.ReservedExit!.Value);
+        Equal(true, simulation.GroundOccupancy.TryGetOwner(exit, out var holder) && holder == headquarters.Seed.InstanceId);
+        var ticks = 0;
+        UnitProducedEvent? produced = null;
+        while (produced is null && ticks < 20)
+        {
+            simulation.Step([]);
+            ticks++;
+            produced = simulation.LastUnitProductions.SingleOrDefault(item => item.Outcome == UnitProductionOutcome.Produced);
+        }
+        Equal(9, ticks);
+        var troop = simulation.Actor(produced!.EntityInstanceId)!;
+        Equal(6, troop.Seed.EntityId);
+        Equal(exit, troop.Movement.OccupiedCell);
+        Equal(true, queue.Ready);
+        Equal(0, queue.QueuedEntityIds.Count);
+    });
+
+    Check("purchased buildings rise in their city slot and run that slot's queue", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var (simulation, _) = DeterminismHarness.Load(install, rules, "mplayer/j4play01");
+        // depend.txt item 1 is the Human barracks (slot 1, variant 0); item 9
+        // the marine (entity 0, queue 0, exit (0,-3) from origin (10,55)).
+        const int barracksItem = 1, marineItem = 9;
+        var origin = new CellCoordinate(10, 55);
+        simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new PurchaseIntent(0, barracksItem))]);
+        var placed = simulation.LastBuildingPlacements.Single();
+        Equal(BuildingDropOutcome.Placed, placed.Outcome);
+        var barracks = simulation.CityBuilding(0, 1)!;
+        Equal(placed.EntityInstanceId, barracks.Seed.InstanceId);
+        Equal(rules.Footprints.CitySlotPosition(origin, 1), barracks.Movement.VisualPosition);
+        Equal(true, rules.Footprints.TryResolveBuildingEntity(0, 0, 1, out var barracksEntity) && barracksEntity == barracks.Seed.EntityId);
+        Equal(true, simulation.EconomyForTeam(0)!.CompletedItems.Contains(barracksItem));
+
+        simulation.Step([
+            new ScheduledWorldCommand(simulation.TickCount, 0, new PurchaseIntent(0, marineItem)),
+            new ScheduledWorldCommand(simulation.TickCount, 1, new ProduceUnitIntent(0, marineItem, barracks.Seed.InstanceId)),
+        ]);
+        Equal(UnitProductionOutcome.Queued, simulation.LastUnitProductions.Single().Outcome);
+        UnitProducedEvent? produced = null;
+        var ticks = 0;
+        while (produced is null && ticks < 40)
+        {
+            simulation.Step([]);
+            ticks++;
+            produced = simulation.LastUnitProductions.SingleOrDefault(item => item.Outcome == UnitProductionOutcome.Produced);
+        }
+        Equal(22, ticks);
+        Equal(barracks.Seed.InstanceId, produced!.SourceBuildingInstanceId);
+        Equal(new CellCoordinate(10, 52), simulation.Actor(produced.EntityInstanceId)!.Movement.OccupiedCell);
     });
 
     Check("native target rings decode whole-distance rings 0 through 16", () =>

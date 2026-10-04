@@ -66,7 +66,7 @@ Platform-independent, deterministic code:
 subsystem logic lives in partial files beside it:
 `Simulation/ScenarioSimulation.<Subsystem>.cs` for Combat, Specials,
 Transports, Economy, Construction, Movement, Autonomous, Acquisition, Yield,
-and City. `Step` lists the
+City, and Production. `Step` lists the
 tick's phases in order. Put new behavior in the matching partial file, keep
 every field in `ScenarioSimulation.cs`, and keep stateless rules, data types,
 and readers in the subsystem folders above. Event records live in

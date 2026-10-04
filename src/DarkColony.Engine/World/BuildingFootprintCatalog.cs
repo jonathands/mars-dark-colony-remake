@@ -11,27 +11,42 @@ public sealed class BuildingFootprintCatalog
     // Per-slot actor position relative to the city origin, in 1/32 cells:
     // 0x444F14 stores origin * 0x100 + offset * 8 as the 8.8 position.
     private const uint SlotPositionTableAddress = 0x47ab70;
+    // Slot -> player production queue (0x41AE30, read by 0x41AE6C); 4 = none.
+    private const uint SlotQueueTableAddress = 0x41ae30;
+    // Troop exit offsets from the city origin (0x41ADD0): per queue, three
+    // (x, z) dword pairs selected by the troop's entity value 23.
+    private const uint ProductionExitTableAddress = 0x41add0;
     private const int PatternCount = 15;
     private const int MaximumOffsets = 8;
     private readonly IReadOnlyDictionary<int, IReadOnlyList<CellCoordinate>> byEntityId;
     private readonly IReadOnlyDictionary<(int Faction, int Variant, int Slot), int> buildEntityIds;
     private readonly IReadOnlyList<IReadOnlyList<CellCoordinate>> slotPatterns;
     private readonly IReadOnlyList<(int X, int Z)> slotPositionOffsets;
+    private readonly IReadOnlyList<int> slotQueues;
+    private readonly IReadOnlyList<(int X, int Z)> productionExits;
 
     private BuildingFootprintCatalog(
         IReadOnlyDictionary<int, IReadOnlyList<CellCoordinate>> byEntityId,
         IReadOnlyDictionary<(int Faction, int Variant, int Slot), int> buildEntityIds,
         IReadOnlyList<IReadOnlyList<CellCoordinate>> slotPatterns,
-        IReadOnlyList<(int X, int Z)> slotPositionOffsets)
+        IReadOnlyList<(int X, int Z)> slotPositionOffsets,
+        IReadOnlyList<int> slotQueues,
+        IReadOnlyList<(int X, int Z)> productionExits)
     {
         this.byEntityId = byEntityId;
         this.buildEntityIds = buildEntityIds;
         this.slotPatterns = slotPatterns;
         this.slotPositionOffsets = slotPositionOffsets;
+        this.slotQueues = slotQueues;
+        this.productionExits = productionExits;
     }
 
     /// <summary>Number of building slots in a city (<c>BUILDINGS_PER_SIDE</c>).</summary>
     public const int CitySlotCount = PatternCount;
+    /// <summary>Production queues per player (player <c>+0xCA8 + queue * 2</c>).</summary>
+    public const int ProductionQueueCount = 4;
+    /// <summary>Exit offsets per queue, selected by entity value 23.</summary>
+    public const int ProductionExitVariants = 3;
 
     public static BuildingFootprintCatalog Load(string executablePath)
     {
@@ -80,7 +95,30 @@ public sealed class BuildingFootprintCatalog
         for (var slot = 0; slot < PatternCount; slot++)
             positions[slot] = (BinaryPrimitives.ReadInt32LittleEndian(positionTable.Slice(slot * 8, 4)),
                 BinaryPrimitives.ReadInt32LittleEndian(positionTable.Slice(slot * 8 + 4, 4)));
-        return new BuildingFootprintCatalog(resolved, resolvedBuildEntities, patterns, positions);
+        var queueTable = image.AtVirtualAddress(SlotQueueTableAddress, PatternCount * 4);
+        var queues = new int[PatternCount];
+        for (var slot = 0; slot < PatternCount; slot++)
+            queues[slot] = BinaryPrimitives.ReadInt32LittleEndian(queueTable.Slice(slot * 4, 4));
+        var exitTable = image.AtVirtualAddress(ProductionExitTableAddress, ProductionQueueCount * ProductionExitVariants * 8);
+        var exits = new (int X, int Z)[ProductionQueueCount * ProductionExitVariants];
+        for (var index = 0; index < exits.Length; index++)
+            exits[index] = (BinaryPrimitives.ReadInt32LittleEndian(exitTable.Slice(index * 8, 4)),
+                BinaryPrimitives.ReadInt32LittleEndian(exitTable.Slice(index * 8 + 4, 4)));
+        return new BuildingFootprintCatalog(resolved, resolvedBuildEntities, patterns, positions, queues, exits);
+    }
+
+    /// <summary>The production queue a city slot's building runs (<c>0x41AE6C</c>), or null if none.</summary>
+    public int? SlotProductionQueue(int slot) =>
+        (uint)slot < (uint)slotQueues.Count && (uint)slotQueues[slot] < ProductionQueueCount ? slotQueues[slot] : null;
+
+    /// <summary>
+    /// The cell where a queue's troops appear (<c>0x414314</c>): the city
+    /// origin plus the <c>0x41ADD0</c> offset for the troop's exit variant.
+    /// </summary>
+    public CellCoordinate ProductionExit(CellCoordinate cityOrigin, int queue, int exitVariant)
+    {
+        var (x, z) = productionExits[queue * ProductionExitVariants + Math.Clamp(exitVariant, 0, ProductionExitVariants - 1)];
+        return new CellCoordinate(cityOrigin.X + x, cityOrigin.Z + z);
     }
 
     /// <summary>

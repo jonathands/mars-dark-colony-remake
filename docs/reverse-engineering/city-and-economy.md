@@ -106,4 +106,5 @@ cannot direct-attack critters, and their projectiles pass through critters.
 | Script rate changes (action 12) | not implemented (mission scripts) |
 | Network-session slot gating, placement race substitution | not implemented |
 | Role of `%AISlots` line 1 | unknown |
+| Building purchase builds the slot at once (command 9) | confirmed; see [production-flow.md](production-flow.md) |
 | Building sprite anchor | open: the HQ draws about two tiles lower and left of the original captures |

@@ -1,4 +1,5 @@
 using DarkColony.Engine.Commands;
+using DarkColony.Engine.Assets;
 using DarkColony.Engine.Combat;
 using DarkColony.Engine.Data;
 using DarkColony.Engine.Economy;
@@ -89,6 +90,11 @@ public sealed partial class ScenarioSimulation
     // True when the SCN declares cities (%AISlots); P7 income then requires a
     // live slot-0 headquarters, as player +0xBD4 gates it natively.
     private bool citiesDeclared;
+    // City origin (%AISlots line 2) per team that has a city.
+    private readonly Dictionary<int, CellCoordinate> cityOrigins = [];
+    // Player troop queues, ordered by (team, queue).
+    private readonly SortedDictionary<(int Team, int Queue), CityProductionQueue> productionQueues = [];
+    private TroopBuildTimings? buildTimings;
 
     private ScenarioSimulation(
         PathRegionMap path,
@@ -183,7 +189,8 @@ public sealed partial class ScenarioSimulation
             dependencyCatalog: rules.Dependencies,
             areaEffects: rules.AreaEffects,
             randomTable: rules.RandomTable,
-            targetRings: rules.TargetRings);
+            targetRings: rules.TargetRings,
+            buildTimings: rules.BuildTimings);
     }
 
     public static ScenarioSimulation Create(
@@ -200,7 +207,8 @@ public sealed partial class ScenarioSimulation
         TeamRelationMatrix? teamRelations = null,
         AreaEffectCatalog? areaEffects = null,
         NativeRandomTable? randomTable = null,
-        NativeTargetRings? targetRings = null)
+        NativeTargetRings? targetRings = null,
+        TroopBuildTimings? buildTimings = null)
     {
         var seeds = scenario.Placements.Where(placement => placement.Team != -1).Select((placement, index) =>
         {
@@ -254,6 +262,13 @@ public sealed partial class ScenarioSimulation
         simulation.computerTeams = scenario.Teams.Where(team => team.Enabled && team.AiProfile > 0).Select(team => team.TeamId).ToHashSet();
         simulation.citiesDeclared = scenario.Teams.Any(team => team.CityOrigin is not null);
         foreach (var city in cityBuildings) simulation.cityBuildings[(city.Team, city.Slot)] = city.InstanceId;
+        simulation.buildTimings = buildTimings;
+        foreach (var team in scenario.Teams.Where(team => team.Enabled && team.TeamId is >= 0 and < 8 && team.HasCity))
+        {
+            simulation.cityOrigins[team.TeamId] = team.CityOrigin!.Value;
+            for (var queue = 0; queue < BuildingFootprintCatalog.ProductionQueueCount; queue++)
+                simulation.productionQueues[(team.TeamId, queue)] = new CityProductionQueue(team.TeamId, queue);
+        }
         simulation.SeedScenarioBuildingDependencies();
         simulation.PetraVents = scenario.Vents.Select((vent, index) => new PetraVent(index, new CellCoordinate(vent.X, vent.Z), vent.InitialState, vent.InitialReservoir)).ToArray();
         simulation.autonomousGroups.AddRange(scenario.AutonomousSpawnGroups.Select(group => new AutonomousGroupRuntime(
@@ -450,6 +465,8 @@ public sealed partial class ScenarioSimulation
                     ? economy.TryReserve(dependencyCatalog, purchase.DependencyItemId)
                     : PurchaseEligibility.UnknownItem;
                 purchases.Add(new PurchaseReservedEvent(purchase.TeamId, purchase.DependencyItemId, eligibility));
+                if (eligibility == PurchaseEligibility.Available && BuildPurchasedCitySlot(purchase) is { } built)
+                    buildingPlacements.Add(built);
                 continue;
             }
             if (scheduled.Command is HarvestVentIntent harvest)
@@ -577,6 +594,7 @@ public sealed partial class ScenarioSimulation
         var attackMoveAcquisitions = events.AttackMoveAcquisitions;
         var harvesterDeployments = events.HarvesterDeployments;
         scanVisibility.Clear();
+        UpdateCityProduction(events);
         foreach (var actor in Actors)
         {
             if (actor.IsDestroyed) continue;

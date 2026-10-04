@@ -1,7 +1,64 @@
 # Troop production flow
 
-Status: partially recovered from the installed `dc.exe`; this is an evidence
-ledger, not a claim that production timing or spawn placement is complete.
+Status: queue, exit cell, and timing recovered from `dc.exe` on 2026-10-04
+and implemented in `Simulation/ScenarioSimulation.Production.cs` (see
+"Native production queue" below). The sections after it are the earlier
+evidence ledger; parts of it predate the `dc.exe`/`dc16.exe` identity
+correction.
+
+## Native production queue
+
+Orders are network commands. The opcode is the byte at packet `+2`, and the
+handler is entry `opcode - 1` of the table at `0x479384`:
+
+- **Command 9, build** (`0x41C8D4`; emitter `0x40C13C`): bytes `(slot,
+  variant, player)`.
+  - If the slot already holds that variant at full health, the price
+    (`0x4380D8`) is refunded.
+  - Otherwise the slot health becomes the entity's full health, the variant is
+    stored, and `0x444F14` recreates the slot building at once. That also
+    empties the slot's queue and marks it ready. The price is added to the
+    player's spending total `+0xBB0`.
+- **Command 10, troop order** (`0x41C7F8`; emitter `0x40C168`): bytes
+  `(entity, player, count)`.
+  - The troop's queue is entity value 21 (runtime `+0xEC`). `count` copies are
+    appended to player queue items `+0xCB0 + queue * 800`, and the length
+    `+0xCA8 + queue * 2` grows.
+  - Price × count is added to `+0xBB0`. P7 itself was already deducted by
+    the interface (`0x4566AC`).
+
+City buildings (actors 0-119) run `0x414314` from their idle command every
+tick. Slot → queue comes from `0x41AE30`: HQ 2, barracks 0, slot 2 → 1,
+slot 4 → 3, slots 13 and 14 → 0, the rest none. When the queue is ready
+(`+0xCA0 + queue`) and not empty, the front troop goes through these steps:
+
+1. Its exit is the city origin plus `0x41ADD0[queue][entity value 23]`. If
+   any actor holds that cell (in the troop's grid), the holder's `+0x35` is
+   set to 0, a step-aside request toward direction 0. The queue then waits.
+2. A troop without a build animation (entity `+0x98`) is created on the exit
+   at once (`0x41B750` → `0x41AF14`).
+3. Otherwise the exit is reserved (`0x3FE`) and the queue stops being ready.
+   The building plays the troop's animation once (`0x42630C` with mode 1).
+   When the animation stops (`+0x2A` leaves 1), the troop appears on the exit
+   and the queue becomes ready again.
+
+The gamestat loader (`0x43C18C`) resolves `+0x98` to `<code>BUILDSTAND`, or
+else `<code>BUILD`. The frame loader `0x425674` turns each FIN frame delay `d`
+(0 meaning 15) into `(d + 3) * 15 / 100` ticks. The stepper `0x4264C8` leaves
+frame 0 on its first tick and stops one step after the last frame. A marine
+(`TRSCBUILD0`, 22 frames of delay 6) therefore takes 22 ticks, an Exploiter 9,
+and a Gray 37. FINs are searched in `anim.dat` order.
+
+| Rule | Status |
+| --- | --- |
+| Queue per player, slot → queue, exit offsets | confirmed |
+| One troop at a time, exit must be empty, holder asked to step aside | confirmed |
+| Build time from the troop's build animation | confirmed (the troop appears `duration` ticks after the reserve tick whichever order the animation step and the command run in) |
+| Building recreation clears its queue | confirmed (`0x444F14`) |
+| Damage-stage animation interrupting a build (`0x414314` prologue) | not modeled |
+| Troop cap `world + 0x528` (`0x41E6AC`) and its refund | not modeled |
+| Queue cooldown byte `+0xCA4 + queue` | never set nonzero natively; not modeled |
+| Teams without a city | port adapter: immediate spawn beside the source structure |
 
 ## Dependency records
 

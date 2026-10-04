@@ -88,6 +88,10 @@ public sealed partial class ScenarioSimulation
             return new UnitProducedEvent(intent.TeamId, intent.DependencyItemId, 0, 0, intent.SourceBuildingInstanceId, UnitProductionOutcome.NotTroop);
         if (!teamEconomies.TryGetValue(intent.TeamId, out var economy) || !economy.ReservedItems.Contains(intent.DependencyItemId))
             return new UnitProducedEvent(intent.TeamId, intent.DependencyItemId, 0, entityId, intent.SourceBuildingInstanceId, UnitProductionOutcome.NotReserved);
+        // A team with a city orders into its player queue like the native
+        // command 10; the immediate spawn below is a port adapter for teams
+        // without one.
+        if (cityOrigins.ContainsKey(intent.TeamId)) return EnqueueTroop(intent, entityId, economy);
         if (!actorsById.TryGetValue(intent.SourceBuildingInstanceId, out var source) || source.IsDestroyed || source.Seed.Team != intent.TeamId || source.Definition.MovementSpeed > 0)
             return new UnitProducedEvent(intent.TeamId, intent.DependencyItemId, 0, entityId, intent.SourceBuildingInstanceId, UnitProductionOutcome.SourceInvalid);
         if (!item.PrerequisiteItemIds.Any(prerequisite => SourceMatchesBuildItem(source, prerequisite)))

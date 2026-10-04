@@ -36,6 +36,8 @@ public sealed class CellOccupancy
         foreach (var cell in cells.Distinct()) owners[cell] = entityInstanceId;
     }
 
+    public void ReleaseCell(CellCoordinate cell) => owners.Remove(cell);
+
     public void Release(int entityInstanceId)
     {
         foreach (var cell in owners.Where(pair => pair.Value == entityInstanceId).Select(pair => pair.Key).ToArray())

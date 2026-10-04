@@ -149,6 +149,14 @@ public sealed partial class MainForm
             _status = $"{label} unavailable: {eligibility}.";
             return;
         }
+        if (item.IsBuilding && _scenarioSimulation?.HasCity(_localPlayerTeam) == true)
+        {
+            // Native command 9: the engine builds the purchased slot of the
+            // team's city at once.
+            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new PurchaseIntent(_localPlayerTeam, item.Id));
+            _status = $"{BuildingLabel(item)} ordered if P7 and prerequisites allow.";
+            return;
+        }
         if (item.IsBuilding)
         {
             _pendingBuildingItemId = item.Id;

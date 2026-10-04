@@ -1,3 +1,4 @@
+using DarkColony.Engine.Commands;
 using DarkColony.Engine.Data;
 using DarkColony.Engine.Scenario;
 using DarkColony.Engine.World;
@@ -53,6 +54,62 @@ public sealed partial class ScenarioSimulation
             }
         }
         return cities;
+    }
+
+    /// <summary>Whether the team has a city (a nonzero <c>%AISlots</c> origin X).</summary>
+    public bool HasCity(int teamId) => cityOrigins.ContainsKey(teamId);
+
+    /// <summary>
+    /// A paid building order of a team with a city is native command 9
+    /// (<c>0x41C8D4</c>): the slot's building is (re)created at once with full
+    /// health by <c>0x444F14</c>, replacing any earlier variant, and the slot's
+    /// troop queue restarts empty. Returns null for teams without a city,
+    /// whose orders keep the port's placed-drop adapter.
+    /// </summary>
+    private BuildingPlacedEvent? BuildPurchasedCitySlot(PurchaseIntent purchase)
+    {
+        if (!cityOrigins.TryGetValue(purchase.TeamId, out var origin) || footprints is null ||
+            dependencyCatalog?.TryGet(purchase.DependencyItemId, out var item) != true || !item.IsBuilding ||
+            !teamEconomies.TryGetValue(purchase.TeamId, out var economy)) return null;
+        var slot = item.BuildingSlot!.Value;
+        if (!footprints.TryResolveBuildingEntity(item.BuildingFaction!.Value, item.BuildingVariant!.Value, slot, out var entityId) ||
+            (uint)entityId >= (uint)entityDefinitions.Count)
+            return new BuildingPlacedEvent(purchase.TeamId, item.Id, 0, 0, origin, BuildingDropOutcome.EntityUnresolved);
+        if (cityBuildings.TryGetValue((purchase.TeamId, slot), out var previousId) && actorsById.TryGetValue(previousId, out var previous))
+        {
+            // The native actor keeps its index and changes type; the port
+            // retires the previous actor without a death.
+            GroundOccupancy.Release(previousId);
+            AlternateOccupancy.Release(previousId);
+            actorsById.Remove(previousId);
+            actors.Remove(previous);
+        }
+        var instanceId = nextActorInstanceId++;
+        var position = footprints.CitySlotPosition(origin, slot);
+        var seed = new WorldEntity(instanceId, entityId, purchase.TeamId, position.Cell, position, 0, 0);
+        var actor = new SimulatedActor(seed, EntityDefinitionFor(entityId));
+        actor.Movement.AdvanceVisual(position.XRaw - actor.Movement.VisualPosition.XRaw, position.ZRaw - actor.Movement.VisualPosition.ZRaw);
+        actors.Add(actor);
+        actorsById.Add(instanceId, actor);
+        // 0x444F14 writes the footprint over whatever stands there.
+        GroundOccupancy.ReplaceClaims(instanceId, footprints.CitySlotCells(origin, slot));
+        cityBuildings[(purchase.TeamId, slot)] = instanceId;
+        economy.MarkCompleted(dependencyCatalog, item.Id);
+        if (footprints.SlotProductionQueue(slot) is { } queue && productionQueues.TryGetValue((purchase.TeamId, queue), out var state))
+        {
+            if (state.ReservedExit is { } exit) ReleaseCell(exit, previousId);
+            state.Items.Clear();
+            state.Ready = true;
+            state.TicksRemaining = 0;
+            state.ReservedExit = null;
+        }
+        return new BuildingPlacedEvent(purchase.TeamId, item.Id, instanceId, entityId, origin, BuildingDropOutcome.Placed);
+    }
+
+    private void ReleaseCell(CellCoordinate cell, int ownerId)
+    {
+        foreach (var occupancy in (CellOccupancy[])[GroundOccupancy, AlternateOccupancy])
+            if (occupancy.TryGetOwner(cell, out var owner) && owner == ownerId) occupancy.ReleaseCell(cell);
     }
 
     /// <summary>The actor in a team's city slot, if that building exists and is alive.</summary>
