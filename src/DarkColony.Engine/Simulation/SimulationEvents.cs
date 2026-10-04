@@ -51,7 +51,7 @@ public sealed record AttackMoveAcquisitionEvent(int SourceActorInstanceId, int T
 /// <summary>An idle actor selected a target: in weapon range, or (Approach) farther out to close on.</summary>
 public sealed record IdleAcquisitionEvent(int SourceActorInstanceId, int TargetActorInstanceId, bool Approach);
 public sealed record PurchaseReservedEvent(int TeamId, int DependencyItemId, PurchaseEligibility Eligibility);
-public enum HarvesterDeploymentOutcome { Attached, Retracted, Preparing, EnRoute, SourceInvalid, VentUnavailable, NoApproach }
+public enum HarvesterDeploymentOutcome { Attached, Retracted, Preparing, EnRoute, SourceInvalid, VentUnavailable, NoApproach, UndeployLocked }
 public sealed record HarvesterDeploymentEvent(int EntityInstanceId, int VentId, HarvesterDeploymentOutcome Outcome)
 {
     public bool Attached => Outcome == HarvesterDeploymentOutcome.Attached;

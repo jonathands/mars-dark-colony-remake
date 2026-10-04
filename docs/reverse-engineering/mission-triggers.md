@@ -115,7 +115,7 @@ their line as an expression. Command → action type:
 | `reinforce2 t x z (type n)×5` | 15 | each unit joins the artifact container at (x, z) if there is one, else is created at once (`0x41B634`, square-ring free cell `0x41B4A0`) |
 | `newtype x z t` | 16 | the ground actor on (x, z) becomes entity t |
 | `artifact a b` | 17 | entity 0x3F + r % 5 joins the artifact container at (a, b) (`0x4404C0`); without one, only an assertion |
-| `noundeploy` | 18 | world +0x948 = 1 |
+| `noundeploy` | 18 | world +0x948 = 1: deployed harvesters can no longer leave their vents |
 | `abduct s d` | 19 | a transport takes player d's commander |
 | `vision a b v` | 20 | alliance visibility bits |
 | `nopickup p` | 21 | player +0xBB4 = 1: transports no longer collect p's dead commanders (`0x4163F3`) |
@@ -225,6 +225,7 @@ checks without declared cities skip the slot 4 test.
 | `abduct s d` | implemented: when player d's first commander slot holds a live actor, a transport of team s's race carries it off. The payload is the header 0xff01 plus the actor (`0x43E2A0` -> `0x418F4C`) |
 | Artifact sites, `artifact` | implemented (`ScenarioSimulation.Artifacts.cs`); see below. The corpus runs `artifact` only in multiplayer maps when `s(6,0)`, the lobby artifacts option, is set, which this build never does |
 | `nopickup` | implemented (see combat-damage.md, Dying state). Its only reader is the kill routine `0x416308` |
+| `noundeploy` | implemented: the mining command (`0x4137CF`) ignores a pending state-13 request while world `+0x948` is set, and state 13 (`0x4167EF`) refuses the deployed forms 0x2F/0x30. The port answers `RetractHarvesterIntent` with `UndeployLocked`. The third reader (`0x43FD36`) reapplies the flag when a save is loaded |
 | `aimsg` | not modeled; reported as `LastUnmodeledMissionActions` |
 | `newtype` | provisional through the deployed-form override |
 | Bail delay | provisional: 152 ticks for the native 10,000 ms |

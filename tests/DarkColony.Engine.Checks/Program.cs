@@ -1340,6 +1340,29 @@ Check("a stealing stance forms after state 13 and retracts when it finds no vict
     Equal(true, simulation.LastMoveOutcomes.Single().StepCount > 0);
 });
 
+Check("noundeploy keeps deployed harvesters on their vents", () =>
+{
+    var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n" +
+        "1 1 40 20 5000\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    HarvesterDeploymentOutcome Retract(string? trigger)
+    {
+        var script = trigger is null ? null : MissionScript.Compile(ScenarioTriggers.Parse(trigger));
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 16, 4),
+            missionScript: script);
+        simulation.Step([new ScheduledWorldCommand(1, 0, new HarvestVentIntent(1, 0))]);
+        for (var tick = 0; tick < ScenarioSimulation.NativeHarvesterAttachTicks + 8; tick++) simulation.Step([]);
+        Equal("EDPLY", simulation.EffectiveDefinition(simulation.Actor(1)!).Code);
+        simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new RetractHarvesterIntent(1))]);
+        return simulation.LastHarvesterDeployments.Single().Outcome;
+    }
+    Equal(HarvesterDeploymentOutcome.Retracted, Retract(null));
+    // world +0x948: 0x4137CF ignores the request and 0x4167EF refuses state 13.
+    Equal(HarvesterDeploymentOutcome.UndeployLocked, Retract("1 norm 1 (1)\nnoundeploy\nend\n"));
+});
+
 Check("vents pay their own SCN rate per pulse, and a zero-rate vent pays nothing", () =>
 {
     // The SCN vent record "x z 40 rate reservoir": the loader stores the

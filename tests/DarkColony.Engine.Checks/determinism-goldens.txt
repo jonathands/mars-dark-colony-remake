@@ -32,10 +32,10 @@ alien/alien13 900 b4e7338a8239629a
 alien/alien13 1200 f8a7c4808c4d9b38
 test/atrain6 1 1022f1a9e497638b
 test/atrain6 100 0bbe9596193978cd
-test/atrain6 300 728505d265cf18f2
-test/atrain6 600 55f06e536921a58b
-test/atrain6 900 14c5435ab9c3dbb4
-test/atrain6 1200 0ae53a177e2b0f1a
+test/atrain6 300 e7c5a6affe71123d
+test/atrain6 600 4e20f945078b5324
+test/atrain6 900 453e71da6da2bedd
+test/atrain6 1200 41d4b78b611e7f55
 mplayer/j4play01 1 94d3a38aa5d3ab82
 mplayer/j4play01 100 bcee130890cd8c62
 mplayer/j4play01 300 bbbf53467ddee740

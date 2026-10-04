@@ -265,6 +265,7 @@ public sealed partial class MainForm
                 HarvesterDeploymentOutcome.EnRoute => $"{name} is moving to Petra-7 vent {deployment.VentId + 1}.",
                 HarvesterDeploymentOutcome.VentUnavailable => $"Petra-7 vent {deployment.VentId + 1} already has a harvester.",
                 HarvesterDeploymentOutcome.NoApproach => $"Petra-7 vent {deployment.VentId + 1} cannot be entered.",
+                HarvesterDeploymentOutcome.UndeployLocked => $"{name} cannot leave Petra-7 vent {deployment.VentId + 1} in this mission.",
                 _ => "Deploy rejected: select a live Exploiter or Gray Slug.",
             };
         }

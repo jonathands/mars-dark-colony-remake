@@ -44,6 +44,7 @@ public sealed partial class ScenarioSimulation
     public IReadOnlyList<MissionUnmodeledActionEvent> LastUnmodeledMissionActions { get; private set; } = [];
     /// <summary>Remaining lives per trigger slot (byte <c>+8</c> of each table entry).</summary>
     public IReadOnlyList<int> MissionLives => missionLives.Select(lives => (int)lives).ToArray();
+    /// <summary>Mission action <c>noundeploy</c> (world <c>+0x948</c>): deployed harvesters stay on their vents.</summary>
     public bool NoUndeploy { get; private set; }
 
     public int PlayerStatistic(int player, int stat) =>

@@ -146,6 +146,10 @@ public sealed partial class ScenarioSimulation
             EffectiveDefinition(actor).Code is not ("EDPLY" or "SDPL"))
             return new HarvesterDeploymentEvent(intent.EntityInstanceId, actor?.HarvestVentId ?? -1,
                 HarvesterDeploymentOutcome.SourceInvalid);
+        // noundeploy (world +0x948): the mining command ignores a pending
+        // state-13 request (0x4137CF), and state 13 refuses the deployed
+        // forms 0x2F/0x30 (0x4167EF).
+        if (NoUndeploy) return new HarvesterDeploymentEvent(actor.Seed.InstanceId, ventId, HarvesterDeploymentOutcome.UndeployLocked);
 
         // dc.exe 0x417c40 maps EDPLY 47 -> EXPL 6 and SDPL 48 -> SLUG 14.
         // The actor and its exact-cell ground claim survive the form change.
