@@ -539,6 +539,20 @@ Check("players and critter team 9 start mutually cooperative", () =>
     Equal(true, relations.IsHostile(8, 0));
 });
 
+Check("native bearings and direction vectors follow the quadrant tables", () =>
+{
+    // 0x441504: X = cos, Z = sin, scale 2048, truncated before the sign.
+    Equal(new NativeDirectionVector(2048, 0), NativeBearing.Vector(0));
+    Equal(new NativeDirectionVector(1448, 1448), NativeBearing.Vector(32));
+    Equal(new NativeDirectionVector(0, 2048), NativeBearing.Vector(64));
+    Equal(new NativeDirectionVector(-1448, -1448), NativeBearing.Vector(160));
+    Equal(new NativeDirectionVector(1892, -783), NativeBearing.Vector(240));
+    // 0x4413A0: 256 facing units per turn, x toward 0, z toward 64.
+    Equal(((byte)0, (byte)64, (byte)128, (byte)192, (byte)32), (NativeBearing.FromDelta(5, 0), NativeBearing.FromDelta(0, 5),
+        NativeBearing.FromDelta(-5, 0), NativeBearing.FromDelta(0, -5), NativeBearing.FromDelta(3, 3)));
+    Equal((ushort)604, (ushort)NativeBearing.ArctangentTable[128]);
+});
+
 Check("the native animation clock skips frame 0 once, then loops it at its own ticks", () =>
 {
     // 0x425674: (d + 3) * 15 / 100 ticks, d 0 meaning 15; a zero byte lasts 256.
@@ -2020,6 +2034,18 @@ var dataArgument = args.Length >= 2 && args[0] == "--data" ? args[1] : Path.Comb
 var dataPath = Path.GetFullPath(dataArgument);
 if (File.Exists(Path.Combine(dataPath, "dc.exe")))
 {
+    Check("rebuilt bearing tables equal the executable's sine and arctangent words", () =>
+    {
+        var image = PeImage.Load(Path.Combine(dataPath, "dc.exe"));
+        var sine = image.AtVirtualAddress(0x4796B8, 0x801 * 2).ToArray();
+        var atan = image.AtVirtualAddress(0x47A6BA, 256 * 2).ToArray();
+        var sineMismatches = Enumerable.Range(0, 0x801).Count(index =>
+            System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(sine.AsSpan(index * 2)) != NativeBearing.QuarterSineTable[index]);
+        var atanMismatches = Enumerable.Range(0, 256).Count(index =>
+            System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(atan.AsSpan(index * 2)) != NativeBearing.ArctangentTable[index]);
+        Equal((0, 0), (sineMismatches, atanMismatches));
+    });
+
     Check("original damage matrix loads", () =>
     {
         var install = GameInstallation.Open(dataPath);
