@@ -269,7 +269,10 @@ public sealed partial class ScenarioSimulation
                 throw new InvalidDataException($"SCN entity ID {seed.EntityId} is outside gamestat.txt.");
             var footprint = footprints?.OccupiedCells(seed.EntityId, seed.SpawnCell) ?? [];
             var definition = catalog[seed.EntityId];
-            if (footprint.Count == 0 && definition.MovementSpeed <= 0) continue;
+            // The constructor (0x41B3D1) puts every actor outside team 8 into a
+            // grid: the mine grid for a mine, else ground or alternate by
+            // movement class. Speed plays no part; team 8 (sites) stays off.
+            if (seed.Team == ArtifactSiteTeam) continue;
             var occupancy = definition.UsesNativeMineLayer
                 ? mine
                 : footprint.Count != 0 || definition.MovementClass == 0 ? ground : alternate;

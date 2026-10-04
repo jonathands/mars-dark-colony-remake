@@ -2807,6 +2807,87 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(false, simulation.CityArtAnchor(simulation.Actors.First(actor => actor.Definition.MovementSpeed > 0).Seed.InstanceId).HasValue);
     });
 
+    // Loads a campaign mission with its own script plus extra triggers that
+    // give team 0 a strike force near the objective, so a headless run can
+    // reach the script's own victory without a full playthrough.
+    ScenarioSimulation LoadMissionWithExtraTriggers(GameInstallation install, SimulationRules rules, string scenario, string extraTriggers)
+    {
+        var file = install.DataFile(["scenario", .. scenario.Split('/')]) + ".scn";
+        var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+        var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+        var source = File.ReadAllText(Path.ChangeExtension(file, ".tro"), System.Text.Encoding.Latin1);
+        var script = MissionScript.Compile(ScenarioTriggers.Parse(source + "\n\n" + extraTriggers),
+            MissionTripMap.Load(Path.ChangeExtension(file, ".mtg")));
+        return ScenarioSimulation.Create(ScenarioDefinition.Load(file), path, rules, script, map);
+    }
+
+    // Every 16 updates, each idle armed mobile unit of the team (commanders
+    // excluded) attacks the nearest live target.
+    void Strike(ScenarioSimulation simulation, int team, Func<SimulatedActor, bool> isTarget, Func<bool> done, int maxTicks)
+    {
+        for (var tick = 0; tick < maxTicks && !done(); tick++)
+        {
+            var commands = new List<ScheduledWorldCommand>();
+            if (tick % 16 == 0)
+            {
+                var targets = simulation.Actors.Where(actor => !actor.IsDestroyed && isTarget(actor)).ToArray();
+                foreach (var attacker in simulation.Actors.Where(actor => !actor.IsDestroyed && actor.Seed.Team == team &&
+                             actor.AttackTargetInstanceId is null && simulation.EffectiveDefinition(actor).MovementSpeed > 0 &&
+                             simulation.EffectiveDefinition(actor).WeaponSlots[0] >= 0 &&
+                             simulation.EffectiveDefinition(actor).Id is < 69 or > 76))
+                {
+                    var from = attacker.Movement.OccupiedCell;
+                    var target = targets.OrderBy(candidate => Math.Abs(candidate.Movement.OccupiedCell.X - from.X) +
+                                                              Math.Abs(candidate.Movement.OccupiedCell.Z - from.Z)).FirstOrDefault();
+                    if (target is not null)
+                        commands.Add(new ScheduledWorldCommand(simulation.TickCount, (ulong)commands.Count,
+                            new AttackIntent(attacker.Seed.InstanceId, target.Seed.InstanceId)));
+                }
+            }
+            simulation.Step(commands);
+        }
+    }
+
+    Check("human01 reaches its own victory: trip 7 arms trigger 4, three player-4 losses bail 0 1", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        // Strike force: 12 marines next to player 4's Grays at (72-75,53), and
+        // one runner beside the beacon's trip area (25-28,57-60).
+        var simulation = LoadMissionWithExtraTriggers(install, rules, "human/human01",
+            "120 norm 1 (c>0)\nreinforce2 0 70 49 0 12 0 0 0 0 0 0 0 0\nreinforce2 0 30 61 0 1 0 0 0 0 0 0 0 0\nend\n");
+        for (var tick = 0; tick < 17; tick++) simulation.Step([]);
+        var runner = simulation.Actors.Last(actor => actor.Seed.Team == 0 && actor.Seed.EntityId == 0 &&
+                                                     Math.Abs(actor.Movement.OccupiedCell.Z - 61) <= 2);
+        Equal(0, simulation.MissionLives[4]);
+        simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new MoveIntent(runner.Seed.InstanceId, new CellCoordinate(28, 59)))]);
+        for (var tick = 0; tick < 300 && simulation.MissionLives[4] == 0; tick++) simulation.Step([]);
+        // Trigger 7 (trip): setlifes 4 1.
+        Equal(1, simulation.MissionLives[4]);
+        Strike(simulation, 0, actor => actor.Seed.Team == 4, () => simulation.Outcome is not null, 6000);
+        Equal(true, simulation.PlayerStatistic(4, 3) > 2);
+        var outcome = simulation.Outcome ?? throw new InvalidOperationException("human01 did not end.");
+        Equal((true, 1), (outcome.Victory, outcome.OutcomeText));
+    });
+
+    Check("alien01 reaches its own victory: eleven player-1 Salad shooters lost bail 0 1", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var scenario = ScenarioDefinition.Load(install.DataFile("scenario", "alien", "alien01") + ".scn");
+        var shooters = scenario.OrdinaryPlacements.Where(placement => placement.Team == 1 && placement.EntityId == 82).ToArray();
+        Equal(true, shooters.Length > 10);
+        // Strike force: 4 Grays on the free cells around each of player 1's
+        // entity 82.
+        var extra = string.Concat(shooters.Select(placement =>
+            $"reinforce2 0 {placement.X} {placement.Z} 8 4 0 0 0 0 0 0 0 0\n"));
+        var simulation = LoadMissionWithExtraTriggers(install, rules, "alien/alien01", $"120 norm 1 (c>0)\n{extra}end\n");
+        Strike(simulation, 0, actor => actor.Seed.Team == 1, () => simulation.Outcome is not null, 12000);
+        Equal(true, simulation.TypeStatistic(1, 0, 82) > 10);
+        var outcome = simulation.Outcome ?? throw new InvalidOperationException("alien01 did not end.");
+        Equal((true, 1), (outcome.Victory, outcome.OutcomeText));
+    });
+
     Check("losing the mining colony ends human01 in defeat with outcome text 4", () =>
     {
         var install = GameInstallation.Open(dataPath);

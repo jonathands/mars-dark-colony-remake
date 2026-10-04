@@ -58,7 +58,12 @@ SCN placements are then created from actor `0x98` onward by `0x41AF14`.
 The actor constructor takes the value column as the initial health unless it
 is -1 (`0x41B339`; the corpus uses -1 for 2327 placements and 20-600 for the
 rest), and the flag column as byte `+0xCB` (`0x41B321`). Units created during
-play (`0x41B634`) get -1 and 0.
+play (`0x41B634`) get -1 and 0. The constructor (`0x41B3D1`) then writes
+every actor outside team 8 into one grid cell: the mine grid for a mine
+(runtime `+0x68`), otherwise the ground or alternate grid by movement class.
+Speed plays no part, so static objects such as alien01's Salad shooters,
+beacons, and crates block their cell and can be hit; the port had left
+speed-0 placements off the grids.
 Actors 120-151 are not used by the loader. Before creating a player
 placement, the loader (`0x41C4E3`) compares the entity's race (gamestat
 value 1, runtime `+4`) with the player's race (`+0xBB8`). If they differ and
