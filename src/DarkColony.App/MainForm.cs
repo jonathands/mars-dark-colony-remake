@@ -94,6 +94,9 @@ public sealed partial class MainForm : Form
     private IReadOnlyList<ScenarioTrigger> _scenarioTriggers = [];
     private ScenarioMissionText? _missionText;
     private bool _missionOutcomeReported;
+    private int _campaignMission = 1;
+    private MissionOutcome? _debriefOutcome;
+    private string _debriefText = string.Empty;
     private bool _cameraAwaitsLocalUnits;
     private int _briefingScrollLine;
     private bool _storyReturnsToGameplay;

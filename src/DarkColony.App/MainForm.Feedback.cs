@@ -219,10 +219,7 @@ public sealed partial class MainForm
             !_missionOutcomeReported)
         {
             _missionOutcomeReported = true;
-            var key = outcome.OutcomeText.ToString("000", System.Globalization.CultureInfo.InvariantCulture);
-            _status = _missionText?.Outcomes.TryGetValue(key, out var text) == true
-                ? text
-                : $"Mission ended: result {outcome.Result}, outcome {outcome.OutcomeText}.";
+            ShowMissionDebrief(outcome);
         }
         foreach (var production in _scenarioSimulation.LastUnitProductions)
         {

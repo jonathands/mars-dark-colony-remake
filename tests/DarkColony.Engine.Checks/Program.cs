@@ -2261,6 +2261,26 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(p7, simulation.ResourceForTeam(0));
     });
 
+    Check("losing the mining colony ends human01 in defeat with outcome text 4", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var (simulation, _) = DeterminismHarness.Load(install, rules, "human/human01");
+        // Trigger 5: every team 1 city slot gone -> bail 1 4.
+        foreach (var slot in new[] { 0, 1 })
+        {
+            var building = simulation.CityBuilding(1, slot)!;
+            building.Health = 0;
+            simulation.Destroy(building, new List<DestroyedActorEvent>());
+        }
+        for (var tick = 0; tick < 16 && simulation.Outcome is null; tick++) simulation.Step([]);
+        var outcome = simulation.Outcome!;
+        Equal(false, outcome.Victory);
+        Equal(4, outcome.OutcomeText);
+        Equal(1, simulation.PlayerStatistic(0, 0));
+        Equal(4, simulation.PlayerStatistic(7, 0));
+    });
+
     Check("native target rings decode whole-distance rings 0 through 16", () =>
     {
         var rings = NativeTargetRings.Load(GameInstallation.Open(dataPath).ExecutablePath).Rings;

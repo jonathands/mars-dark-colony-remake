@@ -88,6 +88,12 @@ public sealed partial class MainForm
 
     private void LeaveStoryBack()
     {
+        if (_debriefOutcome is not null)
+        {
+            _debriefOutcome = null;
+            ShowScreen(MenuScreenId.Main);
+            return;
+        }
         if (!_storyReturnsToGameplay)
         {
             ShowScreen(MenuScreenId.NewGame);
@@ -98,6 +104,12 @@ public sealed partial class MainForm
 
     private void LeaveStoryNext()
     {
+        if (_debriefOutcome is { } outcome)
+        {
+            _debriefOutcome = null;
+            ContinueAfterMission(outcome.Victory);
+            return;
+        }
         if (!_storyReturnsToGameplay)
         {
             ShowScreen(MenuScreenId.Gameplay);
@@ -140,6 +152,51 @@ public sealed partial class MainForm
     }
 
     private void StartCampaign()
+    {
+        _campaignMission = 1;
+        BeginCampaignMission();
+    }
+
+    /// <summary>
+    /// After a mission's outcome: a victory moves to the next campaign
+    /// mission (or back to the main menu after the last), a defeat replays
+    /// the same mission. Single-player War maps return to the main menu.
+    /// </summary>
+    private void ContinueAfterMission(bool victory)
+    {
+        if (_selectedScenario is not null)
+        {
+            ShowScreen(MenuScreenId.Main);
+            return;
+        }
+        if (victory)
+        {
+            var next = CampaignScenario(_campaignMission + 1);
+            if (_installation is null || !File.Exists(_installation.DataFile("scenario", next.Directory, $"{next.Name}.scn")))
+            {
+                _status = "Campaign complete.";
+                ShowScreen(MenuScreenId.Main);
+                return;
+            }
+            _campaignMission++;
+        }
+        BeginCampaignMission();
+    }
+
+    /// <summary>Shows a finished mission's outcome text (its .00N file) on the story screen.</summary>
+    private void ShowMissionDebrief(MissionOutcome outcome)
+    {
+        _debriefOutcome = outcome;
+        var key = outcome.OutcomeText.ToString("000", System.Globalization.CultureInfo.InvariantCulture);
+        _debriefText = _missionText?.Outcomes.TryGetValue(key, out var text) == true
+            ? text
+            : outcome.Victory ? "Mission complete." : "Mission failed.";
+        _briefingScrollLine = 0;
+        _storyReturnsToGameplay = false;
+        ShowScreen(MenuScreenId.Story);
+    }
+
+    private void BeginCampaignMission()
     {
         _storyReturnsToGameplay = false;
         _resumeGameplayFromStory = false;
@@ -350,7 +407,7 @@ public sealed partial class MainForm
 
     private IReadOnlyList<string> MissionBriefingLines()
     {
-        var source = _missionText?.Briefing ?? string.Empty;
+        var source = _debriefOutcome is not null ? _debriefText : _missionText?.Briefing ?? string.Empty;
         var lines = new List<string>();
         foreach (var paragraph in source.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n'))
         {

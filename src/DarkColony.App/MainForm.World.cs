@@ -160,9 +160,12 @@ public sealed partial class MainForm
         return image;
     }
 
-    private ScenarioChoice GameplayScenario() => _selectedScenario ?? (_training
-        ? new ScenarioChoice("test", _grayRace ? "atrain1" : "htrain1")
-        : new ScenarioChoice(_grayRace ? "alien" : "human", _grayRace ? "alien01" : "human01"));
+    private ScenarioChoice GameplayScenario() => _selectedScenario ?? CampaignScenario(_campaignMission);
+
+    /// <summary>Campaign missions are human01-15 / alien01-15; training is htrain1-7 / atrain1-7.</summary>
+    private ScenarioChoice CampaignScenario(int mission) => _training
+        ? new ScenarioChoice("test", $"{(_grayRace ? "atrain" : "htrain")}{mission}")
+        : new ScenarioChoice(_grayRace ? "alien" : "human", $"{(_grayRace ? "alien" : "human")}{mission:00}");
 
     private bool LoadGameplayScenario()
     {
