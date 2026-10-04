@@ -4672,6 +4672,20 @@ Check("faction-selected War rosters complete a local movement order", () =>
         }
     });
 
+    Check("every building, troop, research and unit of both races builds, trains, moves, attacks, uses its special and dies", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        foreach (var race in new[] { 0, 1 })
+        {
+            var sweep = CatalogSweep.Run(install, rules, race);
+            if (sweep.Failures.Count != 0)
+                throw new InvalidOperationException($"{sweep.Failures.Count} failure(s), run --catalog-sweep for the report: " + string.Join("; ", sweep.Failures));
+            // depend.txt has 7 buildings, 9 troops and 24 research items per race.
+            Equal((7, 9, 24), (sweep.Buildings, sweep.Troops, sweep.Research));
+        }
+    });
+
     Check("every installed scenario runs scripted orders without faults", () =>
     {
         const ulong smokeTicks = 300;

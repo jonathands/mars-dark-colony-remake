@@ -99,7 +99,7 @@ public sealed partial class ScenarioSimulation
             return new UnitProducedEvent(intent.TeamId, intent.DependencyItemId, 0, entityId, intent.SourceBuildingInstanceId, UnitProductionOutcome.NoCity);
         if (!actorsById.TryGetValue(intent.SourceBuildingInstanceId, out var source) || source.IsDestroyed || source.Seed.Team != intent.TeamId || source.Definition.MovementSpeed > 0)
             return new UnitProducedEvent(intent.TeamId, intent.DependencyItemId, 0, entityId, intent.SourceBuildingInstanceId, UnitProductionOutcome.SourceInvalid);
-        if (!item.PrerequisiteItemIds.Any(prerequisite => SourceMatchesBuildItem(source, prerequisite)))
+        if (!item.PrerequisiteItemIds.Any(prerequisite => StructureSatisfiesBuildItem(source, prerequisite)))
             return new UnitProducedEvent(intent.TeamId, intent.DependencyItemId, 0, entityId, intent.SourceBuildingInstanceId, UnitProductionOutcome.PrerequisiteMissing);
         var definition = EntityDefinitionFor(entityId);
         var occupancy = definition.MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
@@ -135,17 +135,48 @@ public sealed partial class ScenarioSimulation
             return new ResearchCompletedEvent(intent.TeamId, intent.DependencyItemId, intent.SourceBuildingInstanceId, ResearchOutcome.NotReserved);
         if (!actorsById.TryGetValue(intent.SourceBuildingInstanceId, out var source) || source.IsDestroyed || source.Seed.Team != intent.TeamId || source.Definition.MovementSpeed > 0)
             return new ResearchCompletedEvent(intent.TeamId, intent.DependencyItemId, intent.SourceBuildingInstanceId, ResearchOutcome.SourceInvalid);
-        if (!item.PrerequisiteItemIds.Any(prerequisite => SourceMatchesBuildItem(source, prerequisite)))
+        if (!StructureOffersResearch(source, item.Id))
             return new ResearchCompletedEvent(intent.TeamId, intent.DependencyItemId, intent.SourceBuildingInstanceId, ResearchOutcome.PrerequisiteMissing);
         return new ResearchCompletedEvent(intent.TeamId, intent.DependencyItemId, intent.SourceBuildingInstanceId,
             economy.CompleteResearch(dependencyCatalog, intent.DependencyItemId) ? ResearchOutcome.Completed : ResearchOutcome.NotReserved);
     }
 
-    private bool SourceMatchesBuildItem(SimulatedActor source, int dependencyItemId)
+    /// <summary>
+    /// Whether research can be ordered from a structure: one of the item's
+    /// building prerequisites stands there, or one of its upgrade
+    /// prerequisites can be ordered there. The native purchase (<c>0x437F3C</c>)
+    /// has no source building; the port's research tab and
+    /// <see cref="ResearchIntent"/> name one, and a level-2 upgrade whose only
+    /// prerequisite is its level 1 (Human scout weapon 2, item 64) must stay
+    /// on the structure that offered level 1.
+    /// </summary>
+    public bool StructureOffersResearch(SimulatedActor structure, int upgradeItemId)
     {
+        ArgumentNullException.ThrowIfNull(structure);
+        var visited = new HashSet<int>();
+        bool Offers(int itemId) =>
+            visited.Add(itemId) && dependencyCatalog?.TryGet(itemId, out var item) == true && item.IsUpgrade &&
+            item.PrerequisiteItemIds.Any(prerequisite => StructureSatisfiesBuildItem(structure, prerequisite) || Offers(prerequisite));
+        return Offers(upgradeItemId);
+    }
+
+    /// <summary>
+    /// Whether a structure stands for a building prerequisite: the item's
+    /// building in any variant at least as high, the rule of the dependency
+    /// check <c>0x438220</c>. An upgraded robot factory still counts as robot
+    /// factory 1, so research that names the first level stays possible.
+    /// </summary>
+    public bool StructureSatisfiesBuildItem(SimulatedActor structure, int dependencyItemId)
+    {
+        ArgumentNullException.ThrowIfNull(structure);
         if (dependencyCatalog?.TryGet(dependencyItemId, out var prerequisite) != true || !prerequisite.IsBuilding || footprints is null) return false;
-        return footprints.TryResolveBuildingEntity(prerequisite.BuildingFaction!.Value, prerequisite.BuildingVariant!.Value, prerequisite.BuildingSlot!.Value, out var entityId) &&
-               entityId == source.Seed.EntityId;
+        for (var variant = prerequisite.BuildingVariant!.Value;
+             footprints.TryResolveBuildingEntity(prerequisite.BuildingFaction!.Value, variant, prerequisite.BuildingSlot!.Value, out var entityId);
+             variant++)
+        {
+            if (entityId == structure.Seed.EntityId) return true;
+        }
+        return false;
     }
 
     private CellCoordinate? FindProductionSpawn(IReadOnlyList<CellCoordinate> sourceFootprint, CellOccupancy occupancy)

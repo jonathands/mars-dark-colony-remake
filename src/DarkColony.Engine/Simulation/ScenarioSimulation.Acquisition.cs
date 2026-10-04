@@ -27,8 +27,14 @@ public sealed partial class ScenarioSimulation
         {
             // Approach, yield, and acquired-attack orders are pushed above the
             // idle record, which resumes when they end; any other order
-            // replaces the command stack.
-            if (!IsIdleIssuedOrder(actor)) actor.IdleCommandActive = false;
+            // replaces the command stack, so a pending fidget record goes
+            // with it. Left behind, it would keep the actor from turning
+            // toward an ordered target, and an attacker never fires.
+            if (!IsIdleIssuedOrder(actor))
+            {
+                actor.IdleCommandActive = false;
+                actor.IdleFidgetFacing = null;
+            }
             return;
         }
         actor.IdleIssuedMove = null;

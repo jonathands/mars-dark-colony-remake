@@ -71,7 +71,9 @@ approach (`0x414C1B`) returns 0, so its first step waits for the next update. Mo
 attacks the handler starts itself (approach, yield, acquired target) are
 pushed above the idle record too. When they end, the record resumes with its
 health snapshot and miss counter intact. A player order replaces the whole
-stack.
+stack, so a fidget that is still pending is dropped with it. The port used to
+keep it, and a unit ordered to attack then never turned toward its target,
+because the fidget owns the turn.
 
 ## Yielding to a blocked ally
 

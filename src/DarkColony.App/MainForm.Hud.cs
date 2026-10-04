@@ -452,6 +452,7 @@ public sealed partial class MainForm
 
     private bool StructureMatchesBuildItem(WorldEntity structure, int itemId)
     {
+        if (_scenarioSimulation?.Actor(structure.InstanceId) is { } actor) return _scenarioSimulation.StructureSatisfiesBuildItem(actor, itemId);
         if (_dependencyCatalog?.TryGet(itemId, out var item) != true || !item.IsBuilding || _buildingFootprints is null) return false;
         return _buildingFootprints.TryResolveBuildingEntity(item.BuildingFaction!.Value, item.BuildingVariant!.Value, item.BuildingSlot!.Value, out var entityId) &&
                entityId == structure.EntityId;
@@ -510,7 +511,9 @@ public sealed partial class MainForm
         return _dependencyCatalog.Items.Values
             .Where(item => item.IsUpgrade && item.UpgradeEntityId is { } targetId && (uint)targetId < (uint)_entityCatalog.Entities.Count)
             .Where(item => _entityCatalog[item.UpgradeEntityId!.Value].Faction == (_grayRace ? 1 : 0))
-            .Where(item => item.PrerequisiteItemIds.Any(prerequisite => StructureMatchesBuildItem(structure, prerequisite)))
+            .Where(item => _scenarioSimulation?.Actor(structure.InstanceId) is { } actor
+                ? _scenarioSimulation.StructureOffersResearch(actor, item.Id)
+                : item.PrerequisiteItemIds.Any(prerequisite => StructureMatchesBuildItem(structure, prerequisite)))
             .OrderBy(item => item.Id);
     }
 

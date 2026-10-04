@@ -371,7 +371,7 @@ public sealed partial class ScenarioSimulation
     /// <c>0x41B634</c>: a new unit on the first free cell of the square rings
     /// around the origin (<c>0x41B4A0</c>: x outer, z inner).
     /// </summary>
-    private SimulatedActor? SpawnNativeUnit(int entityId, int team, CellCoordinate origin)
+    internal SimulatedActor? SpawnNativeUnit(int entityId, int team, CellCoordinate origin)
     {
         var definition = EntityDefinitionFor(entityId);
         if (FindNativeFreeCell(origin, definition.MovementClass) is not { } cell) return null;

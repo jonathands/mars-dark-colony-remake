@@ -213,6 +213,15 @@ or pausing the original process.
 
 ## Port implications
 
+- Research has no source building in `dc.exe`: the purchase path `0x437F3C`
+  sends command 12 once the availability check passes. The port's research
+  tab and `ResearchIntent` name a structure. A structure offers an upgrade when
+  it stands for one of the upgrade's building prerequisites in any variant at
+  least as high (`0x438220`), or when it offers one of the upgrade's
+  prerequisite upgrades (`StructureOffersResearch`). The catalog sweep
+  (`docs/CATALOG_SWEEP.md`) found research that was unreachable under the
+  earlier exact-building rule.
+
 - `depend.txt` prerequisites are evidence-backed. The runnable image's
   purchase helper at `dc16.exe` `0x4566d0` selects from the active player/UI
   list, obtains the cost through `0x4383d4`, compares it with P7 at `+0xbac`,

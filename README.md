@@ -67,7 +67,9 @@ installed scenarios are hashed every tick and compared with recorded goldens.
 `dotnet run --project tests/DarkColony.Engine.Checks -- --verify-goldens` runs
 only that comparison. See [`docs/DETERMINISM.md`](docs/DETERMINISM.md). Set
 `DARKCOLONY_CHECK_FILTER=<text>` to run only the checks whose name contains
-that text.
+that text. `-- --catalog-sweep` builds, trains, researches and fights with
+every item of both races and prints a line per item; see
+[`docs/CATALOG_SWEEP.md`](docs/CATALOG_SWEEP.md).
 
 The first milestone establishes a native 640×480 compiled menu host using the
 original external GIF backgrounds and recovered control coordinates. The

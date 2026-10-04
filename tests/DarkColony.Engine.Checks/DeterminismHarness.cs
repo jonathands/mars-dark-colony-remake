@@ -376,7 +376,7 @@ internal static class DeterminismCli
         var update = args.Contains("--update-goldens");
         var dump = Array.IndexOf(args, "--dump-digest");
         var summary = Array.IndexOf(args, "--event-summary");
-        string[] modes = ["--dump-fin", "--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke", "--decode-avi", "--lockstep"];
+        string[] modes = ["--dump-fin", "--animation-order", "--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run", "--render-map", "--ai-report", "--campaign-smoke", "--decode-avi", "--lockstep", "--catalog-sweep"];
         if (!args.Any(modes.Contains)) return false;
 
         // --decode-avi <file.avi> [frame ...]: SHA-256 prefixes of decoded RGB24 frames (compare with ffmpeg -pix_fmt rgb24).
@@ -424,6 +424,23 @@ internal static class DeterminismCli
             foreach (var mismatch in mismatches) Console.WriteLine(mismatch);
             Console.WriteLine(mismatches.Count == 0 ? "All golden digests match." : $"{mismatches.Count} golden scenario(s) diverged.");
             exitCode = mismatches.Count == 0 ? 0 : 1;
+            return true;
+        }
+
+        // --catalog-sweep: every building, troop, research and unit of both races, with a line per item.
+        if (args.Contains("--catalog-sweep"))
+        {
+            var failures = 0;
+            foreach (var race in new[] { 0, 1 })
+            {
+                var sweep = CatalogSweep.Run(installation, rules, race);
+                sweep.Report.ForEach(Console.WriteLine);
+                sweep.Gaps.ForEach(gap => Console.WriteLine("KNOWN GAP " + gap));
+                sweep.Failures.ForEach(failure => Console.WriteLine("FAIL " + failure));
+                Console.WriteLine($"{(race == 0 ? "Human" : "Gray")}: {sweep.Buildings} buildings, {sweep.Troops} troops, {sweep.Research} research, {sweep.Units} units, {sweep.Gaps.Count} known gaps, {sweep.Failures.Count} failures");
+                failures += sweep.Failures.Count;
+            }
+            exitCode = failures == 0 ? 0 : 1;
             return true;
         }
 
