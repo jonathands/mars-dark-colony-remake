@@ -81,12 +81,8 @@ public sealed partial class MainForm : Form
     private readonly Dictionary<string, Sprite> _sprites = new(StringComparer.OrdinalIgnoreCase);
     private BitmapFont? _menuFont;
     private EncyclopediaCatalog? _encyclopedia;
-    private readonly Dictionary<string, EncyclopediaArticle> _encyclopediaArticles = new(StringComparer.OrdinalIgnoreCase);
     private int _encyclopediaCategory = 1;
     private int _encyclopediaEntry;
-    private int _encyclopediaPreviewFrameOffset;
-    private int _encyclopediaPreviewFacingIndex;
-    private bool _encyclopediaPreviewPaused;
     private readonly Dictionary<(uint FrameId, bool FlipHorizontally, bool TransparentZero), GpuImage> _terrainGpuTiles = [];
     private Bitmap? _minimapPreview;
     private ScenarioWorld? _scenarioWorld;

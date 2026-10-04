@@ -36,18 +36,21 @@ public readonly record struct TeletypeGlyph(int Column, int Row, TeletypeCell Ce
 /// exceeds the bytes read.
 /// </para>
 /// <para>
-/// Every step (one per menu loop, once more than 5 ms have passed) draws
-/// the next character. Four trailing cursors redraw the previous ones, so the
+/// Every step (one per menu loop, once more than the window's interval has
+/// passed: 5 ms for the credits, 1 ms for encyclopedia articles) draws the
+/// next character. Four trailing cursors redraw the previous ones, so the
 /// last five cells show brightness 0x1F, 0x1C, 0x18, 0x14, then 0x10. When the
 /// lead cursor runs past the last row the window clears and redraws one line
-/// lower, all at 0x10. Once the last cursor passes the end the window clears
-/// and typing restarts (the main menu's repeat mode 2).
+/// lower, all at 0x10. Once the last cursor passes the end, repeat mode 2
+/// (the main-menu credits) clears the window and starts over. Mode 1
+/// (encyclopedia articles, debriefs) keeps the picture, and the window then
+/// scrolls by line (commands 1 and 2, <c>0x42814E</c>/<c>0x4281B6</c>).
 /// </para>
 /// </remarks>
 public sealed class TeletypeText
 {
-    /// <summary>Steps need strictly more than 5 ms between them (<c>0x427DF8</c>).</summary>
-    public const int StepMilliseconds = 6;
+    /// <summary>The main menu's interval: steps need strictly more than 5 ms between them (<c>0x427DF8</c>).</summary>
+    public const int CreditsInterval = 5;
 
     public const int NormalBrightness = 0x10;
     private static readonly int[] TrailBrightness = [0x1F, 0x1C, 0x18, 0x14];
@@ -55,13 +58,17 @@ public sealed class TeletypeText
 
     private readonly TeletypeCell[] _cells;
 
-    private TeletypeText(TeletypeCell[] cells, int columns, int lastRow, int lineCount)
+    private TeletypeText(TeletypeCell[] cells, int columns, int lastRow, int lineCount, bool repeat)
     {
         _cells = cells;
         Columns = columns;
         LastRow = lastRow;
         LineCount = lineCount;
+        Repeat = repeat;
     }
+
+    /// <summary>Mode 2 starts over after the end; mode 1 keeps the typed picture.</summary>
+    public bool Repeat { get; }
 
     public int Columns { get; }
 
@@ -85,7 +92,7 @@ public sealed class TeletypeText
         return (columns, lastRow);
     }
 
-    public static TeletypeText Parse(ReadOnlySpan<byte> file, int columns, int lastRow)
+    public static TeletypeText Parse(ReadOnlySpan<byte> file, int columns, int lastRow, bool repeat = true)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(columns);
         ArgumentOutOfRangeException.ThrowIfNegative(lastRow);
@@ -149,11 +156,49 @@ public sealed class TeletypeText
         }
         while (copied <= total);
 
-        return new TeletypeText([.. cells], columns, lastRow, lines);
+        return new TeletypeText([.. cells], columns, lastRow, lines, repeat);
     }
 
-    /// <summary>Steps taken <paramref name="milliseconds"/> after the window opened: the first follows at once.</summary>
-    public static long StepsAfter(long milliseconds) => milliseconds < 0 ? 0 : 1 + milliseconds / StepMilliseconds;
+    /// <summary>
+    /// Steps taken <paramref name="milliseconds"/> after the window opened, one
+    /// per <paramref name="interval"/> + 1 ms; the first follows at once.
+    /// </summary>
+    public static long StepsAfter(long milliseconds, int interval = CreditsInterval) =>
+        milliseconds < 0 ? 0 : 1 + milliseconds / (interval + 1);
+
+    /// <summary>Whether a mode 1 window has typed everything and now only scrolls.</summary>
+    public bool Finished(long steps) => !Repeat && steps >= StepsPerCycle;
+
+    /// <summary>A finished window after scrolling to <paramref name="top"/>: every row redrawn at 0x10 (<c>0x428380</c>).</summary>
+    public IReadOnlyList<TeletypeGlyph> VisibleScrolled(int top)
+    {
+        var glyphs = new List<TeletypeGlyph>();
+        for (var row = 0; row <= LastRow; row++)
+        {
+            for (var column = 0; column < Columns; column++)
+            {
+                var position = (top + row) * Columns + column;
+                if (position < 0 || position >= _cells.Length || _cells[position].Glyph == 1) continue;
+                glyphs.Add(new TeletypeGlyph(column, row, _cells[position], NormalBrightness));
+            }
+        }
+        return glyphs;
+    }
+
+    /// <summary>Command 1 (<c>0x42814E</c>): one line up, never above 0, nor any scroll while all lines fit.</summary>
+    public int ScrollUp(int top)
+    {
+        top--;
+        return top <= 0 || LastRow > LineCount ? 0 : top;
+    }
+
+    /// <summary>Command 2 (<c>0x4281B6</c>): one line down, at most to <c>lines - rows - 1</c>; 0 while all lines fit.</summary>
+    public int ScrollDown(int top)
+    {
+        top++;
+        if (LineCount - LastRow <= top) top = LineCount - LastRow - 1;
+        return LineCount < LastRow ? 0 : top;
+    }
 
     /// <summary>The first grid line in the window after <paramref name="steps"/> steps.</summary>
     public int TopLine(long steps)
@@ -206,6 +251,7 @@ public sealed class TeletypeText
     private int LeadCell(long steps)
     {
         if (steps <= 0) return -1;
+        if (!Repeat) return (int)Math.Min(steps, StepsPerCycle) + TrailBrightness.Length - 1;
         var phase = steps % StepsPerCycle;
         return phase == 0 ? -1 : (int)phase + TrailBrightness.Length - 1;
     }

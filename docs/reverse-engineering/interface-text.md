@@ -97,3 +97,48 @@ checks pin the window to two captures:
 
 - the 2026-10-04 dc16 capture, with lines 37-42 on screen;
 - `menu-130543.png`, with lines 55-59 over a blank line 60.
+
+## Encyclopedia (`0x402640`, menu `encycloe`)
+
+Each entry of `intrface/encyclo.txt` opens two widgets plus labels.
+
+**Article.** `encyclo/<stem>.txt` is a teletype in mode 1 at (20, 106),
+238 x 356, interval 1: 29 columns, rows 0-22, one character per 2 ms.
+- When typing ends, the picture stays, scrolled one line past the text.
+- UP/DOWN (gadgets 3 and 4) repeat while held, every > 0x42 ms (`0x402835`/`0x402887`). They send scroll commands that act only once typing is done:
+  - Command 1 (`0x42814E`) moves the top up, to no less than 0.
+  - Command 2 (`0x4281B6`) moves it down, to at most `lines - rows - 1`, so the first DOWN after typing moves the text up a line.
+- After a scroll every row redraws at brightness 0x10.
+- Colour codes persist across lines, so text with no code of its own keeps the last one; a description after `~4` values is green.
+
+**Preview.** `encyclo/<stem>.spr` is a picture widget (`0x428A78`; updated by `0x428C3C`, state 8) at (303, 13).
+- Frame 0 is the 320 x 200 box, which is cleared to black before each draw.
+- Frames 1 to count - 1 are the turning model, drawn with the screen palette (the SPR's own palette equals `ency.gif`).
+- A step comes when more than 0x21 ms have passed, the first at once. Forward wraps from the last frame to 1, and backward from 1 to the last.
+
+Preview controls:
+
+| Control | Effect |
+| --- | --- |
+| New entry | Forward. |
+| Holding LEFT / RIGHT (5 / 6) | Backward / forward; the direction stays after release. |
+| Bare pushbutton 9 | Stop. |
+| Bare pushbutton 10 | Play. |
+| LEFT/RIGHT after a stop | Turn only while held, because the loop end (`0x402F67`) puts the command back to hold. |
+| REW / FFW (7 / 8) | Previous / next entry, wrapping. |
+
+**Labels.** Text gadgets draw left-aligned in fixed cells of the font's frame-0
+width + 1 (`0x421DB8`).
+
+| Gadget | Position | Font | Colour | Text |
+| --- | --- | --- | --- | --- |
+| 17 | (20, 20) | mfonto2, 17 px cells | 2 | The entry name. |
+| 16 | (307, 287) | mfonto5 | 2 | The category title. |
+| 12 | (570, 340) | mfonto5 | 4 | "Earth". |
+| 13 | (570, 417) | mfonto5 | 4 | "Mars". |
+
+The titles and "Earth"/"Mars" are dc.exe literals (`0x4721C0`-`0x4721F4`), which the port reads from the executable.
+
+The port earlier drew a world FIN through GDI, which the D3D canvas hid (the "black trooper" preview), and showed an HP/SP line that the original does not have.
+
+No native capture of this screen was taken. The original reads its mouse through DirectInput, so automated clicks cannot reach it without moving the user's cursor.

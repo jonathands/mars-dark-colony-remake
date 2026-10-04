@@ -258,6 +258,8 @@ public sealed partial class MainForm
 
     private void DrawButton(Graphics graphics, MenuButton button, int sequenceIndex)
     {
+        // An empty art name is a bare pushbutton: a hot zone over the background.
+        if (button.ArtName == string.Empty) return;
         var hovered = _hoveredButton == button.Id;
         var pressed = _pressedButton == button.Id;
         var bright = button.Selected || hovered;

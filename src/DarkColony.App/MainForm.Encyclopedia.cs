@@ -1,47 +1,61 @@
-using DarkColony.App.Diagnostics;
-using DarkColony.App.Ui;
 using DarkColony.App.Rendering;
+using DarkColony.App.Ui;
 using DarkColony.Engine.Assets;
-using DarkColony.Engine.Combat;
 using DarkColony.Engine.Data;
-using DarkColony.Engine.Economy;
-using DarkColony.Engine.Simulation;
-using DarkColony.Engine.Terrain;
-using DarkColony.Engine.Time;
-using DarkColony.Engine.Scenario;
-using DarkColony.Engine.World;
-using DarkColony.Engine.Commands;
-using DarkColony.Engine.Movement;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
+using DarkColony.Engine.Interface;
 using System.Media;
 
 namespace DarkColony.App;
 
-/// <summary>The encyclopedia screen and its animated unit previews.</summary>
+/// <summary>
+/// The encyclopedia (<c>0x402640</c>, menu <c>intrface/encycloe</c>). Each
+/// entry opens two widgets. The article <c>encyclo/&lt;stem&gt;.txt</c> is a
+/// mode 1 teletype at (20, 106), 238 x 356, interval 1. The preview
+/// <c>encyclo/&lt;stem&gt;.spr</c> is a picture widget at (303, 13), interval 0x21.
+/// </summary>
 public sealed partial class MainForm
 {
+    private static readonly Rectangle EncyclopediaArticleBounds = new(20, 106, 238, 356);
+    private static readonly Point EncyclopediaPreviewOrigin = new(303, 13);
+    private const int EncyclopediaArticleInterval = 1;
+    // 0x40284D: UP/DOWN repeat while held, once more than 0x42 ms have passed.
+    private const int EncyclopediaScrollMilliseconds = 0x42;
+
+    private string? _encyclopediaShownKey;
+    private TeletypeText? _encyclopediaArticleText;
+    private long _encyclopediaArticleOpenedAt;
+    private int? _encyclopediaArticleTop;
+    private long _encyclopediaLastScrollAt;
+    private Sprite? _encyclopediaPreviewSprite;
+    private PictureAnimation? _encyclopediaPreview;
+    private bool _encyclopediaPreviewStopped;
+    private readonly Dictionary<int, byte[]> _encyclopediaPreviewFrames = [];
+    private NativeEncyclopediaLabels? _encyclopediaLabels;
+
     private IReadOnlyList<MenuButton> EncyclopediaButtons() =>
     [
         Button(0, 309, 446, 89, 25, "BACK", () => ShowScreen(MenuScreenId.Main)),
         Button(1, 464, 310, 89, 25, "HUMANS", () => SelectEncyclopediaCategory(1), _encyclopediaCategory == 1),
         Button(11, 464, 348, 89, 25, "ARTIFACTS", () => SelectEncyclopediaCategory(2), _encyclopediaCategory == 2),
         Button(2, 464, 386, 89, 25, "GRAYS", () => SelectEncyclopediaCategory(0), _encyclopediaCategory == 0),
-        Button(3, 272, 102, 25, 25, "", () => MoveEncyclopediaSelection(-1), artName: "UP"),
-        Button(4, 272, 441, 25, 25, "", () => MoveEncyclopediaSelection(1), artName: "DOWN"),
-        // `encycloe` identifies these exact native gadgets as LEFT/RIGHT/REW/FFW.
-        Button(5, 343, 220, 23, 14, "", () => StepEncyclopediaPreview(-1), artName: "LEFT"),
-        Button(6, 445, 220, 23, 14, "", () => StepEncyclopediaPreview(1), artName: "RIGHT"),
-        Button(7, 511, 220, 27, 14, "", RewindEncyclopediaPreview, artName: "REW"),
-        Button(8, 601, 220, 27, 14, "", FastForwardEncyclopediaPreview, artName: "FFW"),
+        // 0x402835/0x402887: UP and DOWN scroll the article while held (see UpdateEncyclopedia).
+        Button(3, 272, 102, 25, 25, "", () => { }, artName: "UP"),
+        Button(4, 272, 441, 25, 25, "", () => { }, artName: "DOWN"),
+        // 0x4027FB/0x402818: LEFT and RIGHT turn the preview backward or forward.
+        Button(5, 343, 220, 23, 14, "", () => SetEncyclopediaPreviewCommand(PictureCommand.Backward), artName: "LEFT"),
+        Button(6, 445, 220, 23, 14, "", () => SetEncyclopediaPreviewCommand(PictureCommand.Forward), artName: "RIGHT"),
+        // 0x40290A/0x402A52: REW and FFW step to the previous and next entry, wrapping.
+        Button(7, 511, 220, 27, 14, "", () => MoveEncyclopediaSelection(-1), artName: "REW"),
+        Button(8, 601, 220, 27, 14, "", () => MoveEncyclopediaSelection(1), artName: "FFW"),
+        // 0x4028D9/0x4028EF: the bare pushbuttons 9 and 10 stop and play the preview.
+        Button(9, 370, 220, 23, 14, "", StopEncyclopediaPreview, artName: string.Empty),
+        Button(10, 400, 220, 23, 14, "", PlayEncyclopediaPreview, artName: string.Empty),
     ];
 
     private void SelectEncyclopediaCategory(int category)
     {
         _encyclopediaCategory = category;
         _encyclopediaEntry = 0;
-        ResetEncyclopediaPreview();
         ShowScreen(MenuScreenId.Encyclopedia);
         PlayEncyclopediaNarration();
     }
@@ -51,38 +65,30 @@ public sealed partial class MainForm
         var category = Encyclopedia()?.Categories[_encyclopediaCategory];
         if (category is null || category.Entries.Count == 0) return;
         _encyclopediaEntry = (_encyclopediaEntry + delta + category.Entries.Count) % category.Entries.Count;
-        ResetEncyclopediaPreview();
-        _status = $"Encyclopedia: {category.Entries[_encyclopediaEntry].Name}";
+        _encyclopediaShownKey = null;
         PlayEncyclopediaNarration();
     }
 
-    private void ResetEncyclopediaPreview()
+    /// <summary>
+    /// LEFT/RIGHT keep their direction after release, unless pushbutton 9
+    /// stopped the preview. Then the loop end (<c>0x402F67</c>) puts it back on
+    /// hold, so it only turns while the button is held.
+    /// </summary>
+    private void SetEncyclopediaPreviewCommand(PictureCommand command)
     {
-        _encyclopediaPreviewFrameOffset = 0;
-        _encyclopediaPreviewFacingIndex = 0;
-        _encyclopediaPreviewPaused = false;
+        if (_encyclopediaPreview is { } preview && !_encyclopediaPreviewStopped) preview.Command = command;
     }
 
-    private void StepEncyclopediaPreview(int delta)
+    private void StopEncyclopediaPreview()
     {
-        _encyclopediaPreviewFacingIndex = (_encyclopediaPreviewFacingIndex + delta + 8) % 8;
-        _encyclopediaPreviewFrameOffset = 0;
-        _encyclopediaPreviewPaused = false;
-        _status = delta < 0 ? "Encyclopedia animation: turn left." : "Encyclopedia animation: turn right.";
+        _encyclopediaPreviewStopped = true;
+        if (_encyclopediaPreview is { } preview) preview.Command = PictureCommand.Hold;
     }
 
-    private void RewindEncyclopediaPreview()
+    private void PlayEncyclopediaPreview()
     {
-        _encyclopediaPreviewFrameOffset = 0;
-        _encyclopediaPreviewPaused = true;
-        _status = "Encyclopedia animation: first frame.";
-    }
-
-    private void FastForwardEncyclopediaPreview()
-    {
-        _encyclopediaPreviewFrameOffset = int.MaxValue;
-        _encyclopediaPreviewPaused = true;
-        _status = "Encyclopedia animation: last frame.";
+        _encyclopediaPreviewStopped = false;
+        if (_encyclopediaPreview is { } preview) preview.Command = PictureCommand.Forward;
     }
 
     private void PlayEncyclopediaNarration()
@@ -120,186 +126,135 @@ public sealed partial class MainForm
     private void DrawEncyclopedia(Graphics graphics)
     {
         var catalog = Encyclopedia();
-        if (catalog is null) return;
+        if (catalog is null || _installation is null) return;
         var category = catalog.Categories[_encyclopediaCategory];
         _encyclopediaEntry = Math.Clamp(_encyclopediaEntry, 0, category.Entries.Count - 1);
         var selected = category.Entries[_encyclopediaEntry];
-        DrawMenuText(graphics, selected.Name.ToUpperInvariant(), new Rectangle(18, 18, 260, 18));
-        DrawEncyclopediaArticle(graphics, selected);
-        DrawEncyclopediaEntity(graphics, selected);
-        DrawEncyclopediaRuntimeStats(graphics, selected);
+        var key = $"{_encyclopediaCategory}:{_encyclopediaEntry}:{_screenStartedAtTick}";
+        if (key != _encyclopediaShownKey)
+        {
+            _encyclopediaShownKey = key;
+            OpenEncyclopediaEntry(selected);
+        }
+
+        var now = Environment.TickCount64;
+        UpdateEncyclopedia(now);
+        DrawEncyclopediaLabels(graphics, selected);
+        DrawEncyclopediaArticle(graphics, now);
+        DrawEncyclopediaPreview(graphics);
     }
 
-    private void DrawEncyclopediaRuntimeStats(Graphics graphics, EncyclopediaEntry entry)
+    private void OpenEncyclopediaEntry(EncyclopediaEntry entry)
     {
-        if (_installation is null || !EncyclopediaUnitIdentityCatalog.TryGetEntityId(entry, out var entityId)) return;
+        var root = _installation!.RootPath;
+        _encyclopediaArticleText = null;
+        _encyclopediaArticleTop = null;
+        _encyclopediaArticleOpenedAt = Environment.TickCount64;
+        _encyclopediaPreviewSprite = null;
+        _encyclopediaPreview = null;
+        _encyclopediaPreviewStopped = false;
+        _encyclopediaPreviewFrames.Clear();
         try
         {
-            _entityCatalog ??= EntityCatalog.Load(_installation.DataFile("gamestat", "gamestat.txt"));
-            if ((uint)entityId >= (uint)_entityCatalog.Entities.Count) return;
-            var entity = _entityCatalog[entityId];
-            // `encycloe` declares its only nearby in_text at (307,287), 16 chars.
-            // Keep this compact and derived from the runtime catalog, leaving
-            // the source article prose untouched in its own panel.
-            DrawMenuText(graphics, $"HP{entity.Health} SP{entity.MovementSpeed}", new Rectangle(307, 287, 154, 14),
-                center: false, remap: Color.FromArgb(91, 203, 0));
+            var font = LoadMenuFont().Sprite.Frames[0];
+            var (columns, lastRow) = TeletypeText.Layout(EncyclopediaArticleBounds.Width, EncyclopediaArticleBounds.Height, font.Width, font.Height);
+            var article = Path.Combine(root, entry.ResourceStem.Replace('/', Path.DirectorySeparatorChar) + ".txt");
+            if (File.Exists(article)) _encyclopediaArticleText = TeletypeText.Parse(File.ReadAllBytes(article), columns, lastRow, repeat: false);
+            var preview = Path.Combine(root, entry.ResourceStem.Replace('/', Path.DirectorySeparatorChar) + ".spr");
+            if (File.Exists(preview))
+            {
+                _encyclopediaPreviewSprite = Sprite.Load(preview);
+                if (_encyclopediaPreviewSprite.Frames.Count >= 2) _encyclopediaPreview = new PictureAnimation(_encyclopediaPreviewSprite.Frames.Count);
+            }
         }
         catch (Exception error) when (error is IOException or InvalidDataException)
         {
-            _status = $"Encyclopedia stat error: {error.Message}";
+            _status = $"Encyclopedia entry error: {error.Message}";
         }
     }
 
-    private void DrawEncyclopediaArticle(Graphics graphics, EncyclopediaEntry entry)
+    private void UpdateEncyclopedia(long now)
+    {
+        if (_encyclopediaPreview is { } preview)
+        {
+            // 0x4278A8: a held LEFT/RIGHT sets the direction for this update.
+            if (_pressedButton == 5) preview.Command = PictureCommand.Backward;
+            else if (_pressedButton == 6) preview.Command = PictureCommand.Forward;
+            preview.Advance(now);
+            if (_encyclopediaPreviewStopped) preview.Command = PictureCommand.Hold;
+        }
+
+        if (_pressedButton is 3 or 4 && _encyclopediaArticleText is { } article &&
+            now - _encyclopediaLastScrollAt > EncyclopediaScrollMilliseconds)
+        {
+            _encyclopediaLastScrollAt = now;
+            var steps = TeletypeText.StepsAfter(now - _encyclopediaArticleOpenedAt, EncyclopediaArticleInterval);
+            // The teletype only scrolls once typing is done (state 2).
+            if (article.Finished(steps))
+            {
+                var top = _encyclopediaArticleTop ?? article.TopLine(steps);
+                _encyclopediaArticleTop = _pressedButton == 3 ? article.ScrollUp(top) : article.ScrollDown(top);
+            }
+        }
+    }
+
+    private void DrawEncyclopediaLabels(Graphics graphics, EncyclopediaEntry entry)
     {
         if (_installation is null) return;
         try
         {
-            if (!_encyclopediaArticles.TryGetValue(entry.ResourceStem, out var article))
-            {
-                article = EncyclopediaArticle.Load(_installation.RootPath, entry.ResourceStem);
-                _encyclopediaArticles.Add(entry.ResourceStem, article);
-            }
-
-            var row = 0;
-            foreach (var sourceLine in article.Lines)
-            {
-                foreach (var line in WrapEncyclopediaLine(sourceLine.Text, maximumCharacters: 31))
-                {
-                    if (row >= 24) return;
-                    DrawEncyclopediaArticleLine(graphics, line, sourceLine.Segments, 19, 103 + row * 14);
-                    row++;
-                }
-            }
+            _encyclopediaLabels ??= NativeEncyclopediaLabels.Load(_installation.ExecutablePath);
+            // encycloe: in_text 17 (20,20) in font 1, 16 (307,287), 12 (570,340) and 13 (570,417).
+            DrawCellText(graphics, entry.Name, 20, 20, LoadFont("mfonto2"), colour: 2, palette: "ency");
+            DrawCellText(graphics, _encyclopediaLabels.CategoryTitle(_encyclopediaCategory), 307, 287, LoadMenuFont(), colour: 2, palette: "ency");
+            DrawCellText(graphics, _encyclopediaLabels.Earth, 570, 340, LoadMenuFont(), colour: 4, palette: "ency");
+            DrawCellText(graphics, _encyclopediaLabels.Mars, 570, 417, LoadMenuFont(), colour: 4, palette: "ency");
         }
-        catch (Exception error) when (error is IOException or InvalidDataException or FileNotFoundException)
+        catch (Exception error) when (error is IOException or InvalidDataException)
         {
-            _status = $"Encyclopedia article error: {error.Message}";
+            _status = $"Encyclopedia label error: {error.Message}";
         }
     }
 
-    private static IEnumerable<string> WrapEncyclopediaLine(string source, int maximumCharacters)
+    private void DrawEncyclopediaArticle(Graphics graphics, long now)
     {
-        if (source.Length == 0) return [string.Empty];
-        var words = source.Split(' ', StringSplitOptions.None);
-        var lines = new List<string>();
-        var current = string.Empty;
-        foreach (var word in words)
+        if (_encyclopediaArticleText is not { } article) return;
+        var font = LoadMenuFont();
+        var cell = font.Sprite.Frames[0];
+        FillNative(graphics, EncyclopediaArticleBounds, Color.Black);
+        var steps = TeletypeText.StepsAfter(now - _encyclopediaArticleOpenedAt, EncyclopediaArticleInterval);
+        var glyphs = _encyclopediaArticleTop is { } top && article.Finished(steps) ? article.VisibleScrolled(top) : article.Visible(steps);
+        foreach (var glyph in glyphs)
         {
-            var candidate = current.Length == 0 ? word : $"{current} {word}";
-            if (current.Length != 0 && candidate.Length > maximumCharacters)
-            {
-                lines.Add(current);
-                current = word;
-            }
-            else current = candidate;
-        }
-        if (current.Length != 0) lines.Add(current);
-        return lines;
-    }
-
-    private void DrawEncyclopediaArticleLine(Graphics graphics, string line, IReadOnlyList<EncyclopediaArticleSegment> sourceSegments, int x, int y)
-    {
-        var remaining = line;
-        var cursor = x;
-        foreach (var segment in sourceSegments)
-        {
-            if (remaining.Length == 0) break;
-            var take = Math.Min(segment.Text.Length, remaining.Length);
-            var text = remaining[..take];
-            DrawMenuText(graphics, text, new Rectangle(cursor, y, 238 - (cursor - x), 14), center: false,
-                remap: EncyclopediaTextColor(segment.PaletteIndex));
-            cursor += MenuTextWidth(text);
-            remaining = remaining[take..];
+            var frame = font.Sprite.Frames[glyph.Cell.Glyph];
+            var bitmap = NativeGlyphBitmap(font, glyph.Cell.Glyph, glyph.Cell.Colour, glyph.Brightness, "ency");
+            if (bitmap is null) continue;
+            DrawNative(graphics, bitmap,
+                EncyclopediaArticleBounds.X + glyph.Column * (cell.Width + 1) + frame.AnchorX,
+                EncyclopediaArticleBounds.Y + glyph.Row * (cell.Height + 1) + frame.AnchorY);
         }
     }
 
-    private static Color EncyclopediaTextColor(int paletteIndex) => paletteIndex switch
+    /// <summary>The box (frame 0's size) cleared to black, then the current frame at its anchor.</summary>
+    private void DrawEncyclopediaPreview(Graphics graphics)
     {
-        0 => Color.FromArgb(238, 63, 63),
-        1 => Color.FromArgb(55, 142, 255),
-        4 => Color.FromArgb(95, 238, 70),
-        _ => Color.FromArgb(215, 225, 195),
-    };
-
-    private void DrawEncyclopediaEntity(Graphics graphics, EncyclopediaEntry entry)
-    {
-        var animation = entry.NativeId switch
+        if (_encyclopediaPreviewSprite is not { } sprite || _encyclopediaPreview is not { } preview) return;
+        var box = sprite.Frames[0];
+        FillNative(graphics, new Rectangle(EncyclopediaPreviewOrigin, new Size(box.Width, box.Height)), Color.Black);
+        var frame = sprite.Frames[preview.Frame];
+        if (frame.Width == 0 || frame.Height == 0) return;
+        if (!_encyclopediaPreviewFrames.TryGetValue(preview.Frame, out var rgba))
         {
-            0 => ("gray.fin", "GRAYSTAND0"),
-            1 => ("atril.fin", "ATRILSTAND0"),
-            2 => ("scyth.fin", "SCYTHSTAND0"),
-            3 => ("ortu.fin", "ORTUMOVE0"),
-            4 => ("psyc.fin", "PSYCSTAND0"),
-            5 => ("slug.fin", "SLUGSTAND0"),
-            6 => ("xeno.fin", "XENOSTAND0"),
-            7 => ("slom.fin", "SLOMSTAND0"),
-            8 => ("sauc.fin", "EASY2"),
-            9 => ("zisp.fin", "ZISPSTAND0"),
-            10 => ("trooper1.fin", "TROOPER1STAND6"),
-            11 => ("barr.fin", "BARRSTAND0"),
-            12 => ("reap.fin", "REAPSTAND0"),
-            13 => ("scgm.fin", "SCGMMOVE0"),
-            14 => ("cyborg.fin", "CYBORGSTAND0"),
-            15 => ("expl.fin", "EXPLSTAND0"),
-            16 => ("turr.fin", "TURRSTAND0"),
-            17 => ("engi.fin", "ENGISTAND0"),
-            18 => ("drop.fin", "DROPSTAND0"),
-            19 => ("beon.fin", "BEONMOVE0"),
-            20 => ("tektara.fin", "TEKTARA"),
-            21 => ("mactor.fin", "MACTORSTAND0"),
-            22 => ("lens.fin", "LENSSTAND0"),
-            23 => ("luna.fin", "LUNAMOVE0"),
-            24 => ("hyyk.fin", "HYYKDEPLOY0"),
-            _ => ((string File, string Name)?)null,
-        };
-        if (animation is { } value)
-        {
-            DrawEncyclopediaAnimationCentered(
-                graphics,
-                value.File,
-                value.Name,
-                new Rectangle(304, 8, 328, 208),
-                3);
+            rgba = sprite.FrameRgba(preview.Frame, palette: ScreenPalette("ency"));
+            _encyclopediaPreviewFrames[preview.Frame] = rgba;
         }
-    }
-
-    private bool DrawEncyclopediaAnimationCentered(
-        Graphics graphics,
-        string fileName,
-        string animationName,
-        Rectangle viewport,
-        ulong ticksPerFrame)
-    {
-        var animation = EncyclopediaFacingAnimation(fileName, animationName);
-        if (animation is null) return false;
-        var span = animation.LastFrame - animation.FirstFrame + 1;
-        var offset = _encyclopediaPreviewPaused
-            ? Math.Clamp(_encyclopediaPreviewFrameOffset, 0, span - 1)
-            : (int)((_world.TickCount - _screenStartedAtTick) / ticksPerFrame % (ulong)span);
-        var bitmap = AnimationBitmap(fileName, (ushort)(animation.FirstFrame + offset));
-        if (bitmap is null) return false;
-        var state = graphics.Save();
-        graphics.SetClip(viewport);
-        graphics.DrawImageUnscaled(bitmap,
-            viewport.X + (viewport.Width - bitmap.Width) / 2,
-            viewport.Y + (viewport.Height - bitmap.Height) / 2);
-        graphics.Restore(state);
-        return true;
-    }
-
-    private AnimationRange? EncyclopediaFacingAnimation(string fileName, string defaultAnimationName)
-    {
-        // The normal FIN stand families use named even facing sectors (0..14).
-        // LEFT/RIGHT therefore change the selected named family, rather than
-        // treating adjacent logical frames as a fake time animation. Some
-        // shipped names contain typos or incomplete sectors, so fall back to
-        // the entry's documented default when an exact direction is absent.
-        var trailingDigit = defaultAnimationName.Length - 1;
-        while (trailingDigit >= 0 && char.IsAsciiDigit(defaultAnimationName[trailingDigit])) trailingDigit--;
-        if (trailingDigit == defaultAnimationName.Length - 1) return Animation(fileName, defaultAnimationName);
-        var prefix = defaultAnimationName[..(trailingDigit + 1)];
-        var desiredName = $"{prefix}{_encyclopediaPreviewFacingIndex * 2}";
-        return Animation(fileName, desiredName) ?? Animation(fileName, defaultAnimationName);
+        var x = EncyclopediaPreviewOrigin.X + frame.AnchorX;
+        var y = EncyclopediaPreviewOrigin.Y + frame.AnchorY;
+        if (_activeCanvas is { } canvas) canvas.DrawForeground(new GpuImage(frame.Width, frame.Height, rgba, transient: true), x, y);
+        else
+        {
+            using var bitmap = BitmapFromRgba(frame.Width, frame.Height, rgba);
+            graphics.DrawImageUnscaled(bitmap, x, y);
+        }
     }
 }

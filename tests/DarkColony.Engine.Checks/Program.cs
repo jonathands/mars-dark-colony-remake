@@ -4178,6 +4178,56 @@ Check("faction-selected War rosters complete a local movement order", () =>
         Equal(67, credits.TopLine(credits.StepsPerCycle - 1));
     });
 
+    Check("encyclopedia widgets: the preview turns on the native clock and the article types once", () =>
+    {
+        // 0x428C3C state 8: the first update steps at once, then one step per 0x21 + 1 ms.
+        var preview = new PictureAnimation(frameCount: 5);
+        preview.Advance(1_000);
+        Equal(2, preview.Frame);
+        preview.Advance(1_033);
+        Equal(2, preview.Frame);
+        preview.Advance(1_034);
+        Equal(3, preview.Frame);
+        preview.Advance(1_102);
+        Equal(1, preview.Frame);
+        preview.Command = PictureCommand.Backward;
+        preview.Step();
+        Equal(4, preview.Frame);
+        preview.Command = PictureCommand.Hold;
+        preview.Step();
+        Equal(4, preview.Frame);
+
+        var install = GameInstallation.Open(dataPath);
+        var font = Sprite.Load(install.DataFile("intrface", "mfonto5.spr")).Frames[0];
+        var (columns, lastRow) = TeletypeText.Layout(238, 356, font.Width, font.Height);
+        Equal(29, columns);
+        Equal(22, lastRow);
+        var article = TeletypeText.Parse(File.ReadAllBytes(Path.Combine(install.RootPath, "encyclo", "troop.txt")), columns, lastRow, repeat: false);
+        Equal(false, article.Finished(article.StepsPerCycle - 1));
+        Equal(true, article.Finished(article.StepsPerCycle));
+        // Mode 1 keeps the picture: after the end the window rests one line past the text.
+        var final = article.Visible(article.StepsPerCycle + 100);
+        Equal(true, final.Count > 0);
+        var top = article.TopLine(article.StepsPerCycle + 100);
+        Equal(Math.Max(0, article.LineCount - lastRow), top);
+        Equal(1L + 100 / 2, TeletypeText.StepsAfter(100, interval: 1));
+        // 0x4281B6 caps the top at lines - rows - 1; 0x42814E stops at 0.
+        if (article.LineCount > lastRow)
+        {
+            Equal(article.LineCount - lastRow - 1, article.ScrollDown(top));
+            Equal(top - 1, article.ScrollUp(top));
+        }
+        Equal(0, article.ScrollUp(1));
+        Equal(true, article.VisibleScrolled(0).All(glyph => glyph.Brightness == TeletypeText.NormalBrightness));
+        Equal((byte)1, article.Cells[0].Colour);
+
+        var labels = NativeEncyclopediaLabels.Load(install.ExecutablePath);
+        Equal("Earth Mars Human Forces Gray Forces Alien Artifacts",
+            $"{labels.Earth} {labels.Mars} {labels.HumanForces} {labels.GrayForces} {labels.AlienArtifacts}");
+        var troop = Sprite.Load(Path.Combine(install.RootPath, "encyclo", "troop.spr"));
+        Equal("320x200", $"{troop.Frames[0].Width}x{troop.Frames[0].Height}");
+    });
+
     Check("CD music plays the image from track 2 on the native poll", () =>
     {
         const string cue = """

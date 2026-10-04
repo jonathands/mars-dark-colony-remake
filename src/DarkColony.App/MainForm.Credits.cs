@@ -18,21 +18,72 @@ public sealed partial class MainForm
     private TeletypeText? _creditsTeletype;
     private bool _creditsTeletypeUnavailable;
     private NativeColourRemap? _colourRemap;
-    private IReadOnlyList<VgaColor>? _menuPalette;
-    private readonly Dictionary<(int Glyph, int Colour, int Brightness), Bitmap> _nativeGlyphs = [];
+    private readonly Dictionary<string, IReadOnlyList<VgaColor>> _screenPalettes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, BitmapFont> _fonts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<(BitmapFont Font, string Palette, int Glyph, int Colour, int Brightness), Bitmap> _nativeGlyphs = [];
     private long _creditsOpenedAtMilliseconds;
     private long _creditsLastStep;
     private SoundPlayer? _teletypeBeep;
     private long _teletypeBeepEndsAtMilliseconds;
     private long _teletypeBeepMilliseconds;
 
-    private BitmapFont LoadMenuFont()
+    private BitmapFont LoadMenuFont() => _menuFont ??= LoadFont("mfonto5");
+
+    /// <summary>An interface font; every menu file sets font_offset 31.</summary>
+    private BitmapFont LoadFont(string name)
     {
         if (_installation is null) throw new InvalidOperationException("No installation.");
-        return _menuFont ??= new BitmapFont(
-            Sprite.Load(_installation.DataFile("intrface", "mfonto5.spr")),
-            frameOffset: 31,
-            lineHeight: 14);
+        if (_fonts.TryGetValue(name, out var font)) return font;
+        var sprite = Sprite.Load(_installation.DataFile("intrface", $"{name}.spr"));
+        font = new BitmapFont(sprite, frameOffset: 31, lineHeight: sprite.Frames[0].Height);
+        _fonts[name] = font;
+        return font;
+    }
+
+    /// <summary>A screen picture's palette (the interface GIFs share entries 0-200 and differ above).</summary>
+    private IReadOnlyList<VgaColor> ScreenPalette(string name)
+    {
+        if (_installation is null) throw new InvalidOperationException("No installation.");
+        if (!_screenPalettes.TryGetValue(name, out var palette))
+        {
+            palette = GifPalette.Load(_installation.DataFile("intrface", $"{name}.gif"));
+            _screenPalettes[name] = palette;
+        }
+        return palette;
+    }
+
+    /// <summary>
+    /// Text in fixed cells of the font's frame-0 width plus one, left-aligned,
+    /// as the menu text gadgets (<c>in_text</c>, <c>0x421DB8</c>) draw it.
+    /// </summary>
+    private void DrawCellText(Graphics graphics, string text, int x, int y, BitmapFont font, int colour,
+        int brightness = NativeColourRemap.NormalBrightness, string palette = "intro")
+    {
+        var cell = font.Sprite.Frames[0].Width + 1;
+        for (var index = 0; index < text.Length; index++)
+        {
+            var glyph = new TeletypeCell((byte)text[index], 0).Glyph;
+            if (glyph >= font.Sprite.Frames.Count) continue;
+            var frame = font.Sprite.Frames[glyph];
+            var bitmap = NativeGlyphBitmap(font, glyph, colour, brightness, palette);
+            if (bitmap is not null) DrawNative(graphics, bitmap, x + index * cell + frame.AnchorX, y + frame.AnchorY);
+        }
+    }
+
+    private void FillNative(Graphics graphics, Rectangle bounds, Color color)
+    {
+        if (_activeCanvas is { } canvas) canvas.FillForeground(bounds, color);
+        else
+        {
+            using var brush = new SolidBrush(color);
+            graphics.FillRectangle(brush, bounds);
+        }
+    }
+
+    private void DrawNative(Graphics graphics, Bitmap bitmap, int x, int y)
+    {
+        if (_activeCanvas is { } canvas) canvas.DrawForeground(GpuBitmap(bitmap), x, y);
+        else graphics.DrawImageUnscaled(bitmap, x, y);
     }
 
     private void ResetCreditsTeletype()
@@ -54,8 +105,7 @@ public sealed partial class MainForm
                 _creditsTeletype = TeletypeText.Parse(File.ReadAllBytes(_installation.DataFile("intrface", "credits.txt")), columns, lastRow);
             }
 
-            if (_activeCanvas is { } canvas) canvas.FillForeground(CreditsTeletypeBounds, Color.Black);
-            else graphics.FillRectangle(Brushes.Black, CreditsTeletypeBounds);
+            FillNative(graphics, CreditsTeletypeBounds, Color.Black);
 
             var now = Environment.TickCount64;
             var steps = TeletypeText.StepsAfter(now - _creditsOpenedAtMilliseconds);
@@ -64,10 +114,9 @@ public sealed partial class MainForm
                 var frame = font.Sprite.Frames[glyph.Cell.Glyph];
                 var bitmap = NativeGlyphBitmap(font, glyph.Cell.Glyph, glyph.Cell.Colour, glyph.Brightness);
                 if (bitmap is null) continue;
-                var x = CreditsTeletypeBounds.X + glyph.Column * (cell.Width + 1) + frame.AnchorX;
-                var y = CreditsTeletypeBounds.Y + glyph.Row * (cell.Height + 1) + frame.AnchorY;
-                if (_activeCanvas is { } target) target.DrawForeground(GpuBitmap(bitmap), x, y);
-                else graphics.DrawImageUnscaled(bitmap, x, y);
+                DrawNative(graphics, bitmap,
+                    CreditsTeletypeBounds.X + glyph.Column * (cell.Width + 1) + frame.AnchorX,
+                    CreditsTeletypeBounds.Y + glyph.Row * (cell.Height + 1) + frame.AnchorY);
             }
 
             if (steps != _creditsLastStep)
@@ -84,31 +133,31 @@ public sealed partial class MainForm
     }
 
     /// <summary>
-    /// A font frame drawn through <see cref="NativeColourRemap"/> with the
-    /// menu palette (intro.gif); palette index 0 stays transparent, as the
-    /// native blitters skip it.
+    /// A font frame drawn through <see cref="NativeColourRemap"/> with a
+    /// screen palette (intro.gif by default). Palette index 0 stays
+    /// transparent, since the native blitters skip it.
     /// </summary>
-    private Bitmap? NativeGlyphBitmap(BitmapFont font, int glyph, int colour, int brightness)
+    private Bitmap? NativeGlyphBitmap(BitmapFont font, int glyph, int colour, int brightness, string palette = "intro")
     {
         if (_installation is null) return null;
-        if (_nativeGlyphs.TryGetValue((glyph, colour, brightness), out var cached)) return cached;
+        if (_nativeGlyphs.TryGetValue((font, palette, glyph, colour, brightness), out var cached)) return cached;
         var frame = font.Sprite.Frames[glyph];
         if (frame.Width == 0 || frame.Height == 0) return null;
         _colourRemap ??= NativeColourRemap.Load(_installation.ExecutablePath);
-        _menuPalette ??= GifPalette.Load(_installation.DataFile("intrface", "intro.gif"));
+        var colours = ScreenPalette(palette);
         var indices = frame.DecodeIndices();
         var rgba = new byte[indices.Length * 4];
         for (var pixel = 0; pixel < indices.Length; pixel++)
         {
             if (indices[pixel] == 0) continue;
-            var color = _colourRemap.Map(_menuPalette, indices[pixel], colour, brightness);
+            var color = _colourRemap.Map(colours, indices[pixel], colour, brightness);
             rgba[pixel * 4] = color.Red;
             rgba[pixel * 4 + 1] = color.Green;
             rgba[pixel * 4 + 2] = color.Blue;
             rgba[pixel * 4 + 3] = 255;
         }
         var bitmap = BitmapFromRgba(frame.Width, frame.Height, rgba);
-        _nativeGlyphs[(glyph, colour, brightness)] = bitmap;
+        _nativeGlyphs[(font, palette, glyph, colour, brightness)] = bitmap;
         return bitmap;
     }
 
