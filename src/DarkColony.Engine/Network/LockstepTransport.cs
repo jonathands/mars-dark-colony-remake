@@ -52,9 +52,53 @@ public sealed class TcpLockstepTransport : ILockstepTransport
 {
     private readonly List<Connection> _connections = [];
     private readonly ConcurrentQueue<LockstepMessage> _inbox = new();
+    private readonly ConcurrentQueue<int> _lost = new();
     private readonly bool _relay;
+    private TcpListener? _listener;
 
     private TcpLockstepTransport(bool relay) => _relay = relay;
+
+    /// <summary>
+    /// Hosts on <paramref name="listener"/> and keeps accepting players in the
+    /// background (a lobby) until <see cref="StopAccepting"/>.
+    /// </summary>
+    public static TcpLockstepTransport Listen(TcpListener listener)
+    {
+        ArgumentNullException.ThrowIfNull(listener);
+        var transport = new TcpLockstepTransport(relay: true) { _listener = listener };
+        new Thread(() =>
+        {
+            try
+            {
+                while (true) transport.Add(listener.AcceptTcpClient());
+            }
+            catch (Exception error) when (error is SocketException or ObjectDisposedException or InvalidOperationException) { }
+        }) { IsBackground = true, Name = "Lockstep accept" }.Start();
+        return transport;
+    }
+
+    /// <summary>Stops taking new players (the game starts).</summary>
+    public void StopAccepting()
+    {
+        _listener?.Stop();
+        _listener = null;
+    }
+
+    /// <summary>Connected peers (the host's clients, or the client's host).</summary>
+    public int PeerCount
+    {
+        get
+        {
+            lock (_connections) return _connections.Count(connection => !connection.Closed);
+        }
+    }
+
+    /// <summary>
+    /// A connection that closed, by the player it carried. The player is the
+    /// first one its messages named, or -1 if it named none (a client's link
+    /// to its host).
+    /// </summary>
+    public bool TryTakeLostPlayer(out int player) => _lost.TryDequeue(out player);
 
     /// <summary>Waits for <paramref name="clients"/> players to connect on <paramref name="listener"/>.</summary>
     public static TcpLockstepTransport Host(TcpListener listener, int clients, TimeSpan timeout)
@@ -94,6 +138,7 @@ public sealed class TcpLockstepTransport : ILockstepTransport
 
     public void Dispose()
     {
+        StopAccepting();
         lock (_connections)
             foreach (var connection in _connections) connection.Dispose();
     }
@@ -105,9 +150,11 @@ public sealed class TcpLockstepTransport : ILockstepTransport
         lock (_connections) _connections.Add(connection);
         connection.Start(line =>
         {
-            _inbox.Enqueue(LockstepCodec.Decode(line));
+            var message = LockstepCodec.Decode(line);
+            if (connection.Player < 0 && message.Player >= 0) connection.Player = message.Player;
+            _inbox.Enqueue(message);
             if (_relay) Broadcast(line, except: connection);
-        });
+        }, () => _lost.Enqueue(connection.Player));
     }
 
     private void Broadcast(string line, Connection? except)
@@ -123,7 +170,12 @@ public sealed class TcpLockstepTransport : ILockstepTransport
         private readonly StreamWriter _writer = new(client.GetStream(), new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
         private readonly object _writeLock = new();
 
-        public void Start(Action<string> received)
+        /// <summary>The player this connection carries, once a message names one.</summary>
+        public int Player { get; set; } = -1;
+
+        public bool Closed { get; private set; }
+
+        public void Start(Action<string> received, Action closed)
         {
             var reader = new StreamReader(client.GetStream(), new UTF8Encoding(false));
             new Thread(() =>
@@ -132,7 +184,10 @@ public sealed class TcpLockstepTransport : ILockstepTransport
                 {
                     while (reader.ReadLine() is { } line) received(line);
                 }
-                catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidOperationException) { }
+                catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidOperationException
+                    or System.Text.Json.JsonException) { }
+                Closed = true;
+                closed();
             }) { IsBackground = true, Name = "Lockstep receive" }.Start();
         }
 

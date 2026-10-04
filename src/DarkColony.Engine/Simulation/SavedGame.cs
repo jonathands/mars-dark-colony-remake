@@ -7,9 +7,13 @@ namespace DarkColony.Engine.Simulation;
 /// <summary>The commands one simulation step consumed (only steps that had any are kept).</summary>
 public sealed record SavedStep(ulong Tick, IReadOnlyList<ScheduledWorldCommand> Commands);
 
-/// <summary>The Single Player War launch a saved game was started with.</summary>
+/// <summary>
+/// The War launch a saved game was started with. A session launch also keeps
+/// its lobby rows and the local owner, so loading reruns the same session start.
+/// </summary>
 public sealed record SavedWarLaunch(int Race, int LocalTeamId, int StorageCells, int Artifacts, bool EruptingVents,
-    bool RenewableVents, int P7QuantityPercent, int P7FlowPercent, int CommanderRank);
+    bool RenewableVents, int P7QuantityPercent, int P7FlowPercent, int CommanderRank,
+    IReadOnlyList<Scenario.WarLobbyRow>? Rows = null, int LocalOwner = 0);
 
 /// <summary>Where a saved campaign stands: race, training, and mission number.</summary>
 public sealed record SavedCampaign(bool Gray, bool Training, int Mission);

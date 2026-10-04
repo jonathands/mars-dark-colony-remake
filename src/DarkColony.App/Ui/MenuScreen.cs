@@ -8,6 +8,7 @@ public enum MenuScreenId
     SinglePlayer,
     Encyclopedia,
     NetworkOptions,
+    NetworkConnect,
     Story,
     Gameplay,
 }

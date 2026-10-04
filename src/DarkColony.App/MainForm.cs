@@ -255,6 +255,11 @@ public sealed partial class MainForm : Form
         };
         KeyPress += (_, eventArgs) =>
         {
+            if (HandleNetworkConnectKey(eventArgs.KeyChar))
+            {
+                eventArgs.Handled = true;
+                return;
+            }
             if (_screen != MenuScreenId.NewGame || char.IsControl(eventArgs.KeyChar)) return;
             if (!char.IsLetterOrDigit(eventArgs.KeyChar) && eventArgs.KeyChar != ' ') return;
             if (_leaderName.Length >= 17) return;
@@ -280,24 +285,23 @@ public sealed partial class MainForm : Form
                 _surface.RenderAndPresent();
                 return;
             }
+            PumpNetworkLobby();
             _clock.Advance(Environment.TickCount64, () =>
             {
                 UpdateGameplayEdgeScroll();
+                if (IsNetworkGame)
+                {
+                    // A network game never pauses: the other players would stall.
+                    StepNetworkGame();
+                    return;
+                }
                 if (!_gameplayPaused && _optionsDraft is null)
                 {
                     CapturePreviousActorRenderPositions();
                     _world.Step();
                     if (_replay is not null) StepReplay();
                     else if (_scenarioSimulation is not null) _journal.Step(_scenarioSimulation, _world.LastCommands);
-                    CaptureDeathEffects();
-                    CaptureCombatSounds();
-                    CaptureCombatAnimations();
-                    CaptureBattlefieldTransportFeedback();
-                    CaptureAttackOrderFeedback();
-                    CaptureHealingFeedback();
-                    CaptureInspireFeedback();
-                    CaptureHarvesterFeedback();
-                    CaptureConstructionFeedback();
+                    CaptureSimulationFeedback();
                 }
             });
             if (_screen == MenuScreenId.Gameplay) PollCdMusic();
@@ -338,6 +342,7 @@ public sealed partial class MainForm : Form
             foreach (var image in _nativeGlyphs.Values) image.Dispose();
             _teletypeBeep?.Dispose();
             StopCdMusic();
+            LeaveNetwork();
             _minimapPreview?.Dispose();
         }
 
@@ -361,6 +366,8 @@ public sealed partial class MainForm : Form
     private void ShowScreen(MenuScreenId screen)
     {
         ClearTransientInputState();
+        // Leaving the game (not just for its story screen) closes a network session.
+        if (IsNetworkGame && screen is not (MenuScreenId.Gameplay or MenuScreenId.Story)) LeaveNetwork();
         if (screen == MenuScreenId.Gameplay && !_resumeGameplayFromStory)
         {
             DisposeGameplayMinimapPreview();
@@ -407,6 +414,7 @@ public sealed partial class MainForm : Form
             MenuScreenId.SinglePlayer => SinglePlayerButtons(),
             MenuScreenId.Encyclopedia => EncyclopediaButtons(),
             MenuScreenId.NetworkOptions => NetworkButtons(),
+            MenuScreenId.NetworkConnect => NetworkConnectButtons(),
             MenuScreenId.Story => StoryButtons(),
             _ => [],
         };
@@ -456,6 +464,7 @@ public sealed partial class MainForm : Form
         DrawInnerMenuAssets(graphics);
         if (_screen == MenuScreenId.NewGame) DrawNewGameLeaderName(graphics);
         if (_screen == MenuScreenId.SinglePlayer) DrawSinglePlayerMapSelection(graphics);
+        if (_screen == MenuScreenId.NetworkConnect) DrawNetworkConnect(graphics);
         if (_screen == MenuScreenId.Story) DrawMissionBriefing(graphics);
 
         for (var index = 0; index < _buttons.Count; index++) DrawButton(graphics, _buttons[index], index);
@@ -530,4 +539,18 @@ public sealed partial class MainForm : Form
         [59] = new(518, 276), [105] = new(518, 276), [73] = new(577, 276), [106] = new(577, 276),
         [60] = new(518, 317), [78] = new(518, 317), [74] = new(577, 317), [107] = new(577, 317),
     };
+
+    /// <summary>Collects what the last simulation update produced for sounds, effects and status lines.</summary>
+    private void CaptureSimulationFeedback()
+    {
+        CaptureDeathEffects();
+        CaptureCombatSounds();
+        CaptureCombatAnimations();
+        CaptureBattlefieldTransportFeedback();
+        CaptureAttackOrderFeedback();
+        CaptureHealingFeedback();
+        CaptureInspireFeedback();
+        CaptureHarvesterFeedback();
+        CaptureConstructionFeedback();
+    }
 }

@@ -151,6 +151,13 @@ public sealed class ScenarioDefinition
         return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, teams, Placements, Vents);
     }
 
+    /// <summary>The same scenario with every team passed through <paramref name="change"/>.</summary>
+    public ScenarioDefinition WithTeams(Func<ScenarioTeam, ScenarioTeam> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, [.. Teams.Select(change)], Placements, Vents);
+    }
+
     /// <summary>
     /// The same scenario with one team under the given AI profile. The
     /// campaign smoke uses it to let the Krusty planner play the local side.

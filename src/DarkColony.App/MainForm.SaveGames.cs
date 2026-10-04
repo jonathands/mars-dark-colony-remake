@@ -40,7 +40,7 @@ public sealed partial class MainForm
         SavedWarLaunch? war = scenario.WarLaunch is { } launch
             ? new SavedWarLaunch(launch.Race, launch.LocalTeamId, launch.Settings.StorageCells, launch.Settings.Artifacts,
                 launch.Settings.EruptingVents, launch.Settings.RenewableVents, launch.Settings.P7QuantityPercent,
-                launch.Settings.P7FlowPercent, launch.Settings.CommanderRank)
+                launch.Settings.P7FlowPercent, launch.Settings.CommanderRank, launch.Rows, 0)
             : null;
         SavedCampaign? campaign = _selectedScenario is null ? new SavedCampaign(_grayRace, _training, _campaignMission) : null;
         var saved = _journal.Save(_scenarioSimulation, scenario.Directory, scenario.Name, war, campaign);
@@ -122,6 +122,13 @@ public sealed partial class MainForm
             var settings = new SinglePlayerWarSettings(war.StorageCells, war.Artifacts, war.EruptingVents, war.RenewableVents,
                 war.P7QuantityPercent, war.P7FlowPercent, war.CommanderRank);
             var launch = new SinglePlayerWarLaunch(saved.ScenarioName, saved.ScenarioName, war.Race, war.LocalTeamId, settings);
+            // A session launch reruns the same session start from its saved rows.
+            EnsureSinglePlayerMaps();
+            if (war.Rows is { } rows && _installation is not null &&
+                _singlePlayerMaps.FirstOrDefault(map => string.Equals(map.Stem, saved.ScenarioName, StringComparison.OrdinalIgnoreCase)) is { } map &&
+                map.TryCreateSession(rows, war.LocalOwner, settings, (_simulationRules ??= SimulationRules.Load(_installation)).RandomTable, out var session))
+                launch = session;
+            _localPlayerTeam = launch.LocalTeamId;
             _selectedScenario = new ScenarioChoice(saved.ScenarioDirectory, saved.ScenarioName, WarLaunch: launch);
         }
         else if (saved.Campaign is { } campaign)

@@ -30,6 +30,7 @@ public sealed partial class MainForm
         MenuScreenId.SinglePlayer => "tcpwait",
         MenuScreenId.Encyclopedia => "ency",
         MenuScreenId.NetworkOptions => "net",
+        MenuScreenId.NetworkConnect => "server",
         MenuScreenId.Story => "story",
         MenuScreenId.Gameplay => "intrface",
         _ => "intro",

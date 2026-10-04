@@ -47,6 +47,9 @@ internal static class Program
             CdImagePath = CdImageLocator.Locate(arguments, installation?.RootPath),
             NoMusic = arguments.Any(argument => argument.Equals("--no-music", StringComparison.OrdinalIgnoreCase)),
             NoVideo = arguments.Any(argument => argument.Equals("--no-video", StringComparison.OrdinalIgnoreCase)),
+            // --net-port N hosts and joins network games on port N.
+            NetworkPort = Array.FindIndex(arguments, argument => argument.Equals("--net-port", StringComparison.OrdinalIgnoreCase)) is var net and >= 0 &&
+                net + 1 < arguments.Length && int.TryParse(arguments[net + 1], out var port) ? port : MainForm.DefaultNetworkPort,
             // --replay <file.dcsave> watches a saved game from its first update.
             ReplayPath = Array.FindIndex(arguments, argument => argument.Equals("--replay", StringComparison.OrdinalIgnoreCase)) is var replay and >= 0 && replay + 1 < arguments.Length
                 ? arguments[replay + 1]

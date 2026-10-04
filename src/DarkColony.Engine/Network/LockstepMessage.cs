@@ -8,6 +8,10 @@ namespace DarkColony.Engine.Network;
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(LockstepTurn), "turn")]
 [JsonDerivedType(typeof(LockstepDigest), "digest")]
+[JsonDerivedType(typeof(LobbyJoin), "join")]
+[JsonDerivedType(typeof(LobbyRace), "race")]
+[JsonDerivedType(typeof(LobbyUpdate), "lobby")]
+[JsonDerivedType(typeof(LobbyStart), "start")]
 public abstract record LockstepMessage(int Player);
 
 /// <summary>Everything <paramref name="Player"/> orders for <paramref name="Tick"/> (possibly nothing).</summary>

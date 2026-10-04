@@ -185,7 +185,7 @@ cannot direct-attack critters, and their projectiles pass through critters.
 | Passive vs vent pulse phase | confirmed: passive on `world+0x94C & 15` (the update counter, incremented by `0x41E1F9` before each update); vents on `+0x530 & 15` (the day/night phase counter, reset at each phase change) |
 | Script rate changes (action 12) | confirmed; see [mission-triggers.md](mission-triggers.md) |
 | Placement race substitution (`0x41C4E3`) | confirmed; check "the SCN loader swaps a placement of the other race for its counterpart" |
-| Network-session slot gating | deferred to goal 8 (networking): single-player sessions build every slot |
+| Session slot gating | implemented (`WarSession.Apply`): in War, the loader (`0x41C155`) zeroes the city slots of every team outside the session (no occupied lobby row after the shuffle); see [war-session.md](war-session.md) |
 | Role of `%AISlots` line 1 | confirmed: starting view center (`0x41EBD8`) and AI home fallback (`0x457210`) |
 | Team without a city | decided from the executable: every building is a city slot at the origin, and the footprint routine `0x444C80` does nothing for a zero origin. In a scenario that declares cities, such a team's purchases return `NoCity`, and it cannot drop buildings or train troops. Scenarios without any `%AISlots` (engine fixtures) keep the port's free drop and immediate-spawn adapters (`UsesPortConstructionAdapters`) |
 | Building purchase builds the slot at once (command 9) | confirmed; see [production-flow.md](production-flow.md) |

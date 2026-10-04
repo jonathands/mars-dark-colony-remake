@@ -73,6 +73,24 @@ public sealed record SinglePlayerWarScenario(string Stem, ScenarioDefinition Def
         launch = new SinglePlayerWarLaunch(Stem, DisplayName, race, team.TeamId, settings);
         return true;
     }
+
+    /// <summary>
+    /// The native session start for these lobby rows (<see cref="WarSession"/>).
+    /// The local player is the human row <paramref name="localOwner"/> owns. It
+    /// fails when settings are invalid, that row got no team, or the team is not
+    /// enabled in the SCN.
+    /// </summary>
+    public bool TryCreateSession(IReadOnlyList<WarLobbyRow> rows, int localOwner, SinglePlayerWarSettings settings,
+        NativeRandomTable random, out SinglePlayerWarLaunch launch)
+    {
+        launch = default!;
+        if (!settings.IsValid) return false;
+        var seats = WarSession.Assign(Stem, rows, random);
+        var local = seats.FirstOrDefault(seat => seat is { Kind: WarSeatKind.Human } && seat.Owner == localOwner);
+        if (local is null || !seats.All(seat => seat is null || Definition.Teams.Any(team => team.TeamId == seat.TeamId && team.Enabled))) return false;
+        launch = new SinglePlayerWarLaunch(Stem, DisplayName, local.Race, local.TeamId, settings) { Rows = [.. rows], Seats = seats };
+        return true;
+    }
 }
 
 /// <summary>
@@ -87,10 +105,21 @@ public sealed record SinglePlayerWarLaunch(
     int LocalTeamId,
     SinglePlayerWarSettings Settings)
 {
-    /// <summary>Transforms the shared SCN commander placeholder for this War launch.</summary>
+    /// <summary>The lobby rows of a session launch (null for a launch made from a team choice).</summary>
+    public IReadOnlyList<WarLobbyRow>? Rows { get; init; }
+
+    /// <summary>The team each row got at the session start, indexed by team.</summary>
+    public IReadOnlyList<WarSeat?>? Seats { get; init; }
+
+    /// <summary>
+    /// The scenario as this launch plays it: the native session's seats when
+    /// there are any, else the commander roster for the local team with every
+    /// other enabled team on the computer.
+    /// </summary>
     public ScenarioDefinition ApplyTo(ScenarioDefinition scenario)
     {
         ArgumentNullException.ThrowIfNull(scenario);
+        if (Seats is { } seats) return WarSession.Apply(scenario, seats, Settings.CommanderRank);
         return scenario.WithSelectedWarRoster(LocalTeamId, Race, Settings.CommanderRank).WithComputerOpponents(LocalTeamId);
     }
 }

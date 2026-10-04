@@ -41,18 +41,23 @@ public sealed partial class MainForm
             return;
         }
 
-        var faction = localPlayer.Gray ? 1 : 0;
-        var settings = new SinglePlayerWarSettings(
-            _warStorageCells,
-            _warArtifacts,
-            _warEruptingVents,
-            _warRenewableVents,
-            _warP7QuantityMultiplier,
-            _warP7FlowMultiplier,
-            _warCommanderRank);
-        if (!selected.TryCreateLaunch(faction, settings, out var launch))
+        // The native session start (WarSession) gives the occupied rows the
+        // map's team positions at random. Single Player War has one human,
+        // the first Human row; any other Human row plays as a computer.
+        var firstHuman = Array.IndexOf(_warLobbyPlayers, localPlayer);
+        var rows = _warLobbyPlayers.Select((player, index) => new WarLobbyRow(
+            player.Type switch
+            {
+                WarLobbyPlayerType.Human when index == firstHuman => WarSeatKind.Human,
+                WarLobbyPlayerType.Human or WarLobbyPlayerType.Ai => WarSeatKind.Computer,
+                WarLobbyPlayerType.AiPlus => WarSeatKind.ComputerPlus,
+                _ => WarSeatKind.None,
+            },
+            player.Gray ? 1 : 0)).ToArray();
+        var rules = _simulationRules ??= SimulationRules.Load(_installation!);
+        if (!selected.TryCreateSession(rows, 0, CurrentWarSettings(), rules.RandomTable, out var launch))
         {
-            _status = $"{selected.DisplayName} has no enabled {(localPlayer.Gray ? "Gray" : "Human")} team.";
+            _status = $"{selected.DisplayName} has only {WarSession.PlayerPositions(selected.Stem)} player positions for these rows.";
             return;
         }
 
@@ -60,6 +65,7 @@ public sealed partial class MainForm
         _localPlayerTeam = launch.LocalTeamId;
         _grayRace = localPlayer.Gray;
         _status = $"Single Player War: {launch.Stem.ToUpperInvariant()} as {(localPlayer.Gray ? "Gray" : "Human")} team {_localPlayerTeam + 1}; P7 { _warP7QuantityMultiplier}% / flow {_warP7FlowMultiplier}%.";
+        RuntimeLog.Info($"{_status} Seats: {string.Join(", ", launch.Seats!.Where(seat => seat is not null).Select(seat => $"team {seat!.TeamId + 1} {seat.Kind}"))}.");
         ShowScreen(MenuScreenId.Gameplay);
     }
 
@@ -169,7 +175,7 @@ public sealed partial class MainForm
             var typeColor = player.Type == WarLobbyPlayerType.Human ? Color.FromArgb(79, 7, 7) : warGreen;
             DrawMenuText(graphics, WarLobbyTypeLabel(player.Type), new Rectangle(45, y, 50, 16), remap: typeColor);
             DrawMenuText(graphics, player.Gray ? "Gray" : "Human", new Rectangle(150, y, 50, 16), remap: warGreen);
-            var name = index == 0 && !string.IsNullOrWhiteSpace(_leaderName) ? _leaderName : player.Name;
+            var name = !InNetworkLobby && index == 0 && !string.IsNullOrWhiteSpace(_leaderName) ? _leaderName : player.Name;
             DrawMenuText(graphics, name, new Rectangle(246, y, 160, 16), center: false, remap: warGreen);
             var type = Animation("knobe.fin", "PLAYERTYPE");
             if (type is not null) DrawAnimationFrame(graphics, "knobe.fin", type.FirstFrame + (int)player.Type, 99, y);
@@ -378,18 +384,9 @@ public sealed partial class MainForm
         player.Gray = !player.Gray;
         if (player.Type != WarLobbyPlayerType.Human) return;
 
+        // The session start gives the row's race to whichever team it lands on.
         _grayRace = player.Gray;
-        EnsureSinglePlayerMaps();
-        if (_singlePlayerMaps.Count == 0) return;
-        var faction = player.Gray ? 1 : 0;
-        if (_singlePlayerMaps[_singlePlayerMapIndex].EnabledTeamForRace(faction) is null)
-        {
-            var compatible = _singlePlayerMaps
-                .Select((scenario, index) => (scenario, index))
-                .FirstOrDefault(item => item.scenario.EnabledTeamForRace(faction) is not null);
-            _singlePlayerMapIndex = compatible.index;
-        }
-        _status = $"Player {playerIndex + 1}: {(player.Gray ? "Gray" : "Human")}; map {_singlePlayerMaps[_singlePlayerMapIndex].DisplayName}.";
+        _status = $"Player {playerIndex + 1}: {(player.Gray ? "Gray" : "Human")}.";
     }
 
     private static bool TrySelectWarOption(Point point, int y, ref int selected, int count, int start)
@@ -428,7 +425,7 @@ public sealed partial class MainForm
     {
         public WarLobbyPlayerType Type { get; set; }
         public bool Gray { get; set; }
-        public string Name { get; init; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
         public int Color { get; set; }
         public int Team { get; set; }
         public bool Ready { get; set; }

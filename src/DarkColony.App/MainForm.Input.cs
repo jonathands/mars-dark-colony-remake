@@ -270,7 +270,7 @@ public sealed partial class MainForm
             if (eventArgs.Button == MouseButtons.Left) HandleGameOptionsClick(eventArgs.Location);
             return;
         }
-        if (_screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left &&
+        if (_screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left && (!InNetworkLobby || IsNetworkHost) &&
             new Rectangle(596, 227, 10, 61).Contains(eventArgs.Location))
         {
             _singlePlayerScrollDragging = true;
@@ -372,6 +372,11 @@ public sealed partial class MainForm
             SelectSaveAt(eventArgs.Location);
         if (button is null && _screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left)
         {
+            if (InNetworkLobby && HandleNetworkLobbyClick(eventArgs.Location))
+            {
+                _surface.Invalidate();
+                return;
+            }
             if (HandleWarLobbyClick(eventArgs.Location))
             {
                 _surface.Invalidate();
@@ -653,12 +658,22 @@ public sealed partial class MainForm
             }
             if (_gameplayHudLayout.Pause.Bounds.Contains(point))
             {
+                if (IsNetworkGame)
+                {
+                    _status = "A network game cannot pause.";
+                    return true;
+                }
                 _gameplayPaused = !_gameplayPaused;
                 _status = _gameplayPaused ? "Simulation paused." : "Simulation resumed.";
                 return true;
             }
             if (_gameplayHudLayout.SaveGame.Bounds.Contains(point))
             {
+                if (IsNetworkGame)
+                {
+                    _status = "Network games are not saved.";
+                    return true;
+                }
                 SaveCurrentGame();
                 return true;
             }

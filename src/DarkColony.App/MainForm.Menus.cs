@@ -63,10 +63,24 @@ public sealed partial class MainForm
 
     private IReadOnlyList<MenuButton> SinglePlayerButtons() =>
     [
-        Button(0, 430, 452, 90, 26, "MENU", () => ShowScreen(MenuScreenId.Main)),
-        Button(1, 530, 452, 90, 26, "READY", StartSinglePlayerWar),
-        Button(2, 588, 194, 26, 26, "", () => SelectSinglePlayerMap(-1), artName: "UP"),
-        Button(3, 588, 294, 26, 26, "", () => SelectSinglePlayerMap(1), artName: "DOWN"),
+        Button(0, 430, 452, 90, 26, "MENU", () =>
+        {
+            if (!InNetworkLobby)
+            {
+                ShowScreen(MenuScreenId.Main);
+                return;
+            }
+            LeaveNetwork();
+            ShowScreen(MenuScreenId.NetworkOptions);
+        }),
+        Button(1, 530, 452, 90, 26, "READY", () =>
+        {
+            if (InNetworkLobby) PressNetworkReady();
+            else StartSinglePlayerWar();
+        }),
+        // In a network lobby the map belongs to the host.
+        Button(2, 588, 194, 26, 26, "", () => { if (!InNetworkLobby || IsNetworkHost) SelectSinglePlayerMap(-1); }, artName: "UP"),
+        Button(3, 588, 294, 26, 26, "", () => { if (!InNetworkLobby || IsNetworkHost) SelectSinglePlayerMap(1); }, artName: "DOWN"),
     ];
 
     private IReadOnlyList<MenuButton> NetworkButtons() =>
@@ -75,9 +89,16 @@ public sealed partial class MainForm
         Button(1, 38, 89, 178, 24, "IPX NETWORK", () => _status = "Legacy IPX is not supported."),
         Button(2, 38, 137, 178, 24, "MODEM", () => _status = "Legacy modem play is not supported."),
         Button(3, 38, 185, 178, 24, "SERIAL CABLE", () => _status = "Legacy serial play is not supported."),
-        Button(4, 454, 377, 178, 24, "ACT AS SERVER", () => _status = "Modern networking is a later milestone."),
-        Button(5, 454, 409, 178, 24, "CONNECT TO SERVER", () => _status = "Modern networking is a later milestone."),
+        Button(4, 454, 377, 178, 24, "ACT AS SERVER", HostNetworkGame),
+        Button(5, 454, 409, 178, 24, "CONNECT TO SERVER", () => ShowScreen(MenuScreenId.NetworkConnect)),
         Button(6, 454, 441, 178, 24, "MAIN MENU", () => ShowScreen(MenuScreenId.Main)),
+    ];
+
+    // `intrface/getsvre`: CONNECT and MENU under the address field.
+    private IReadOnlyList<MenuButton> NetworkConnectButtons() =>
+    [
+        Button(0, 292, 334, 90, 26, "CONNECT", ConnectToNetworkGame),
+        Button(1, 292, 360, 90, 26, "MENU", () => ShowScreen(MenuScreenId.NetworkOptions)),
     ];
 
     // `intrface/storye` supplies the native scroll geometry and Next/Back

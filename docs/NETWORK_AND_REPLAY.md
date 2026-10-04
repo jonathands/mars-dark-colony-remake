@@ -46,6 +46,38 @@ Evidence:
 
 The original's network code is DirectPlay (`dplay.c`, `net.c`, `sync.c`; packet
 table at `0x500F80`). Its opcode 1 runs N world updates, so it is lockstep too.
-This port's protocol is its own and does not talk to the original. The app
-has no multiplayer lobby yet: MULTI PLAYER WAR still shows the original
-`netopte` choices without a session behind them.
+This port's protocol is its own and does not talk to the original.
+
+## Multi Player War in the app
+
+MULTI PLAYER WAR opens `netopte`. Only TCP/IP is offered; IPX, modem and serial report that they are unsupported.
+
+**Hosting.** ACT AS SERVER listens on port 47624, DirectPlay's TCP/IP port (`--net-port` overrides), and opens the `multie` lobby.
+
+**Joining.** CONNECT TO SERVER opens `getsvre`, where the player types an address, optionally as `host:port`, then CONNECT.
+- The client sends `LobbyJoin`.
+- The host seats it on the first row no human owns and broadcasts `LobbyUpdate`.
+- The client recognises its own player number by its nonce.
+
+**In the lobby.**
+- The host keeps the map list, the options and the computer rows (Type cycles Computer, Computer+ and None).
+- Each player toggles its own race.
+- A player who disconnects frees its row.
+
+**Starting.** The host's READY sends `LobbyStart`. Every peer then runs the native War session start (reverse-engineering/war-session.md) on the same rows, with its own row as the local player, and plays in lockstep.
+- Each clock step queues the player's orders into the session, then runs every update that is due and complete, catching up at most 8 per step.
+
+**During the game.**
+- The game cannot pause or be saved.
+- The options popup does not change its speed.
+- `--outcome-after` is ignored.
+- A desync or a lost peer stops the game with a status line.
+- Leaving gameplay closes the session.
+
+**Live run, 2026-10-04 (`tools/Run-NetworkPair.ps1`).** Two app instances on one machine played `j4play01`:
+- Both seated the host on team 4 and the client on team 2.
+- The client moved its lieutenant.
+- At update 300 both logged digest `4ad486a8c2ca8ea0` with 18 exchanges confirmed, and 26 by the end.
+- Closing the host showed "Connection lost" on the client.
+
+The check *a network War lobby seats a joining player and both peers start the same session in lockstep* covers the same protocol over loopback.

@@ -90,7 +90,9 @@ public sealed partial class MainForm
         {
             // 0x432B26: commit; a new speed changes the update interval.
             _gameOptions = next;
-            if (next.UpdateIntervalMilliseconds != _clock.IntervalMilliseconds)
+            // The original sends a new speed to every player (0x4214E4); the port keeps network games at their speed.
+            if (IsNetworkGame && next.UpdateIntervalMilliseconds != _clock.IntervalMilliseconds) _status = "Game speed is fixed in a network game.";
+            else if (next.UpdateIntervalMilliseconds != _clock.IntervalMilliseconds)
             {
                 _clock = new FixedStepClock(Environment.TickCount64, next.UpdateIntervalMilliseconds);
                 RuntimeLog.Info($"Game speed {next.SpeedPercent}%: {next.UpdateIntervalMilliseconds} ms per update.");

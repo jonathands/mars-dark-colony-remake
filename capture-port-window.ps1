@@ -1,4 +1,4 @@
-param([string]$Name = 'port-war-lobby')
+param([string]$Name = 'port-war-lobby', [int]$ProcessId = 0)
 
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
@@ -10,7 +10,7 @@ public static class PortCapture {
 }
 "@
 
-$process = Get-Process DarkColony.App -ErrorAction SilentlyContinue | Select-Object -First 1
+$process = if ($ProcessId) { Get-Process -Id $ProcessId -ErrorAction SilentlyContinue } else { Get-Process DarkColony.App -ErrorAction SilentlyContinue | Select-Object -First 1 }
 if (-not $process -or $process.MainWindowHandle -eq 0) {
   throw 'The compiled Dark Colony window is not running.'
 }

@@ -4320,6 +4320,103 @@ Check("faction-selected War rosters complete a local movement order", () =>
         Equal(48UL, desync.Tick);
     });
 
+    Check("the War session start shuffles occupied rows over the map's positions and gates absent teams", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var catalog = SinglePlayerWarCatalog.Load(install);
+        WarLobbyRow[] rows =
+        [
+            new(WarSeatKind.Human, 0, 0), new(WarSeatKind.Computer, 1),
+            new(WarSeatKind.None, 0), new(WarSeatKind.None, 1), new(WarSeatKind.None, 0),
+            new(WarSeatKind.None, 1), new(WarSeatKind.None, 0), new(WarSeatKind.None, 1),
+        ];
+        Equal(2, WarSession.PlayerPositions("d2play01"));
+        Equal(8, WarSession.PlayerPositions("j8play01"));
+        // Every War map seats one human and one computer.
+        foreach (var map in catalog.Scenarios)
+            if (!map.TryCreateSession(rows, 0, SinglePlayerWarSettings.Default, rules.RandomTable, out _))
+                throw new InvalidOperationException($"{map.Stem} cannot seat a human and a computer.");
+
+        // Seed 0: on a two-player map the rows keep their order; on j4play01 the
+        // draws 5758 % 4, 10113 % 3, 17515 % 2 put the human on team 4 and the computer on team 2.
+        var two = WarSession.Assign("d2play01", rows, rules.RandomTable);
+        Equal("0:Human 1:Computer", string.Join(' ', two.Where(seat => seat is not null).Select(seat => $"{seat!.TeamId}:{seat.Kind}")));
+        var four = catalog.Scenarios.Single(map => map.Stem == "j4play01");
+        Equal(true, four.TryCreateSession(rows, 0, SinglePlayerWarSettings.Default, rules.RandomTable, out var launch));
+        Equal(3, launch.LocalTeamId);
+        Equal("1:Computer:1 3:Human:0", string.Join(' ', launch.Seats!.Where(seat => seat is not null).Select(seat => $"{seat!.TeamId}:{seat.Kind}:{seat.Race}")));
+
+        var file = install.DataFile("scenario", "mplayer", "j4play01.scn");
+        var scenario = launch.ApplyTo(ScenarioDefinition.Load(file));
+        Equal(true, scenario.Teams.Where(team => team.TeamId is 0 or 2).All(team => team.CitySlots.All(slot => slot.Level == 0) && team.AiProfile == 0));
+        Equal(1, scenario.Teams.Single(team => team.TeamId == 1).Race ?? -1);
+        var map4 = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+        var simulation = ScenarioSimulation.Create(scenario, PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map4.Width, map4.Height),
+            rules, MissionScript.LoadForScenario(file), map4);
+        Equal(ScenarioSimulation.KrustyAiProfile, simulation.AiProfile(1));
+        Equal(0, simulation.AiProfile(3));
+        // 0x41C155: teams outside the session raise no city buildings.
+        var cityTeams = Enumerable.Range(0, 4).Where(team => Enumerable.Range(0, 15).Any(slot => simulation.CityBuilding(team, slot) is not null));
+        Equal("1,3", string.Join(',', cityTeams));
+    });
+
+    Check("a network War lobby seats a joining player and both peers start the same session in lockstep", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var catalog = SinglePlayerWarCatalog.Load(install);
+        var network = new LoopbackLockstepNetwork();
+        var hostLink = network.Connect();
+        var clientLink = network.Connect();
+        var lobby = new NetworkWarLobby("d2play01", "Host", 0, SinglePlayerWarSettings.Default);
+
+        clientLink.Send(new LobbyJoin(-1, "nonce-b", "Guest", 1));
+        Equal(true, hostLink.TryReceive(out var joinMessage));
+        var member = lobby.Join((LobbyJoin)joinMessage) ?? throw new InvalidOperationException("No row for the guest.");
+        Equal(1, member.Player);
+        Equal(new WarLobbyRow(WarSeatKind.Human, 1, 1), lobby.Rows[1]);
+        lobby.SetRace(1, 0);
+        hostLink.Send(new LobbyStart(0, lobby.State));
+        Equal(true, clientLink.TryReceive(out var startMessage));
+        var started = ((LobbyStart)startMessage).State;
+        Equal(1, started.Members.Single(candidate => candidate.Nonce == "nonce-b").Player);
+
+        Equal(true, NetworkWarLobby.TryCreateLaunch(lobby.State, 0, catalog, rules.RandomTable, out var hostLaunch));
+        Equal(true, NetworkWarLobby.TryCreateLaunch(started, 1, catalog, rules.RandomTable, out var clientLaunch));
+        Equal(0, hostLaunch.LocalTeamId);
+        Equal(1, clientLaunch.LocalTeamId);
+
+        ScenarioSimulation Build(SinglePlayerWarLaunch launch)
+        {
+            var file = install.DataFile("scenario", "mplayer", "d2play01.scn");
+            var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+            return ScenarioSimulation.Create(launch.ApplyTo(ScenarioDefinition.Load(file)),
+                PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height), rules, MissionScript.LoadForScenario(file), map);
+        }
+        var hostSimulation = Build(hostLaunch);
+        var clientSimulation = Build(clientLaunch);
+        Equal(SimulationDigest.Hash(hostSimulation), SimulationDigest.Hash(clientSimulation));
+        Equal(0, hostSimulation.AiProfile(1));
+
+        var hostSession = new LockstepSession(0, [0, 1], hostLink);
+        var clientSession = new LockstepSession(1, [0, 1], clientLink);
+        var hostUnit = hostSimulation.Actors.First(actor => actor.Seed.Team == 0 && actor.Definition.MovementSpeed > 0);
+        var clientUnit = clientSimulation.Actors.First(actor => actor.Seed.Team == 1 && actor.Definition.MovementSpeed > 0);
+        hostSession.Queue(new MoveIntent(hostUnit.Seed.InstanceId, new CellCoordinate(hostUnit.Movement.OccupiedCell.X + 3, hostUnit.Movement.OccupiedCell.Z)));
+        clientSession.Queue(new MoveIntent(clientUnit.Seed.InstanceId, new CellCoordinate(clientUnit.Movement.OccupiedCell.X - 3, clientUnit.Movement.OccupiedCell.Z)));
+        for (var round = 0; round < 400 && (hostSimulation.TickCount < 160 || clientSimulation.TickCount < 160); round++)
+        {
+            if (hostSimulation.TickCount < 160) hostSession.TryAdvance(hostSimulation);
+            if (clientSimulation.TickCount < 160) clientSession.TryAdvance(clientSimulation);
+        }
+        Equal(160UL, hostSimulation.TickCount);
+        Equal(160UL, clientSimulation.TickCount);
+        Equal(SimulationDigest.Hash(hostSimulation), SimulationDigest.Hash(clientSimulation));
+        Equal(true, hostSession.ConfirmedDigests >= 9 && hostSession.Desync is null);
+        Equal(false, hostSimulation.Actor(clientUnit.Seed.InstanceId)!.Movement.OccupiedCell == clientUnit.Seed.Position.Cell);
+    });
+
     Check("game options step like lopte and set the update interval", () =>
     {
         var install = GameInstallation.Open(dataPath);

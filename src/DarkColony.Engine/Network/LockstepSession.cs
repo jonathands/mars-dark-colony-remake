@@ -25,6 +25,7 @@ public sealed record LockstepDesync(ulong Tick, int Player, string LocalDigest, 
 public sealed class LockstepSession
 {
     private readonly ILockstepTransport _transport;
+    private readonly int[] _players;
     private readonly Dictionary<ulong, LockstepTurn?[]> _turns = [];
     private readonly Dictionary<ulong, string> _localDigests = [];
     private readonly List<LockstepDigest> _pendingDigests = [];
@@ -32,14 +33,21 @@ public sealed class LockstepSession
     private ulong _nextTurnToSend = 1;
 
     public LockstepSession(int localPlayer, int playerCount, ILockstepTransport transport, int inputDelay = 2, int digestInterval = 16)
+        : this(localPlayer, Enumerable.Range(0, Math.Max(0, playerCount)).ToArray(), transport, inputDelay, digestInterval)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(playerCount);
-        ArgumentOutOfRangeException.ThrowIfNegative(localPlayer);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(localPlayer, playerCount);
+    }
+
+    /// <param name="players">The player numbers taking part (they need not be contiguous).</param>
+    public LockstepSession(int localPlayer, IReadOnlyCollection<int> players, ILockstepTransport transport, int inputDelay = 2, int digestInterval = 16)
+    {
+        ArgumentNullException.ThrowIfNull(players);
+        _players = [.. players.Distinct().Order()];
+        if (_players.Length == 0 || Array.IndexOf(_players, localPlayer) < 0)
+            throw new ArgumentException("The local player must take part.", nameof(players));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(inputDelay);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(digestInterval);
         LocalPlayer = localPlayer;
-        PlayerCount = playerCount;
+        PlayerCount = _players.Length;
         InputDelay = inputDelay;
         DigestInterval = digestInterval;
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
@@ -62,7 +70,9 @@ public sealed class LockstepSession
     /// peer's turns up to <c>tick + InputDelay</c>. Returns the tick's
     /// commands, or null while waiting (or after a desync).
     /// </summary>
-    public IReadOnlyList<ScheduledWorldCommand>? TryAdvance(ScenarioSimulation simulation)
+    /// <param name="step">Runs the update (default: <see cref="ScenarioSimulation.Step"/>), so a host can journal it.</param>
+    public IReadOnlyList<ScheduledWorldCommand>? TryAdvance(ScenarioSimulation simulation,
+        Action<ScenarioSimulation, IReadOnlyList<ScheduledWorldCommand>>? step = null)
     {
         ArgumentNullException.ThrowIfNull(simulation);
         if (Desync is not null) return null;
@@ -86,7 +96,8 @@ public sealed class LockstepSession
         foreach (var turn in turns)
             foreach (var command in turn!.Commands)
                 scheduled.Add(new ScheduledWorldCommand(tick, (tick << 16) + (uint)scheduled.Count, command));
-        simulation.Step(scheduled);
+        if (step is null) simulation.Step(scheduled);
+        else step(simulation, scheduled);
 
         if (tick % (ulong)DigestInterval == 0)
         {
@@ -104,7 +115,7 @@ public sealed class LockstepSession
         {
             switch (message)
             {
-                case LockstepTurn turn when turn.Player >= 0 && turn.Player < PlayerCount:
+                case LockstepTurn turn when Array.IndexOf(_players, turn.Player) >= 0:
                     Store(turn);
                     break;
                 case LockstepDigest digest:
@@ -118,7 +129,7 @@ public sealed class LockstepSession
     private void Store(LockstepTurn turn)
     {
         if (!_turns.TryGetValue(turn.Tick, out var turns)) _turns[turn.Tick] = turns = new LockstepTurn?[PlayerCount];
-        turns[turn.Player] = turn;
+        turns[Array.IndexOf(_players, turn.Player)] = turn;
     }
 
     private void Compare()
