@@ -1342,6 +1342,28 @@ Check("a stealing stance forms after state 13 and retracts when it finds no vict
     Equal(true, simulation.LastMoveOutcomes.Single().StepCount > 0);
 });
 
+Check("computer players think on the native cadence", () =>
+{
+    // Teams 1 and 2 run the Krusty profile (3), team 3 the passive profile (4).
+    var catalog = EntityCatalog.Parse("1\nTRSC 0 10 47 10 8 -1 -1 -1 125 150 6 800 0 15 0 0 0 0 0 0 0 96 0 12 1 130 6 196 0 -1 -1 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n" +
+        "TEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n0\n%Race\n0\n%Money\n3\n%AI\nTEAM 2 1\n0\n%Race\n0\n%Money\n3\n%AI\n" +
+        "TEAM 3 1\n0\n%Race\n0\n%Money\n4\n%AI\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 16];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4));
+    Equal((0, 3, 3, 4), (simulation.AiProfile(0), simulation.AiProfile(1), simulation.AiProfile(2), simulation.AiProfile(3)));
+    // 0x41AC2C: update 4 runs every computer player; later multiples of 4
+    // advance one player slot each (slot 1 at update 8, slot 2 at 12, ...).
+    for (var tick = 0; tick < 3; tick++) simulation.Step([]);
+    Equal(false, simulation.KrustyState(1) is not null);
+    simulation.Step([]);
+    Equal((1, 1), (simulation.KrustyState(1)!.Thinks, simulation.KrustyState(2)!.Thinks));
+    while (simulation.TickCount < 40) simulation.Step([]);
+    Equal((3, 2), (simulation.KrustyState(1)!.Thinks, simulation.KrustyState(2)!.Thinks));
+    Equal(false, simulation.KrustyState(3) is not null);
+});
+
 Check("noundeploy keeps deployed harvesters on their vents", () =>
 {
     var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");

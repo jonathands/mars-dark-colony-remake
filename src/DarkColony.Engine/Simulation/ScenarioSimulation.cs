@@ -469,6 +469,9 @@ public sealed partial class ScenarioSimulation
         RunNormTriggers(pendingMissionMessages, pendingUnmodeledMissionActions);
         if ((update & 7) == 0) ClearDeadCommanders();
         var passiveIncome = ApplyPassiveIncome(nativeIncomeCadence ? (update & 15) == 0 : syntheticPulse);
+        // 0x419B87: every update, each player's statistic 5 restarts at 0, so it
+        // counts the harvester pulses of the current update only.
+        for (var player = 0; player < PlayerCount; player++) playerStats[player, 5] = 0;
         var events = new TickEvents(UpdateInspireState());
         UpdateAbilityCharge();
         events.MineDeployments.AddRange(UpdateMineDeploymentState());
@@ -498,6 +501,7 @@ public sealed partial class ScenarioSimulation
         FireMines(events);
         FireAttackers(events);
         UpdateProjectiles(events);
+        UpdateComputerPlayers();
         LastDestroyedActors = events.Destroyed;
         LastWeaponFires = events.Fired;
         LastProjectileImpacts = events.Impacts;
