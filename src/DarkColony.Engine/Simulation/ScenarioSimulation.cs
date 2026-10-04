@@ -96,6 +96,8 @@ public sealed partial class ScenarioSimulation
     // Player troop queues, ordered by (team, queue).
     private readonly SortedDictionary<(int Team, int Queue), CityProductionQueue> productionQueues = [];
     private TroopBuildTimings? buildTimings;
+    // Sum of the SCN critter groups' desired populations (0x43FE6C).
+    private int critterReserve;
     // Mission runtime (trigger.c): compiled script, trigger table, statistics.
     private MissionScript? missionScript;
     private readonly MissionTrigger?[] missionTriggers = new MissionTrigger?[MissionScript.TriggerSlots];
@@ -276,6 +278,7 @@ public sealed partial class ScenarioSimulation
         simulation.citiesDeclared = scenario.Teams.Any(team => team.CityOrigin is not null);
         foreach (var city in cityBuildings) simulation.cityBuildings[(city.Team, city.Slot)] = city.InstanceId;
         simulation.buildTimings = buildTimings;
+        simulation.critterReserve = scenario.AutonomousSpawnGroups.Sum(group => group.DesiredPopulation);
         // Session start 0x40123C/0x401848: players 1-6 stat 0 hold the lobby
         // options; this build never changes their defaults (vent rate and
         // vent money multipliers 4 << 6 = 256, the rest 0).
@@ -413,6 +416,7 @@ public sealed partial class ScenarioSimulation
     {
         var update = WorldUpdateCounter;
         RecountMissionStatistics();
+        TroopCap = ComputeTroopCap();
         pendingMissionMessages.Clear();
         pendingUnmodeledMissionActions.Clear();
         LastDayNightChanges = DayNight.Step() ? [new DayNightChangedEvent(DayNight.Phase)] : [];

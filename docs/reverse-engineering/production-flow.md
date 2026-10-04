@@ -42,6 +42,20 @@ slot 4 → 3, slots 13 and 14 → 0, the rest none. When the queue is ready
    When the animation stops (`+0x2A` leaves 1), the troop appears on the exit
    and the queue becomes ready again.
 
+**Troop cap.** Every update `0x41E6AC` computes `world + 0x528`:
+
+1. Start from the 648 dynamic actor slots (`800 - 0x98`).
+2. Subtract the critter groups' desired populations (`0x43FE6C`).
+3. Subtract each live actor of a team 0-8 without a live city slot 0-4 (team
+   8 holds the vents).
+4. Subtract 100.
+5. Divide by the number of players with a city.
+6. Clamp to `world + 4`, which the SCN loader sets to `0x96` = 150.
+
+Production starts a troop only while the player's stat 6 (live units outside
+the city, recounted at the start of the update) is below the cap. Otherwise
+it drops the order, refunds its price (`0x438090`), and posts message `0x77`.
+
 The gamestat loader (`0x43C18C`) resolves `+0x98` to `<code>BUILDSTAND`, or
 else `<code>BUILD`. The frame loader `0x425674` turns each FIN frame delay `d`
 (0 meaning 15) into `(d + 3) * 15 / 100` ticks. The stepper `0x4264C8` leaves
@@ -55,8 +69,9 @@ and a Gray 37. FINs are searched in `anim.dat` order.
 | One troop at a time, exit must be empty, holder asked to step aside | confirmed |
 | Build time from the troop's build animation | confirmed (the troop appears `duration` ticks after the reserve tick whichever order the animation step and the command run in) |
 | Building recreation clears its queue | confirmed (`0x444F14`) |
-| Damage-stage animation interrupting a build (`0x414314` prologue) | not modeled |
-| Troop cap `world + 0x528` (`0x41E6AC`) and its refund | not modeled |
+| Damage-stage animation during a build (`0x414314` prologue) | confirmed harmless: the prologue sets the body channel (+0x14: STAND/SCRCH/BURN by health); the troop's build animation plays on the second channel (+0x24) |
+| Troop cap `world + 0x528` (`0x41E6AC`) and its refund | confirmed, see below |
+| Exit reservation marker `0x3FE` | confirmed: only the troop's arrival replaces it. A building lost mid-build leaves it, and the rebuilt slot's queue (reset by `0x444F14`) then waits on that exit forever |
 | Queue cooldown byte `+0xCA4 + queue` | never set nonzero natively; not modeled |
 | Teams without a city | port adapter: immediate spawn beside the source structure |
 

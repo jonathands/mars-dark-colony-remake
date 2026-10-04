@@ -2163,7 +2163,7 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var exit = new CellCoordinate(6, 55);
         Equal(false, queue.Ready);
         Equal(exit, queue.ReservedExit!.Value);
-        Equal(true, simulation.GroundOccupancy.TryGetOwner(exit, out var holder) && holder == headquarters.Seed.InstanceId);
+        Equal(true, simulation.GroundOccupancy.TryGetOwner(exit, out var holder) && holder == ScenarioSimulation.ProductionReservationOwner);
         var ticks = 0;
         UnitProducedEvent? produced = null;
         while (produced is null && ticks < 20)
@@ -2307,6 +2307,40 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(4, outcome.OutcomeText);
         Equal(1, simulation.PlayerStatistic(0, 0));
         Equal(4, simulation.PlayerStatistic(7, 0));
+    });
+
+    Check("the troop cap shares the free actor slots and refunds orders beyond it", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var file = install.DataFile("scenario", "mplayer", "j4play01") + ".scn";
+        var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+        var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+        var scenario = ScenarioDefinition.Load(file);
+        var simulation = ScenarioSimulation.Create(scenario, path, rules);
+        simulation.Step([]);
+        // 0x41E6AC: (648 - critter groups - actors of city-less teams 0-8
+        // (vents are team 8) - 100) / players with a city, at most 150.
+        var cityless = simulation.Actors.Count(actor => !actor.IsDestroyed && actor.Seed.Team is >= 4 and <= 8);
+        var expected = Math.Min(150, (648 - scenario.AutonomousSpawnGroups.Sum(group => group.DesiredPopulation) - cityless -
+                                      simulation.PetraVents.Count - 100) / 4);
+        Equal(expected, simulation.TroopCap);
+
+        // 500 marines of the city-less team 4 push the cap below team 0's count.
+        var crowd = string.Concat(Enumerable.Range(0, 500).Select(index => $"{2 + index % 100} {2 + index / 100} 0 4 -1 0\n"));
+        var crowded = ScenarioSimulation.Create(ScenarioDefinition.Parse(File.ReadAllText(file) + crowd), path, rules);
+        var headquarters = crowded.CityBuilding(0, 0)!;
+        var start = crowded.ResourceForTeam(0);
+        crowded.Step([
+            new ScheduledWorldCommand(crowded.TickCount, 0, new PurchaseIntent(0, 7)),
+            new ScheduledWorldCommand(crowded.TickCount, 1, new ProduceUnitIntent(0, 7, headquarters.Seed.InstanceId)),
+        ]);
+        Equal(true, crowded.TroopCap <= crowded.PlayerStatistic(0, 6));
+        // The order queues and, in the same update, meets the cap.
+        Equal(new[] { UnitProductionOutcome.Queued, UnitProductionOutcome.CapReached },
+            crowded.LastUnitProductions.Select(production => production.Outcome).ToArray());
+        Equal(start, crowded.ResourceForTeam(0));
+        Equal(0, crowded.ProductionQueues.Single(queue => queue.TeamId == 0 && queue.Queue == 2).QueuedEntityIds.Count);
     });
 
     Check("native target rings decode whole-distance rings 0 through 16", () =>

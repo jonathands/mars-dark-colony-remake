@@ -98,7 +98,7 @@ public sealed partial class ScenarioSimulation
         SyncCitySlotItems(purchase.TeamId, slot);
         if (footprints.SlotProductionQueue(slot) is { } queue && productionQueues.TryGetValue((purchase.TeamId, queue), out var state))
         {
-            if (state.ReservedExit is { } exit) ReleaseCell(exit, previousId);
+            // A reserved exit keeps its 0x3FE marker: 0x444F14 resets only the queue.
             state.Items.Clear();
             state.Ready = true;
             state.TicksRemaining = 0;
@@ -144,12 +144,6 @@ public sealed partial class ScenarioSimulation
             SyncCitySlotItems(team, slot);
             return;
         }
-    }
-
-    private void ReleaseCell(CellCoordinate cell, int ownerId)
-    {
-        foreach (var occupancy in (CellOccupancy[])[GroundOccupancy, AlternateOccupancy])
-            if (occupancy.TryGetOwner(cell, out var owner) && owner == ownerId) occupancy.ReleaseCell(cell);
     }
 
     /// <summary>The actor in a team's city slot, if that building exists and is alive.</summary>
