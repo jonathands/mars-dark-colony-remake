@@ -390,7 +390,7 @@ public sealed partial class ScenarioSimulation
         if (command.RequiredResearchItemId is { } researchId &&
             (!teamEconomies.TryGetValue(actor.Seed.Team, out var economy) || !economy.CompletedItems.Contains(researchId)))
             return new(intent.EntityInstanceId, intent.TargetCell, definition.GroundSpecialWeaponId, GroundSpecialAttackOutcome.ResearchRequired);
-        if (weaponCatalog?.TryGet(definition.GroundSpecialWeaponId, out _) != true)
+        if (GroundSpecialWeaponFor(actor) is not { } weapon)
             return new(intent.EntityInstanceId, intent.TargetCell, definition.GroundSpecialWeaponId, GroundSpecialAttackOutcome.WeaponUnavailable);
 
         actor.AttackTargetInstanceId = null;
@@ -398,7 +398,7 @@ public sealed partial class ScenarioSimulation
         actor.GroundSpecialAttackTarget = intent.TargetCell;
         StopAfterCurrentStep(actor);
         actor.MoveOrder = null;
-        return new(intent.EntityInstanceId, intent.TargetCell, definition.GroundSpecialWeaponId, GroundSpecialAttackOutcome.Accepted);
+        return new(intent.EntityInstanceId, intent.TargetCell, weapon.Id, GroundSpecialAttackOutcome.Accepted);
     }
 
     /// <summary>
@@ -500,21 +500,22 @@ public sealed partial class ScenarioSimulation
     private void UpdateGroundSpecialAttack(SimulatedActor actor, CellCoordinate target, ICollection<WeaponFireEvent> fired)
     {
         var definition = EffectiveDefinition(actor);
-        if (weaponCatalog?.TryGet(definition.GroundSpecialWeaponId, out var weapon) != true)
+        if (GroundSpecialWeaponFor(actor) is not { } weapon)
         {
             actor.GroundSpecialAttackTarget = null;
             return;
         }
         var destination = FixedPointPosition.AtCellCenter(target);
         actor.Facing.FaceTowards(actor.Movement.VisualPosition, destination);
-        var range = (long)weapon.Range * FixedPointPosition.One;
-        if (DistanceSquared(actor.Movement.VisualPosition, destination) < range * range)
+        if (IsGroundSpecialTargetInRange(actor))
         {
             StopAfterCurrentStep(actor);
             actor.MoveOrder = null;
             if (actor.CooldownTicks > 0 || actor.Facing.Current != actor.Facing.Target) return;
             SpawnGroundProjectile(actor, target, weapon, fired);
-            actor.GroundSpecialAttackTarget = null;
+            // Ground Attack stays in state 18 and fires again whenever the
+            // weapon is ready (0x41809F); the value-29 specials fire once.
+            if (!GroundAttackFiresOrdinaryWeapon(definition)) actor.GroundSpecialAttackTarget = null;
             return;
         }
         if (definition.MovementSpeed <= 0 || actor.Playback is not null || actor.MoveOrder is not null) return;

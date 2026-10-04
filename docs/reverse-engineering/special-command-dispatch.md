@@ -64,6 +64,19 @@ uses the normal movement path when out of range. The queued-state executor at
 `0x418028` additionally requires the SARG or PSYC team ability state to equal
 2 (the completed Napalm/Virus research chain).
 
+Ground Attack has no weapon of its own. Both the state handler
+(`0x417EFD`) and the executor (`0x41806C`) test the entity type first:
+
+- **BARR (3) and ATRIL (11)** use their ordinary weapon at its current
+  team level, read through the `+0x30 + team` selector into `+0x18`.
+- The executor then calls `0x412D00` at the stored point every update, with
+  no time limit and no ability charge, until a pending order (`+0x36`) pops
+  the state. The unit bombards the point until it is given another order.
+- **Every other type** reads `+0x110`. A zero there pops the state.
+
+The port implements this in `GroundSpecialWeaponFor` and
+`UpdateGroundSpecialAttack`. The range test is `<=`, as at `0x417FD4`.
+
 When ready, the executor temporarily substitutes weapon 50/51 into the
 actor's active weapon slot, calls common ground-fire routine `0x412d00` with
 the stored coordinate, and restores the ordinary weapon. The shared routine

@@ -25,9 +25,6 @@ internal sealed class CatalogSweep
     private const string MeleeGap =
         "a range-1 weapon never fires: the port fires only inside the strict 8.8 range, while dc.exe fires at any " +
         "hostile its idle ring scan (0x435C14, rings up to the weapon range) finds; see docs/reverse-engineering/combat-range.md";
-    private const string GroundAttackGap =
-        "capability-3 GROUND ATTACK names weapon 0, which weapstat.txt does not define; its native owner is unverified " +
-        "(docs/reverse-engineering/unit-special-commands.md)";
 
     /// <summary>Gaps the sweep expects, by race (0 Human, 1 Gray) and key.</summary>
     public static readonly IReadOnlyDictionary<(int Race, string Key), string> KnownGaps = new Dictionary<(int, string), string>
@@ -41,8 +38,6 @@ internal sealed class CatalogSweep
         [(1, "melee RNAT#25")] = MeleeGap,
         [(1, "melee SPID#26")] = MeleeGap,
         [(1, "melee GRUB#36")] = MeleeGap,
-        [(0, "ground attack BARR#3")] = GroundAttackGap,
-        [(1, "ground attack ATRIL#11")] = GroundAttackGap,
     };
 
     public const string Scenario = "mplayer/j4play01";
@@ -445,16 +440,21 @@ internal sealed class CatalogSweep
         var target = FreeCellNear(unit.Movement.OccupiedCell, 4, 0) ?? unit.Movement.OccupiedCell;
         Step(new GroundSpecialAttackIntent(id, target));
         var special = simulation.LastGroundSpecialAttacks.SingleOrDefault(attack => attack.SourceActorInstanceId == id);
-        var detail = $"unit {name}: ground special weapon {definition.GroundSpecialWeaponId} {special?.Outcome.ToString() ?? "missing"}";
-        // A unit already facing its target fires in the update that takes the order.
-        if (special?.Outcome == GroundSpecialAttackOutcome.Accepted && simulation.LastWeaponFires.Any(fire => fire.SourceActorInstanceId == id))
-            notes.Add($"ground special weapon {definition.GroundSpecialWeaponId} at once");
-        else if (special?.Outcome == GroundSpecialAttackOutcome.Accepted)
-            Expect(name, $"ground special weapon {definition.GroundSpecialWeaponId}", notes, () => simulation.LastWeaponFires.Any(fire => fire.SourceActorInstanceId == id), 300);
-        else if (special?.Outcome == GroundSpecialAttackOutcome.WeaponUnavailable && definition.GroundSpecialWeaponId == 0)
-            Gap($"ground attack {name}", detail);
-        else
-            Fail(detail);
+        var weapon = simulation.GroundSpecialWeaponFor(unit);
+        if (special?.Outcome != GroundSpecialAttackOutcome.Accepted || weapon is null || special.WeaponId != weapon.Id)
+        {
+            Fail($"unit {name}: ground special weapon {special?.WeaponId?.ToString() ?? "none"} {special?.Outcome.ToString() ?? "missing"}");
+            return;
+        }
+        // Ground Attack (BARR, ATRIL) fires the ordinary weapon and keeps
+        // firing at the point; the value-29 specials fire once.
+        var ordinary = weapon.Id == simulation.EffectiveWeaponFor(unit)?.Id;
+        var shots = simulation.LastWeaponFires.Count(fire => fire.SourceActorInstanceId == id);
+        var wanted = ordinary ? 2 : 1;
+        var ticks = shots >= wanted ? 0 : StepUntil(() => (shots += simulation.LastWeaponFires.Count(fire => fire.SourceActorInstanceId == id)) >= wanted, 600);
+        if (ticks < 0) Fail($"unit {name}: ground special weapon {weapon.Id} fired {shots} of {wanted} shots within 600 updates");
+        else notes.Add($"ground special weapon {weapon.Id}{(ordinary ? " (its own weapon)" : "")}: {wanted} shot(s) after {ticks} updates");
+        if (ordinary) Step(new StopIntent(id));
     }
 
     private bool Expect(string name, string what, List<string> notes, Func<bool> done, int limit)

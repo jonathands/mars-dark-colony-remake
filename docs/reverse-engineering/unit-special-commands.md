@@ -29,8 +29,9 @@ frame 72 “cyborg call cruise missile” and frame 73 “psych raider deploy vi
 That direct icon/action vocabulary is stronger evidence than the adjacent
 generic comment, so the port maps Human Cyborg (`SARG`) to **Napalm Attack** /
 72 and Gray Psy-raider (`PSYC`) to **Disease Attack** / 73. Both are now live
-after their authored research gate. The generic frame-2 and **Ground Attack**
-declaration have no verified owner yet.
+after their authored research gate. **Ground Attack** (control 146, generic
+frame 2) belongs to BARR (3) and ATRIL (11): state 18 fires their ordinary
+weapon at the map point; see special-command-dispatch.md.
 
 The paired gates are data-derived. Human item 80's source comment calls it
 “cyborg nuke 2”; its UI ID 131 is **Napalm** using icon 35, which `bdf.txt`

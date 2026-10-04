@@ -31,7 +31,7 @@ Each race runs these steps in order:
      - Healers heal a damaged neighbour.
      - Harvesters attach to a vent and retract.
      - Commanders cast Inspire.
-     - Ground attacks fire.
+     - Ground Attack (BARR, ATRIL) fires the unit's own weapon at a point, and keeps firing.
    - **Death.** The unit dies, and its body must leave the grid.
 5. **City teardown.** Every building is destroyed. Each one must stop counting as built, and the team can buy no more troops.
 
@@ -55,7 +55,6 @@ document can be updated.
 | Gap | Units | Document |
 | --- | --- | --- |
 | A range-1 weapon never fires | Human GRND, AIRD, DROA, SHRI; Gray SALY, AVII, RNAT, SPID, GRUB | [combat-range.md](reverse-engineering/combat-range.md) |
-| GROUND ATTACK (capability 3) names weapon 0, which does not exist | Human BARR, Gray ATRIL | [unit-special-commands.md](reverse-engineering/unit-special-commands.md) |
 
 ## Bugs it found (2026-10-04)
 
@@ -64,3 +63,4 @@ document can be updated.
 | After a robot factory or science lab was upgraded, the research items that name its first level could no longer be ordered. Once both slots were upgraded, this blocked the Human mech (REAP) upgrades, items 67-70, and the Gray Scythe Demon upgrades, items 41-44. The research source had to be exactly the level-1 building, while the native availability check `0x438220` accepts any live variant at least as high. | `ScenarioSimulation.StructureSatisfiesBuildItem` accepts higher variants. The research tab uses it too. |
 | A level-2 upgrade whose only prerequisite is its level 1 was offered on no structure, so it could never be researched. This blocked items 64, 66, 76 and 78 (Human SCGM and BARR) and 46, 48, 50 and 52 (Gray ORTU and ATRIL). | `ScenarioSimulation.StructureOffersResearch` offers it where its prerequisite upgrade is offered. |
 | A unit that drew an idle fidget and then received an attack order never turned toward its target, so it never fired. | A player order replaces the command stack, and the pending fidget goes with it. |
+| BARR's and ATRIL's Ground Attack was refused, because value 29 names weapon 0. | State 18 fires their ordinary weapon at the point until another order (`0x417EFD`, `0x41806C`). |

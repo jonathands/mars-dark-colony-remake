@@ -103,7 +103,7 @@ public static class UnitSecondaryCommandCatalog
 
     private static readonly UnitSecondaryCommandDefinition groundAttack =
         new("GROUND ATTACK", 2, UnitCommandActivation.MapTarget,
-            "Native capability 3 selects maine control 146; that control uses generic mainbut frame 2.", CandidateEffectWeaponId: 0);
+            "Native capability 3 selects maine control 146 (generic mainbut frame 2). State 18 fires BARR's and ATRIL's ordinary weapon at the point until another order.", CandidateEffectWeaponId: 0);
 
     private static readonly IReadOnlyDictionary<int, UnitSecondaryCommandDefinition> commanderCommands =
         new Dictionary<int, UnitSecondaryCommandDefinition>

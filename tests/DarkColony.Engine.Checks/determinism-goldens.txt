@@ -25,11 +25,11 @@ alien/alien06 600 b0b3fad832643791
 alien/alien06 900 53039379946c5914
 alien/alien06 1200 2729029f6fa7d34d
 alien/alien13 1 0de038c1027b17fe
-alien/alien13 100 a3087506f54554dd
-alien/alien13 300 e4f98397b8dfda5a
-alien/alien13 600 43042013a2fb2fc5
-alien/alien13 900 84ce091423cee7ab
-alien/alien13 1200 7da10f41e3272909
+alien/alien13 100 97f1672a9b36804d
+alien/alien13 300 4981e25ba0f0c892
+alien/alien13 600 6c403ead5aa6f19a
+alien/alien13 900 035c83a9999b7a87
+alien/alien13 1200 9ff6bd838a231743
 test/atrain6 1 43ccc95d3e565e78
 test/atrain6 100 c01ab609c0fa9ca0
 test/atrain6 300 eb81916fe6afb357

@@ -415,14 +415,26 @@ public sealed partial class ScenarioSimulation
     public WeaponDefinition? EffectiveWeaponFor(SimulatedActor actor) =>
         TryGetWeapon(actor, out var weapon) ? weapon : null;
 
+    /// <summary>
+    /// The weapon state 18 fires at a map point. BARR (3) and ATRIL (11), the
+    /// Ground Attack owners, fire their ordinary team-levelled weapon
+    /// (<c>0x417EFD</c>, <c>0x41806C</c>); every other unit fires its
+    /// value-29 weapon (runtime <c>+0x110</c>).
+    /// </summary>
     public WeaponDefinition? GroundSpecialWeaponFor(SimulatedActor actor) =>
-        weaponCatalog?.TryGet(EffectiveDefinition(actor).GroundSpecialWeaponId, out var weapon) == true ? weapon : null;
+        GroundAttackFiresOrdinaryWeapon(EffectiveDefinition(actor))
+            ? EffectiveWeaponFor(actor)
+            : weaponCatalog?.TryGet(EffectiveDefinition(actor).GroundSpecialWeaponId, out var weapon) == true ? weapon : null;
 
+    /// <summary>The entity types state 18 tests for (<c>0x417EFD</c>): they bombard a point with their own weapon until another order.</summary>
+    internal static bool GroundAttackFiresOrdinaryWeapon(EntityDefinition definition) => definition.Id is 3 or 11;
+
+    /// <summary>State 18's range test (<c>0x417FD4</c>): squared 8.8 distance at most the squared range.</summary>
     public bool IsGroundSpecialTargetInRange(SimulatedActor actor)
     {
         if (actor.GroundSpecialAttackTarget is not { } target || GroundSpecialWeaponFor(actor) is not { } weapon) return false;
         var range = (long)weapon.Range * FixedPointPosition.One;
-        return DistanceSquared(actor.Movement.VisualPosition, FixedPointPosition.AtCellCenter(target)) < range * range;
+        return DistanceSquared(actor.Movement.VisualPosition, FixedPointPosition.AtCellCenter(target)) <= range * range;
     }
 
     /// <summary>
