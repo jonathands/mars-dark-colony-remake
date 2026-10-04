@@ -43,7 +43,7 @@ game is not at `..\Dark Colony`.
 
 | Mode | Purpose |
 | --- | --- |
-| `--verify-goldens` | Golden comparison only (about 40 s); exit code 1 on divergence. |
+| `--verify-goldens` | Golden comparison only, with the eight scenarios in parallel (about 15 s); exit code 1 on divergence. |
 | `--update-goldens` | Rewrite the goldens file. |
 | `--dump-digest <scenario> <tick> <file>` | Write the canonical state at a tick, to diff two builds. |
 | `--event-summary <scenario> <ticks>` | Count events and outcomes reached by a scripted run. |

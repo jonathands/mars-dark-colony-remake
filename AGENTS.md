@@ -42,6 +42,9 @@ simulation requirements demonstrate that one is necessary.
 
 - `dotnet build DarkColony.Port.sln` must have zero warnings (warnings are errors).
 - `dotnet run --project tests/DarkColony.Engine.Checks` exits non-zero on any failure.
+  While iterating, `-- --tag fast` or `-- --group <topic>` runs a subset. Run
+  the full suite before committing. New checks go in their topic file under
+  `tests/DarkColony.Engine.Checks/Checks/` (`docs/TESTING.md`).
 - For visible behavior, use `tools/Run-Port.ps1` (PowerShell 7). It never blocks
   on a dialog; read the printed log before guessing at a failure, and inspect
   the captured screenshot. Drive menus and gameplay with `-Actions`.

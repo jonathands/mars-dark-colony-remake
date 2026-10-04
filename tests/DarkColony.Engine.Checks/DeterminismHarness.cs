@@ -319,9 +319,11 @@ internal static class DeterminismHarness
     {
         var goldens = ParseGoldens(File.ReadAllText(GoldenFilePath()));
         var mismatches = new List<string>();
-        foreach (var scenario in GoldenScenarios)
+        // The runs share only immutable rules, so they go in parallel; the report keeps scenario order.
+        var runs = new DeterminismRun[GoldenScenarios.Length];
+        Parallel.For(0, GoldenScenarios.Length, index => runs[index] = Run(installation, rules, GoldenScenarios[index], GoldenTicks, GoldenCheckpoints));
+        foreach (var (scenario, run) in GoldenScenarios.Zip(runs))
         {
-            var run = Run(installation, rules, scenario, GoldenTicks, GoldenCheckpoints);
             foreach (var (tick, hash) in run.Checkpoints)
             {
                 if (!goldens.TryGetValue((scenario, tick), out var expected))
@@ -409,7 +411,7 @@ internal static class DeterminismCli
         }
         if (update)
         {
-            var runs = DeterminismHarness.GoldenScenarios
+            var runs = DeterminismHarness.GoldenScenarios.AsParallel().AsOrdered()
                 .Select(scenario => DeterminismHarness.Run(installation, rules, scenario, DeterminismHarness.GoldenTicks, DeterminismHarness.GoldenCheckpoints))
                 .ToArray();
             var file = DeterminismHarness.GoldenFilePath();

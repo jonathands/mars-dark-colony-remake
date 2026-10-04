@@ -65,11 +65,15 @@ dotnet run --project tests/DarkColony.Engine.Checks
 The checks include a whole-simulation determinism guard: scripted runs of
 installed scenarios are hashed every tick and compared with recorded goldens.
 `dotnet run --project tests/DarkColony.Engine.Checks -- --verify-goldens` runs
-only that comparison. See [`docs/DETERMINISM.md`](docs/DETERMINISM.md). Set
-`DARKCOLONY_CHECK_FILTER=<text>` to run only the checks whose name contains
-that text. `-- --catalog-sweep` builds, trains, researches and fights with
-every item of both races and prints a line per item; see
+only that comparison. See [`docs/DETERMINISM.md`](docs/DETERMINISM.md).
+`-- --catalog-sweep` builds, trains, researches and fights with every item of
+both races and prints a line per item; see
 [`docs/CATALOG_SWEEP.md`](docs/CATALOG_SWEEP.md).
+
+The checks run in parallel, in about 35 seconds on four cores. `-- --tag fast`
+runs only those that need no installation, in under a second. `--group`,
+`--filter`, `--list` and `--junit` select and report; see
+[`docs/TESTING.md`](docs/TESTING.md).
 
 The first milestone establishes a native 640×480 compiled menu host using the
 original external GIF backgrounds and recovered control coordinates. The
