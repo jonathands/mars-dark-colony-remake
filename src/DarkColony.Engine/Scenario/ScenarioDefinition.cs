@@ -23,6 +23,16 @@ public sealed record ScenarioPlacement(
 
 public sealed record ScenarioVent(int X, int Z, int EntityId, int Value, int Interval);
 
+/// <summary>
+/// The four scalar lines after the SCN's map descriptor. dc.exe loads these
+/// into world offsets +0x53c, +0x534, +0x530, and +0x538 respectively.
+/// </summary>
+public sealed record ScenarioDayNight(int InitialPhase, int CycleTickLimit, int InitialTick, int TransitionTickLimit)
+{
+    public bool IsNativeValid => CycleTickLimit >= 0 && InitialTick >= 0 &&
+        InitialTick <= CycleTickLimit && TransitionTickLimit > 0;
+}
+
 public sealed record AutonomousSpawnGroup(
     int GroupId,
     CellCoordinate Origin,
@@ -36,6 +46,7 @@ public sealed class ScenarioDefinition
         string tileset,
         string internalName,
         string displayName,
+        ScenarioDayNight dayNight,
         IReadOnlyList<ScenarioTeam> teams,
         IReadOnlyList<ScenarioPlacement> placements,
         IReadOnlyList<ScenarioVent> vents)
@@ -43,6 +54,7 @@ public sealed class ScenarioDefinition
         Tileset = tileset;
         InternalName = internalName;
         DisplayName = displayName;
+        DayNight = dayNight;
         Teams = teams;
         Placements = placements;
         Vents = vents;
@@ -51,6 +63,7 @@ public sealed class ScenarioDefinition
     public string Tileset { get; }
     public string InternalName { get; }
     public string DisplayName { get; }
+    public ScenarioDayNight DayNight { get; }
     public IReadOnlyList<ScenarioTeam> Teams { get; }
     public ScenarioTeam? EnabledTeamForRace(int race) => Teams
         .Where(team => team.Enabled && team.Race == race)
@@ -84,7 +97,7 @@ public sealed class ScenarioDefinition
             placement.Team == teamId
                 ? placement with { EntityId = SelectedWarRosterEntity(placement.EntityId, faction, rank) }
                 : placement).ToArray();
-        return new ScenarioDefinition(Tileset, InternalName, DisplayName, Teams, placements, Vents);
+        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, Teams, placements, Vents);
     }
 
     private static int SelectedWarRosterEntity(int entityId, int faction, int rank) => entityId switch
@@ -183,10 +196,14 @@ public sealed class ScenarioDefinition
             }
         }
 
+        var dayNightValues = lines[4..8].Select(Integers).SelectMany(values => values).ToArray();
+        if (dayNightValues.Length != 4)
+            throw new InvalidDataException("SCN day/night header must contain four integer values.");
         return new ScenarioDefinition(
             lines[0].Trim(),
             lines[1].Trim(),
             lines[2].Trim(),
+            new ScenarioDayNight(dayNightValues[0], dayNightValues[1], dayNightValues[2], dayNightValues[3]),
             teams,
             placements,
             vents);

@@ -383,7 +383,7 @@ public sealed class ScenarioSimulation
             .ToDictionary(team => team.TeamId, team => team.Race);
         var simulation = new ScenarioSimulation(path, catalog, actors, ground, alternate, mine, weaponCatalog, damageMatrix, areaEffects, resources, races, dependencyCatalog,
             petraFlowRules ?? PetraFlowRules.ProvisionalDefault, petraStealRules ?? PetraStealRules.ProvisionalDefault,
-            dayNight ?? new DayNightCycle(), footprints,
+            dayNight ?? (scenario.DayNight.IsNativeValid ? DayNightCycle.FromNativeScenario(scenario.DayNight) : new DayNightCycle()), footprints,
             teamRelations ?? TeamRelationMatrix.CreateDefault());
         if (!simulation.petraFlowRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraFlowRules));
         if (!simulation.petraStealRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraStealRules));

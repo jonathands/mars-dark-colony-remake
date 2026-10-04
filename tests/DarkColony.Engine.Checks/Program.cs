@@ -83,6 +83,23 @@ Check("day-night cycle exposes completed days for the native HUD counter", () =>
     Equal(1UL, cycle.CompletedDays);
 });
 
+Check("SCN day-night header retains the executable's strict cycle and lighting ramp", () =>
+{
+    var scenario = ScenarioDefinition.Parse("tiles.bts\ninternal\ndisplay\n0\n0\n2\n1\n1\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n");
+    Equal(new ScenarioDayNight(0, 2, 1, 1), scenario.DayNight);
+    var cycle = DayNightCycle.FromNativeScenario(scenario.DayNight);
+    Equal(DayNightPhase.Day, cycle.Phase);
+    Equal(0, cycle.LightingLevel);
+    Equal(false, cycle.Step());
+    Equal(2, cycle.PhaseTicks);
+    Equal(true, cycle.Step());
+    Equal(DayNightPhase.Night, cycle.Phase);
+    Equal(0, cycle.PhaseTicks);
+    Equal(0, cycle.LightingLevel);
+    cycle.Step();
+    Equal(256, cycle.LightingLevel);
+});
+
 Check("unit special-command identities preserve recovered HUD mappings", () =>
 {
     Equal(true, UnitSpecialCommandCatalog.TryGet("EXPL", out var exploiter));
