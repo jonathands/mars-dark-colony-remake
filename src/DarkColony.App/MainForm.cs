@@ -396,9 +396,8 @@ public sealed class MainForm : Form
     {
         if (screen == MenuScreenId.Gameplay && !_resumeGameplayFromStory)
         {
-            _minimapPreview?.Dispose();
-            _minimapPreview = null;
-            _terrainGpuTiles.Clear();
+            DisposeGameplayMinimapPreview();
+            ReleaseTerrainGpuTiles();
             _scenarioWorld = null;
             _scenarioSimulation = null;
             _gameplayMap = null;
@@ -443,6 +442,39 @@ public sealed class MainForm : Form
         _surface.Cursor = screen == MenuScreenId.Gameplay ? Cursors.Cross : Cursors.Hand;
         SetGameplayCursorVisibility(visible: screen != MenuScreenId.Gameplay);
         _surface.Invalidate();
+    }
+
+    private void ReleaseTerrainGpuTiles()
+    {
+        foreach (var image in _terrainGpuTiles.Values) _surface.ReleaseGpuImage(image);
+        _terrainGpuTiles.Clear();
+    }
+
+    private void DisposeGameplayMinimapPreview()
+    {
+        if (_minimapPreview is null) return;
+        if (_gpuBitmaps.Remove(_minimapPreview, out var image)) _surface.ReleaseGpuImage(image);
+        _minimapPreview.Dispose();
+        _minimapPreview = null;
+    }
+
+    /// <summary>
+    /// Screen changes can be initiated by a click, keyboard shortcut, or a
+    /// scenario event. Never let a captured drag from the prior screen become
+    /// a selection/minimap/scroll gesture in the newly composed screen.
+    /// </summary>
+    private void ClearTransientInputState()
+    {
+        _mapDragStart = null;
+        _mapDragged = false;
+        _minimapDragging = false;
+        _selectionDragStart = null;
+        _selectionGestureStartedAtTick = 0;
+        _selectionGestureToggle = false;
+        _selectionGestureLayerFilter = default;
+        _singlePlayerScrollDragging = false;
+        _gameplayPointer = null;
+        _surface.Capture = false;
     }
 
     private IReadOnlyList<MenuButton> MainButtons() =>

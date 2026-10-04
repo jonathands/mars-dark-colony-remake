@@ -2,16 +2,22 @@ namespace DarkColony.App.Rendering;
 
 public sealed class GpuImage
 {
-    public GpuImage(int width, int height, byte[] rgba)
+    public GpuImage(int width, int height, byte[] rgba, bool transient = false)
     {
         Width = width;
         Height = height;
         Rgba = rgba;
+        IsTransient = transient;
     }
 
     public int Width { get; }
     public int Height { get; }
     public byte[] Rgba { get; }
+    /// <summary>
+    /// A per-frame primitive whose dimensions vary with input or movement.
+    /// The D3D surface must not retain a device texture for it indefinitely.
+    /// </summary>
+    public bool IsTransient { get; }
 }
 
 public readonly record struct SpriteCommand(GpuImage Image, Rectangle Destination);
@@ -22,7 +28,6 @@ public sealed class GameCanvas
     private readonly List<SpriteCommand> _foregroundCommands = [];
     private readonly Dictionary<int, GpuImage> _solidImages = [];
     private readonly Dictionary<(int Width, int Height, int Color, int Thickness, bool Filled), GpuImage> _ellipses = [];
-    private readonly Dictionary<(int Dx, int Dy, int Color, int Thickness), GpuImage> _lines = [];
 
     public IReadOnlyList<SpriteCommand> Commands => _commands;
     public IReadOnlyList<SpriteCommand> ForegroundCommands => _foregroundCommands;
@@ -109,43 +114,41 @@ public sealed class GameCanvas
         var minY = Math.Min(start.Y, end.Y);
         var dx = end.X - start.X;
         var dy = end.Y - start.Y;
-        var key = (dx, dy, color.ToArgb(), thickness);
-        if (!_lines.TryGetValue(key, out var image))
+        var width = Math.Abs(dx) + thickness;
+        var height = Math.Abs(dy) + thickness;
+        var rgba = new byte[width * height * 4];
+        var x = dx < 0 ? width - thickness : 0;
+        var y = dy < 0 ? height - thickness : 0;
+        var targetX = dx < 0 ? 0 : width - thickness;
+        var targetY = dy < 0 ? 0 : height - thickness;
+        var stepX = Math.Abs(targetX - x);
+        var stepY = -Math.Abs(targetY - y);
+        var directionX = x < targetX ? 1 : -1;
+        var directionY = y < targetY ? 1 : -1;
+        var error = stepX + stepY;
+        while (true)
         {
-            var width = Math.Abs(dx) + thickness;
-            var height = Math.Abs(dy) + thickness;
-            var rgba = new byte[width * height * 4];
-            var x = dx < 0 ? width - thickness : 0;
-            var y = dy < 0 ? height - thickness : 0;
-            var targetX = dx < 0 ? 0 : width - thickness;
-            var targetY = dy < 0 ? 0 : height - thickness;
-            var stepX = Math.Abs(targetX - x);
-            var stepY = -Math.Abs(targetY - y);
-            var directionX = x < targetX ? 1 : -1;
-            var directionY = y < targetY ? 1 : -1;
-            var error = stepX + stepY;
-            while (true)
+            for (var offsetY = 0; offsetY < thickness; offsetY++)
+            for (var offsetX = 0; offsetX < thickness; offsetX++)
             {
-                for (var offsetY = 0; offsetY < thickness; offsetY++)
-                for (var offsetX = 0; offsetX < thickness; offsetX++)
-                {
-                    var pixelX = x + offsetX;
-                    var pixelY = y + offsetY;
-                    if ((uint)pixelX >= width || (uint)pixelY >= height) continue;
-                    var offset = (pixelY * width + pixelX) * 4;
-                    rgba[offset] = color.R;
-                    rgba[offset + 1] = color.G;
-                    rgba[offset + 2] = color.B;
-                    rgba[offset + 3] = color.A;
-                }
-                if (x == targetX && y == targetY) break;
-                var twiceError = error * 2;
-                if (twiceError >= stepY) { error += stepY; x += directionX; }
-                if (twiceError <= stepX) { error += stepX; y += directionY; }
+                var pixelX = x + offsetX;
+                var pixelY = y + offsetY;
+                if ((uint)pixelX >= width || (uint)pixelY >= height) continue;
+                var offset = (pixelY * width + pixelX) * 4;
+                rgba[offset] = color.R;
+                rgba[offset + 1] = color.G;
+                rgba[offset + 2] = color.B;
+                rgba[offset + 3] = color.A;
             }
-            image = new GpuImage(width, height, rgba);
-            _lines[key] = image;
+            if (x == targetX && y == targetY) break;
+            var twiceError = error * 2;
+            if (twiceError >= stepY) { error += stepY; x += directionX; }
+            if (twiceError <= stepX) { error += stepX; y += directionY; }
         }
+        // Route and selection lines change length every frame as an actor or
+        // pointer moves. Caching them by dimensions leaks a GPU texture for
+        // every distinct position, so make each line explicitly frame-local.
+        var image = new GpuImage(width, height, rgba, transient: true);
         var destination = new Rectangle(minX, minY, image.Width, image.Height);
         if (foreground) DrawForeground(image, destination);
         else Draw(image, destination);

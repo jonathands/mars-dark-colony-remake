@@ -38,6 +38,7 @@ public sealed class Direct3DSurface : Control
     private ID3D11SamplerState? _pointSampler;
     private ID3D11BlendState? _alphaBlend;
     private readonly Dictionary<GpuImage, GpuTexture> _gpuImages = [];
+    private readonly List<GpuTexture> _transientGpuImages = [];
 
     public Direct3DSurface(Action<Graphics, GameCanvas> renderFrame)
     {
@@ -59,12 +60,36 @@ public sealed class Direct3DSurface : Control
             _renderFrame(graphics, _canvas);
         }
 
-        _context!.ClearRenderTargetView(_nativeTargetView!, new Color4(0f, 0f, 0f, 1f));
-        DrawCommands(_canvas.Commands);
+        try
+        {
+            _context!.ClearRenderTargetView(_nativeTargetView!, new Color4(0f, 0f, 0f, 1f));
+            DrawCommands(_canvas.Commands);
+            DrawCommands(_canvas.ForegroundCommands);
+            DrawTexture(_nativeTargetResource!, _backBufferView!, new Rectangle(0, 0, NativeWidth, NativeHeight), alphaBlend: false);
+            _swapChain!.Present(1, PresentFlags.None);
+        }
+        finally
+        {
+            foreach (var image in _transientGpuImages)
+            {
+                image.View.Dispose();
+                image.Texture.Dispose();
+            }
+            _transientGpuImages.Clear();
+        }
+    }
 
-        DrawCommands(_canvas.ForegroundCommands);
-        DrawTexture(_nativeTargetResource!, _backBufferView!, new Rectangle(0, 0, NativeWidth, NativeHeight), alphaBlend: false);
-        _swapChain!.Present(1, PresentFlags.None);
+    /// <summary>
+    /// Releases a long-lived decoded image whose application-side owner has
+    /// discarded it (for example, terrain from a previous scenario). The
+    /// normal cache remains reference-identity based for stable assets.
+    /// </summary>
+    public void ReleaseGpuImage(GpuImage image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        if (!_gpuImages.Remove(image, out var gpuImage)) return;
+        gpuImage.View.Dispose();
+        gpuImage.Texture.Dispose();
     }
 
     protected override void OnHandleDestroyed(EventArgs eventArgs)
@@ -174,6 +199,18 @@ public sealed class Direct3DSurface : Control
     private unsafe ID3D11ShaderResourceView GetGpuImage(GpuImage image)
     {
         if (_gpuImages.TryGetValue(image, out var cached)) return cached.View;
+        var gpuImage = CreateGpuImage(image);
+        if (image.IsTransient)
+        {
+            _transientGpuImages.Add(gpuImage);
+            return gpuImage.View;
+        }
+        _gpuImages.Add(image, gpuImage);
+        return gpuImage.View;
+    }
+
+    private unsafe GpuTexture CreateGpuImage(GpuImage image)
+    {
         var device = _device ?? throw new InvalidOperationException("D3D11 device is unavailable.");
         var texture = device.CreateTexture2D(new Texture2DDescription
         {
@@ -204,8 +241,7 @@ public sealed class Direct3DSurface : Control
             handle.Free();
         }
         var view = device.CreateShaderResourceView(texture);
-        _gpuImages.Add(image, new GpuTexture(texture, view));
-        return view;
+        return new GpuTexture(texture, view);
     }
 
     private unsafe void DrawTexture(ID3D11ShaderResourceView source, ID3D11RenderTargetView destination, Rectangle destinationBounds, bool alphaBlend)
@@ -234,6 +270,12 @@ public sealed class Direct3DSurface : Control
             image.Texture.Dispose();
         }
         _gpuImages.Clear();
+        foreach (var image in _transientGpuImages)
+        {
+            image.View.Dispose();
+            image.Texture.Dispose();
+        }
+        _transientGpuImages.Clear();
         _alphaBlend?.Dispose();
         _pointSampler?.Dispose();
         _inputLayout?.Dispose();

@@ -54,11 +54,10 @@ scheduler, installation boundary, and base weapon/armor matrix reader are also
 active. See `docs/RECONSTRUCTION_CONTEXT.md` for the next implementation stages.
 
 Presentation now runs through a Direct3D 11 device and double-buffered swap
-chain. A shader samples the transitional frame texture into a fixed 640x480 GPU
-render target, then a second point-sampled shader pass presents that surface.
-The composed legacy-frame upload remains only while individual draw calls are
-being migrated to the GPU sprite command path; this is intentionally documented
-as transitional rather than a completed renderer. The encyclopedia reads the original `encyclo.txt` identity catalog,
+chain. Ordered GPU sprite, tile, bitmap-glyph, and primitive commands compose
+the fixed 640x480 target before a point-sampled presentation pass. The legacy
+GDI scratch surface is non-presented fallback infrastructure only; it is not a
+full-frame upload path. The encyclopedia reads the original `encyclo.txt` identity catalog,
 supports its three categories and list navigation, and previews confirmed FIN
 animations where their native identity is mapped.
 
