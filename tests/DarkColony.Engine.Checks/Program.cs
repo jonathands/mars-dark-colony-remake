@@ -239,7 +239,8 @@ Check("unit command profiles keep common, contextual, and pending slots distinct
 
     var ground = new EntityDefinition(0, "GROUND", "Ground", 0, ValuesWith(movementSpeed: 20));
     var airValues = ValuesWith(movementSpeed: 20);
-    airValues[10] = 7;
+    airValues[10] = 7; // armor class alone does not make an actor fly
+    airValues[12] = 1; // gamestat value 13, runtime +0x60
     var air = new EntityDefinition(1, "AIR", "Air", 0, airValues);
     var mineValues = ValuesWith(movementSpeed: 0);
     mineValues[10] = 7;
@@ -988,12 +989,12 @@ Check("engineer mine deployment resolves the faction-matched HMINE form", () =>
     Equal(new CellCoordinate(1, 1), deployment.Target);
     Equal(ScenarioSimulation.NativeImmediateSpecialTicks, simulation.Actor(1)!.MineDeployTicksRemaining);
     Equal(false, simulation.MineOccupancy.IsOccupied(new CellCoordinate(1, 1)));
-    Equal(true, simulation.AlternateOccupancy.TryGetOwner(new CellCoordinate(1, 1), out _));
+    Equal(true, simulation.GroundOccupancy.TryGetOwner(new CellCoordinate(1, 1), out _));
     for (var tick = 0; tick < ScenarioSimulation.NativeImmediateSpecialTicks; tick++) simulation.Step([]);
     Equal(MineDeploymentOutcome.Deployed, simulation.LastMineDeployments.Single().Outcome);
     Equal(true, simulation.MineOccupancy.TryGetOwner(new CellCoordinate(1, 1), out var mineId));
     Equal(deployment.EntityInstanceId, mineId);
-    Equal(false, simulation.AlternateOccupancy.IsOccupied(new CellCoordinate(1, 1)));
+    Equal(false, simulation.GroundOccupancy.IsOccupied(new CellCoordinate(1, 1)));
     Equal("HMINE", simulation.EffectiveDefinition(simulation.Actor(mineId)!).Code);
     Equal(0, simulation.EffectiveDefinition(simulation.Actor(mineId)!).MovementSpeed);
 });
@@ -1280,7 +1281,7 @@ Check("spawn validity separates ground and alternate movement grids", () =>
 
 Check("autonomous groups seed populations without stacking", () =>
 {
-    var entityText = "2\nGROUND 1 1 1 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nBAT 1 1 1 1 1 -1 -1 -1 1 1 2 50 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n";
+    var entityText = "2\nGROUND 1 1 1 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nBAT 1 1 1 1 1 -1 -1 -1 1 1 2 50 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n";
     var catalog = EntityCatalog.Parse(entityText);
     var pathBytes = new byte[PathRegionMap.RouteTableSize + 9];
     pathBytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);

@@ -15,7 +15,14 @@ public sealed record EntityDefinition(
     public int MovementSpeed => Values[2];
     public int DayObservation => Values[3];
     public int NightObservation => Values[4];
-    public int MovementClass => Values[10];
+    /// <summary>
+    /// Source value 13, which the gamestat loader <c>0x43BAB4</c> stores as entity
+    /// runtime byte <c>+0x60</c>. Route requests (<c>0x41518C</c>) pass it to the
+    /// local search as the movement class, and path steps (<c>0x4157EC</c>)
+    /// use it to pick the ground (<c>0x804</c>) or alternate (<c>0xC04</c>)
+    /// occupancy grid. It is 1 for fliers and buildings and 0 for ground units.
+    /// </summary>
+    public int MovementClass => Values[12];
     /// <summary>
     /// Source value 22, loaded to entity runtime byte +0xe0. Actor constructor
     /// 0x41B2E7 copies it to facing byte +0x09.
@@ -32,10 +39,10 @@ public sealed record EntityDefinition(
     /// definitions set it, placing those actors in the dedicated mine layer.
     /// </summary>
     public bool UsesNativeMineLayer => Values[14] != 0;
-    // The original table slot also indexes the ten-column resistance matrix.
-    // Keep MovementClass as the established pathing name until the distinct
-    // runtime field is fully traced, but expose the combat interpretation
-    // explicitly so callers cannot rely on a magic positional value.
+    /// <summary>
+    /// Source value 11 (runtime <c>+0x40</c>): the column of the ten-class
+    /// weapon/armor resistance matrix. It is not a movement layer.
+    /// </summary>
     public int ArmorClass => Values[10];
     public int Health => Values[11];
     /// <summary>

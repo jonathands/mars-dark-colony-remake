@@ -344,12 +344,17 @@ one harvester may own or prepare on a vent.
   crater art. The engine works in the world frame; the app mirrors world Z
   when drawing and picking. Coarse chains terminate explicitly on target,
   zero, repetition, or 256 steps. F4 visualizes zero and region boundaries.
-- The gamestat field after X/Y dimensions is now correctly named movement
-  class (Bat is `2`; ground critters are `0`), and the following field is
-  health. The executable-confirmed autonomous spawn validator requires class
-  zero to have a nonzero PTH region and empty ground occupancy; nonzero classes
-  use the alternate occupancy grid. This narrow spawn rule is not reused as a
-  claim about the still-incomplete local-path neighbor predicate.
+- Movement class (corrected 2026-10-04) is gamestat value 13, which the
+  loader `0x43BAB4` stores at entity runtime byte `+0x60`; value 11 (after the
+  X/Y dimensions) is the armor class at `+0x40`. Route requests `0x41518C`
+  pass `+0x60` to the local search, which blocks region-0 neighbors only when
+  it is zero (`0x444540` clears the region-0 slot of its translation table),
+  and path steps `0x4157EC` use it to pick the ground or alternate occupancy
+  grid. Fliers (SCGM, ORTU, AVII, BEON, ZISP) and buildings have class 1;
+  every other unit, including the mech, cyborg, exploiter, and engineers, is
+  ground. The autonomous spawn validator requires class zero to have a
+  nonzero PTH region and empty ground occupancy; nonzero classes use the
+  alternate occupancy grid.
 - SCN team `-1` rows are typed autonomous spawn groups, not ordinary placed
   actors. Corpus checks confirm 561 groups, 1,767 requested members, native
   population/group limits, and only entity IDs 23/24/25/26/36. Initial seeding
