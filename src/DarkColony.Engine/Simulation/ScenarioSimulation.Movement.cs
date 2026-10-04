@@ -26,7 +26,7 @@ public sealed partial class ScenarioSimulation
             return new MoveCommandOutcome(actor.Seed.InstanceId, order.Target, DiagnosticPathTermination.ReachedTarget, 0);
         }
 
-        var finder = new DiagnosticLocalPathfinder(path, GroundOccupancy, AlternateOccupancy);
+        var finder = localPathfinder ??= new DiagnosticLocalPathfinder(path, GroundOccupancy, AlternateOccupancy);
         var definition = EffectiveDefinition(actor);
         var local = finder.Find(actor.Movement.OccupiedCell, order.Target, definition.MovementClass, actor.Seed.InstanceId);
         if (local.Steps.Count == 0)

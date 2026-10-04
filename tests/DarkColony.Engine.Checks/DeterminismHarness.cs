@@ -372,7 +372,7 @@ internal static class DeterminismCli
         var update = args.Contains("--update-goldens");
         var dump = Array.IndexOf(args, "--dump-digest");
         var summary = Array.IndexOf(args, "--event-summary");
-        string[] modes = ["--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan"];
+        string[] modes = ["--update-goldens", "--verify-goldens", "--dump-digest", "--event-summary", "--timing", "--coverage-scan", "--run"];
         if (!args.Any(modes.Contains)) return false;
 
         var dataIndex = Array.IndexOf(args, "--data");
@@ -395,6 +395,19 @@ internal static class DeterminismCli
             foreach (var mismatch in mismatches) Console.WriteLine(mismatch);
             Console.WriteLine(mismatches.Count == 0 ? "All golden digests match." : $"{mismatches.Count} golden scenario(s) diverged.");
             exitCode = mismatches.Count == 0 ? 0 : 1;
+            return true;
+        }
+
+        var plainRun = Array.IndexOf(args, "--run");
+        if (plainRun >= 0)
+        {
+            // Simulation only, no digests: the workload to attach a profiler to.
+            var (simulation, path) = DeterminismHarness.Load(installation, rules, args[plainRun + 1]);
+            var commander = new ScriptedCommander(simulation, path, rules, DeterminismHarness.StableSeed(args[plainRun + 1]));
+            var runTicks = ulong.Parse(args[plainRun + 2]);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            for (ulong runTick = 1; runTick <= runTicks; runTick++) simulation.Step(commander.CommandsFor(runTick));
+            Console.WriteLine($"{args[plainRun + 1]}: {runTicks} ticks, {clock.Elapsed.TotalMilliseconds / runTicks:0.000} ms/tick");
             return true;
         }
 

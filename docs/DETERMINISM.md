@@ -49,6 +49,7 @@ game is not at `..\Dark Colony`.
 | `--event-summary <scenario> <ticks>` | Count events and outcomes reached by a scripted run. |
 | `--coverage-scan <ticks>` | Distinct event kinds reached, for every scenario. |
 | `--timing <ticks>` | Load time and mean milliseconds per tick, for every scenario. |
+| `--run <scenario> <ticks>` | Simulation only, no digests: the workload for a profiler. |
 
 Example: `dotnet run --project tests/DarkColony.Engine.Checks -- --verify-goldens`.
 
@@ -90,9 +91,18 @@ and accepted ground special attacks.
   had entered the vacated source cell (found in `human01`). The step now
   completes on the destination the actor still owns; see
   `PackedPathPlayback.Cancel`.
-- **Performance:** on the development machine a tick costs up to 28 ms
-  (`alien09`, 118 actors) against a 66 ms budget; 61 of 108 scenarios exceed
-  1 ms per tick. Measure with `--timing`.
+- **Performance, fixed:** a tick cost up to 28 ms in Debug (14 ms in
+  Release; `alien09`, 118 actors) against a 66 ms budget, almost all of it in
+  the local path search. Four exact changes keep every golden identical:
+  - the per-node LINQ candidate sort became a precomputed table;
+  - per-search dictionaries became reused stamped arrays;
+  - superseded queue entries are skipped;
+  - an unenterable target answers `NoRoute` without flooding its region.
+
+  The worst scenario now costs 0.94 ms per tick in Release
+  (`d4play08`), and `alien09` costs 1.2 ms. Measure with `--timing`.
+  Profile with `dotnet-trace collect --profile dotnet-sampled-thread-time`
+  against `--run <scenario> <ticks>`.
 - **War economy cannot start:** War teams begin with 1,500 P7, the cheapest
   root building (Exo Center, item 0) costs 2,000, and no War starting roster
   contains a harvester. With the passive trickle removed, a War team can never

@@ -75,6 +75,8 @@ public sealed partial class ScenarioSimulation
     // from the initialized 256-entry stream at 0x478e04.
     private int nativeRandomIndex;
     private NativeRandomTable nativeRandomTable = NativeRandomTable.Synthetic;
+    // Reused for every route segment; it keeps per-search scratch buffers.
+    private DiagnosticLocalPathfinder? localPathfinder;
 
     private ScenarioSimulation(
         PathRegionMap path,
