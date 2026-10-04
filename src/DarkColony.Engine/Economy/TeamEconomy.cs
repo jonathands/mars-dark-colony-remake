@@ -81,6 +81,13 @@ public sealed class TeamEconomy
         return completedItems.Add(itemId);
     }
 
+    /// <summary>Withdraws a building whose city slot no longer satisfies it.</summary>
+    public bool WithdrawCompletedBuilding(DependencyCatalog? catalog, int itemId)
+    {
+        if (catalog?.TryGet(itemId, out var item) != true || !item.IsBuilding) return false;
+        return completedItems.Remove(itemId);
+    }
+
     /// <summary>Consumes a paid non-building production reservation at spawn time.</summary>
     public bool ConsumeReservation(DependencyCatalog? catalog, int itemId)
     {

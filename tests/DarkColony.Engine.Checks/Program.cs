@@ -2147,6 +2147,34 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         Equal(new CellCoordinate(10, 52), simulation.Actor(produced.EntityInstanceId)!.Movement.OccupiedCell);
     });
 
+    Check("building prerequisites follow the live city slot and its variant", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var rules = SimulationRules.Load(install);
+        var file = install.DataFile("scenario", "mplayer", "j4play01") + ".scn";
+        // Team 0 starts with a level-2 robot factory (slot 2, variant 1).
+        var text = System.Text.RegularExpressions.Regex.Replace(File.ReadAllText(file), @"%City(\r?\n)1 -1 0 -1 0 -1",
+            match => $"%City{match.Groups[1].Value}1 -1 0 -1 2 -1", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1));
+        var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+        var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+        var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(text), path, rules);
+        var economy = simulation.EconomyForTeam(0)!;
+        // depend.txt: item 3 is robot factory 1 (slot 2, variant 0), item 5 robot
+        // factory 2 (variant 1); 0x438220 accepts any live variant at least as high.
+        Equal(true, economy.CompletedItems.Contains(3));
+        Equal(true, economy.CompletedItems.Contains(5));
+
+        simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new PurchaseIntent(0, 1))]);
+        Equal(true, economy.CompletedItems.Contains(1));
+        Equal(PurchaseEligibility.Available, economy.Evaluate(rules.Dependencies, 9));
+        // ApplyDamage drops health to zero before Destroy runs.
+        var barracks = simulation.CityBuilding(0, 1)!;
+        barracks.Health = 0;
+        simulation.Destroy(barracks, new List<DestroyedActorEvent>());
+        Equal(false, economy.CompletedItems.Contains(1));
+        Equal(PurchaseEligibility.MissingPrerequisite, economy.Evaluate(rules.Dependencies, 9));
+    });
+
     Check("native target rings decode whole-distance rings 0 through 16", () =>
     {
         var rings = NativeTargetRings.Load(GameInstallation.Open(dataPath).ExecutablePath).Rings;

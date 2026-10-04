@@ -270,6 +270,7 @@ public sealed partial class ScenarioSimulation
                 simulation.productionQueues[(team.TeamId, queue)] = new CityProductionQueue(team.TeamId, queue);
         }
         simulation.SeedScenarioBuildingDependencies();
+        foreach (var (team, slot) in simulation.cityBuildings.Keys.ToArray()) simulation.SyncCitySlotItems(team, slot);
         simulation.PetraVents = scenario.Vents.Select((vent, index) => new PetraVent(index, new CellCoordinate(vent.X, vent.Z), vent.InitialState, vent.InitialReservoir)).ToArray();
         simulation.autonomousGroups.AddRange(scenario.AutonomousSpawnGroups.Select(group => new AutonomousGroupRuntime(
             group, autonomous.EntitiesByGroup.GetValueOrDefault(group.GroupId, []).Select(entity => entity.InstanceId))));

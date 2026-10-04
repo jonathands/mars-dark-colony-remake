@@ -95,6 +95,7 @@ public sealed partial class ScenarioSimulation
         GroundOccupancy.ReplaceClaims(instanceId, footprints.CitySlotCells(origin, slot));
         cityBuildings[(purchase.TeamId, slot)] = instanceId;
         economy.MarkCompleted(dependencyCatalog, item.Id);
+        SyncCitySlotItems(purchase.TeamId, slot);
         if (footprints.SlotProductionQueue(slot) is { } queue && productionQueues.TryGetValue((purchase.TeamId, queue), out var state))
         {
             if (state.ReservedExit is { } exit) ReleaseCell(exit, previousId);
@@ -104,6 +105,45 @@ public sealed partial class ScenarioSimulation
             state.ReservedExit = null;
         }
         return new BuildingPlacedEvent(purchase.TeamId, item.Id, instanceId, entityId, origin, BuildingDropOutcome.Placed);
+    }
+
+    /// <summary>
+    /// <c>0x438220</c> counts a building prerequisite as met while its city
+    /// slot holds a live building (slot health <c>+0xBD4 + slot * 4</c> nonzero)
+    /// whose variant (<c>+0xC5C + slot * 4</c>) is at least the item's. The port
+    /// keeps the team's completed building items equal to that rule for each
+    /// city slot.
+    /// </summary>
+    private void SyncCitySlotItems(int team, int slot)
+    {
+        if (dependencyCatalog is null || footprints is null || !teamEconomies.TryGetValue(team, out var economy) ||
+            !teamRaces.TryGetValue(team, out var race) || race is null) return;
+        int? liveVariant = null;
+        if (CityBuilding(team, slot) is { } building)
+        {
+            for (var variant = 0; variant < 2 && liveVariant is null; variant++)
+                if (footprints.TryResolveBuildingEntity(race.Value, variant, slot, out var entityId) && entityId == building.Seed.EntityId)
+                    liveVariant = variant;
+        }
+        foreach (var item in dependencyCatalog.Items.Values.Where(item =>
+                     item.IsBuilding && item.BuildingFaction == race && item.BuildingSlot == slot))
+        {
+            if (liveVariant is { } variant && item.BuildingVariant <= variant)
+                economy.SeedCompletedBuilding(dependencyCatalog, item.Id);
+            else
+                economy.WithdrawCompletedBuilding(dependencyCatalog, item.Id);
+        }
+    }
+
+    /// <summary>Re-applies the slot rule after a city building is destroyed.</summary>
+    private void OnCityBuildingDestroyed(SimulatedActor actor)
+    {
+        foreach (var ((team, slot), instanceId) in cityBuildings)
+        {
+            if (instanceId != actor.Seed.InstanceId) continue;
+            SyncCitySlotItems(team, slot);
+            return;
+        }
     }
 
     private void ReleaseCell(CellCoordinate cell, int ownerId)

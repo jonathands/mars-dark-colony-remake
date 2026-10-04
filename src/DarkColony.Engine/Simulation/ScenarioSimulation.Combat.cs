@@ -50,6 +50,7 @@ public sealed partial class ScenarioSimulation
         GroundOccupancy.Release(actor.Seed.InstanceId);
         AlternateOccupancy.Release(actor.Seed.InstanceId);
         MineOccupancy.Release(actor.Seed.InstanceId);
+        OnCityBuildingDestroyed(actor);
         foreach (var other in Actors.Where(other => other.AttackTargetInstanceId == actor.Seed.InstanceId))
         {
             // A target can be destroyed by a different attacker while this
@@ -99,7 +100,7 @@ public sealed partial class ScenarioSimulation
                 projectile.Damage, weapon.WeaponClass, EffectiveDefinition(target).ArmorClass));
     }
 
-    private void Destroy(SimulatedActor actor, ICollection<DestroyedActorEvent> destroyed)
+    internal void Destroy(SimulatedActor actor, ICollection<DestroyedActorEvent> destroyed)
     {
         destroyed.Add(new DestroyedActorEvent(actor.Seed.InstanceId, actor.Seed.EntityId, actor.Movement.VisualPosition));
         // The native actor destructor removes a live EXPL/SLUG source from its
@@ -114,6 +115,7 @@ public sealed partial class ScenarioSimulation
         GroundOccupancy.Release(actor.Seed.InstanceId);
         AlternateOccupancy.Release(actor.Seed.InstanceId);
         MineOccupancy.Release(actor.Seed.InstanceId);
+        OnCityBuildingDestroyed(actor);
         foreach (var other in Actors.Where(other => other.AttackTargetInstanceId == actor.Seed.InstanceId))
         {
             // Combat destruction can occur after other actors have already
