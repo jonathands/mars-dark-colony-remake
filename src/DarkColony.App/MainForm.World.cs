@@ -198,6 +198,7 @@ public sealed partial class MainForm
             _dependencyCatalog ??= rules.Dependencies;
             var missionScript = MissionScript.LoadForScenario(_installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.scn"));
             _scenarioSimulation = ScenarioSimulation.Create(definition, _gameplayPath, rules, missionScript, _gameplayMap);
+            _grantedP7 = false;
             RestorePendingSave();
             _missionOutcomeReported = false;
             _bailOutcome = null;
@@ -460,7 +461,8 @@ public sealed partial class MainForm
             _entityCatalog ??= EntityCatalog.Load(_installation.DataFile("gamestat", "gamestat.txt"));
             _entityAnimations ??= EntityAnimationCatalog.Build(_entityCatalog, _installation.DataFile("animate"),
                 EntityAnimationCatalog.LoadOrder(_installation.DataFile("anim.dat")));
-            _weaponEffects ??= _weaponCatalog is null ? null : WeaponEffectCatalog.Build(_weaponCatalog, _installation.DataFile("animate"));
+            _weaponEffects ??= _weaponCatalog is null ? null : WeaponEffectCatalog.Build(_weaponCatalog, _installation.DataFile("animate"),
+                name => File.Exists(_installation.DataFile("sprites", $"{name}.spr")) || File.Exists(_installation.DataFile("intrface", $"{name}.spr")));
             var state = graphics.Save();
             graphics.SetClip(new Rectangle(0, 0, 516, 458));
             var targetedInstanceIds = _scenarioSimulation.Actors

@@ -193,7 +193,10 @@ public sealed class EntityAnimationCatalog
         else if (variants.ContainsKey("")) orderedKeys.Add("");
         if (variants.ContainsKey("B")) orderedKeys.Add("B");
         if (variants.ContainsKey("C")) orderedKeys.Add("C");
-        orderedKeys.AddRange(variants.Keys.Where(key => !orderedKeys.Contains(key, StringComparer.OrdinalIgnoreCase))
+        // FIREA took the plain family's slot, so plain FIRE is not a variant of its own
+        // (ATRIL: atril.fin has FIREA, the unloaded tmp.fin a plain FIRE whose sprite is not shipped).
+        orderedKeys.AddRange(variants.Keys.Where(key => !orderedKeys.Contains(key, StringComparer.OrdinalIgnoreCase) &&
+                !(key.Length == 0 && orderedKeys.Contains("A")))
             .OrderBy(key => key, StringComparer.OrdinalIgnoreCase));
         var key = orderedKeys[Math.Abs(variantRoll % orderedKeys.Count)];
         return PreferredDirectional(variants[key], sector);

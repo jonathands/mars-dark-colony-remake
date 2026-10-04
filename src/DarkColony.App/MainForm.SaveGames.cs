@@ -36,6 +36,12 @@ public sealed partial class MainForm
     private void SaveCurrentGame()
     {
         if (_scenarioSimulation is null) return;
+        if (_grantedP7)
+        {
+            // The journal cannot replay the diagnostic grant, so the save would not verify.
+            _status = "Saving is off in a --grant-p7 game.";
+            return;
+        }
         var scenario = GameplayScenario();
         SavedWarLaunch? war = scenario.WarLaunch is { } launch
             ? new SavedWarLaunch(launch.Race, launch.LocalTeamId, launch.Settings.StorageCells, launch.Settings.Artifacts,

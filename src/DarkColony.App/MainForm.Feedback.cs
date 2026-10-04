@@ -186,6 +186,7 @@ public sealed partial class MainForm
                 var name = _entityCatalog is not null && (uint)placement.EntityId < (uint)_entityCatalog.Entities.Count
                     ? _entityCatalog[placement.EntityId].DisplayName : $"entity {placement.EntityId}";
                 _status = $"{name} dropped; tech-tree item {placement.DependencyItemId} is now complete.";
+                RuntimeLog.Info($"Built {name} (item {placement.DependencyItemId}, entity {placement.EntityId}) at tick {_scenarioSimulation.TickCount}.");
             }
             else if (placement.TeamId == _localPlayerTeam &&
                      placement.Outcome is (BuildingDropOutcome.OutOfBounds or BuildingDropOutcome.Occupied or BuildingDropOutcome.InvalidFootprint) &&
@@ -234,6 +235,7 @@ public sealed partial class MainForm
                 var sourceName = source?.Definition.DisplayName ?? $"structure #{production.SourceBuildingInstanceId}";
                 var spawn = produced is null ? string.Empty : $" at {produced.Movement.OccupiedCell.X},{produced.Movement.OccupiedCell.Z}";
                 _status = $"{name} #{production.EntityInstanceId} produced by {sourceName}{spawn}.";
+                RuntimeLog.Info($"Trained {name} #{production.EntityInstanceId} (item {production.DependencyItemId}, entity {production.EntityId}){spawn} at tick {_scenarioSimulation.TickCount}.");
             }
             else if (production.Outcome == UnitProductionOutcome.Queued)
             {
@@ -249,6 +251,7 @@ public sealed partial class MainForm
             _status = research.Outcome == ResearchOutcome.Completed
                 ? $"Research item {research.DependencyItemId} complete."
                 : $"Research rejected: {research.Outcome}.";
+            RuntimeLog.Info($"Research item {research.DependencyItemId}: {research.Outcome} at tick {_scenarioSimulation.TickCount}.");
         }
     }
 

@@ -67,6 +67,12 @@ public sealed partial class MainForm
         _status = $"Single Player War: {launch.Stem.ToUpperInvariant()} as {(localPlayer.Gray ? "Gray" : "Human")} team {_localPlayerTeam + 1}; P7 { _warP7QuantityMultiplier}% / flow {_warP7FlowMultiplier}%.";
         RuntimeLog.Info($"{_status} Seats: {string.Join(", ", launch.Seats!.Where(seat => seat is not null).Select(seat => $"team {seat!.TeamId + 1} {seat.Kind}"))}.");
         ShowScreen(MenuScreenId.Gameplay);
+        if (GrantP7 is { } grant && _scenarioSimulation?.EconomyForTeam(_localPlayerTeam) is { } economy)
+        {
+            economy.AddP7(grant);
+            _grantedP7 = true;
+            RuntimeLog.Info($"Diagnostic --grant-p7: team {_localPlayerTeam + 1} received {grant} P7; this game will not be saved.");
+        }
     }
 
     private void EnsureSinglePlayerMaps()

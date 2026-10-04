@@ -22,7 +22,12 @@ public sealed class WeaponEffectCatalog
     /// <summary>Resolved original <c>EXPLODE</c>/<c>EXPL</c> effect, if shipped.</summary>
     public WeaponEffectCandidate? Impact(int weaponId) => impacts.GetValueOrDefault(weaponId);
 
-    public static WeaponEffectCatalog Build(WeaponCatalog weapons, string animateDirectory)
+    /// <param name="spriteExists">
+    /// Whether a sprite is shipped. The installation keeps FIN files whose
+    /// sprites are not (pust.fin's PUSEXPLODE names a pust.spr that is on
+    /// neither the disk nor the CD); such a file cannot be the game's effect.
+    /// </param>
+    public static WeaponEffectCatalog Build(WeaponCatalog weapons, string animateDirectory, Func<string, bool>? spriteExists = null)
     {
         var all = new List<(string Path, AnimationRange Animation)>();
         foreach (var path in Directory.GetFiles(animateDirectory, "*.fin", SearchOption.TopDirectoryOnly).Order(StringComparer.OrdinalIgnoreCase))
@@ -30,6 +35,7 @@ public sealed class WeaponEffectCatalog
             try
             {
                 var definition = AnimationDefinition.Load(path);
+                if (spriteExists is not null && !definition.SpriteNames.Where(name => name.Length != 0).All(spriteExists)) continue;
                 all.AddRange(definition.Animations.Select(animation => (path, animation)));
             }
             catch (InvalidDataException) { }

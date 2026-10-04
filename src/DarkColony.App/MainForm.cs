@@ -186,6 +186,14 @@ public sealed partial class MainForm : Form
     public int? ForcedOutcomeAfterSeconds { get; init; }
     public bool ForcedVictory { get; init; }
 
+    /// <summary>
+    /// Diagnostic (<c>--grant-p7 N</c>): the local player gets N P7 when a
+    /// Single Player War starts, so a live test can buy the whole build tree.
+    /// The grant is not a world command, so such a game is not saved.
+    /// </summary>
+    public int? GrantP7 { get; init; }
+    private bool _grantedP7;
+
     /// <summary>The map reveal diagnostic (Ctrl+F12).</summary>
     public bool RevealMap
     {

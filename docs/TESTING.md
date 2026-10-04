@@ -69,6 +69,35 @@ holds rather than what is being tested.
 - **Order.** Results are printed in registration order, each with its time, followed by the five slowest checks and the totals.
 - **Exit code.** 1 when any check fails.
 
+## Live tests
+
+`tools/Test-LiveConstruction.ps1 [-Race Human|Gray]` plays a Single Player
+War in the running app. It drives the HUD with posted input, so the real
+cursor stays put, and takes a screenshot at each step:
+
+1. The lobby (for Gray, the local row's race is toggled first).
+2. The city at the start.
+3. Each of the six buildings, bought from its Build button in prerequisite order.
+4. The nine troops just after they are ordered.
+5. The nine troops again once they are trained.
+
+The app runs with the `--grant-p7 N` diagnostic, which gives the local player
+N P7 when a Single Player War starts. A game started this way cannot be saved.
+
+The test passes only if all of these hold:
+
+- the log has six `Built` lines and nine `Trained` lines;
+- the log has no animation or sprite error and no `[ERROR]`;
+- the app exits normally.
+
+Screenshots go to `screenshots/live-<race>-*`, and the log to `artifacts/logs/live-<race>.log`.
+
+Its first runs found three bugs:
+
+- The Gray HUD crashed on its first frame, because the Gray engineer's button is an empty 0x0 frame (71) in `mainbut.spr`.
+- An Atril firing drew from `tmp.fin`. That file is not in `anim.dat`, and its plain FIRE family names an `atri.spr` that is not shipped. FIREA takes the plain family's slot (`0x43B970`).
+- The PUS impact resolved to `pust.fin`, whose `pust.spr` is on neither the disk nor the CD.
+
 ## Plan
 
 The rest of the suite plan, in order. Phase 1 and the catalog sweep are done.

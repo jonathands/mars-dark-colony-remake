@@ -157,6 +157,9 @@ public sealed partial class MainForm
             var sprite = LoadSprite(spriteName);
             if ((uint)frameIndex >= (uint)sprite.Frames.Count) return null;
             var frame = sprite.Frames[frameIndex];
+            // The shipped mainbut.spr has empty 0x0 frames (3, 70, 71, 122); frame 71 is the
+            // Gray engineer's build button. A bitmap cannot be empty, so draw none.
+            if (frame.Width == 0 || frame.Height == 0) return null;
             var bitmap = BitmapFromRgba(frame.Width, frame.Height, sprite.FrameRgba(frameIndex));
             _animationFrames[key] = bitmap;
             return bitmap;
@@ -391,6 +394,8 @@ public sealed partial class MainForm
 
     private static Bitmap BitmapFromRgba(int width, int height, byte[] rgba)
     {
+        // An empty frame has nothing to draw, but GDI+ cannot make an empty bitmap.
+        if (width <= 0 || height <= 0) return new Bitmap(1, 1, PixelFormat.Format32bppArgb);
         var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
         var data = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
         try
