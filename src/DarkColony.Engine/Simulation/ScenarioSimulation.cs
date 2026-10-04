@@ -40,6 +40,8 @@ public sealed class SimulatedActor
     public int AbilityCharge { get; internal set; }
     public PackedPathPlayback? Playback { get; internal set; }
     public ActiveMoveOrder? MoveOrder { get; internal set; }
+    /// <summary>Native actor byte +0x35: an allied mover's blocked direction.</summary>
+    public PathDirection? YieldNotificationDirection { get; internal set; }
     /// <summary>
     /// The vent this harvester is travelling to or is currently attached to.
     /// This is authoritative economy state, rather than a presentation-only
@@ -102,7 +104,12 @@ public sealed class ActiveMoveOrder
 
     public bool TryAppendWaypoint(CellCoordinate target)
     {
-        if (waypoints.Count >= MaximumWaypoints || waypoints.LastOrDefault() == target) return false;
+        // The active destination is the predecessor while the queued list is
+        // empty. Treat it exactly like the tail of a non-empty queue so a
+        // Shift-click on the current marker cannot insert a zero-length first
+        // waypoint ahead of the player's next real destination.
+        var previous = waypoints.Count == 0 ? Target : waypoints.Last();
+        if (waypoints.Count >= MaximumWaypoints || previous == target) return false;
         waypoints.Enqueue(target);
         return true;
     }
@@ -115,6 +122,13 @@ public sealed class ActiveMoveOrder
         BlockedTicksRemaining = 0;
         LastBlockedCell = null;
         return true;
+    }
+
+    internal void JitterTarget(CellCoordinate target)
+    {
+        Target = target;
+        SegmentCount = 0;
+        BlockedTicksRemaining = 0;
     }
 }
 
@@ -253,9 +267,13 @@ public sealed class ScenarioSimulation
     private readonly List<BattlefieldTransportState> battlefieldTransports = [];
     private readonly List<AutonomousGroupRuntime> autonomousGroups = [];
     private ulong simulationTicks;
-    // The native random algorithm has not been identified. This fixed LCG only
-    // supplies deterministic replayable values to the recovered masks below.
+    // Autonomous schedule masks are recovered, but their call-site sequence
+    // is still kept independently deterministic.
     private uint autonomousRandomState = 0x4d435254;
+    // dc.exe increments 0x479204 (initialized to zero) then reads one dword
+    // from the initialized 256-entry stream at 0x478e04.
+    private int nativeRandomIndex;
+    private NativeRandomTable nativeRandomTable = NativeRandomTable.Synthetic;
 
     private ScenarioSimulation(
         PathRegionMap path,
@@ -348,7 +366,8 @@ public sealed class ScenarioSimulation
         PetraStealRules? petraStealRules = null,
         DayNightCycle? dayNight = null,
         TeamRelationMatrix? teamRelations = null,
-        AreaEffectCatalog? areaEffects = null)
+        AreaEffectCatalog? areaEffects = null,
+        NativeRandomTable? randomTable = null)
     {
         var seeds = scenario.Placements.Where(placement => placement.Team != -1).Select((placement, index) =>
         {
@@ -387,6 +406,7 @@ public sealed class ScenarioSimulation
             teamRelations ?? TeamRelationMatrix.CreateDefault());
         if (!simulation.petraFlowRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraFlowRules));
         if (!simulation.petraStealRules.IsValid) throw new ArgumentOutOfRangeException(nameof(petraStealRules));
+        simulation.nativeRandomTable = randomTable ?? NativeRandomTable.Synthetic;
         simulation.SeedScenarioBuildingDependencies();
         simulation.PetraVents = scenario.Vents.Select((vent, index) => new PetraVent(index, new CellCoordinate(vent.X, vent.Z), vent.InitialState, vent.InitialReservoir)).ToArray();
         simulation.autonomousGroups.AddRange(scenario.AutonomousSpawnGroups.Select(group => new AutonomousGroupRuntime(
@@ -660,8 +680,16 @@ public sealed class ScenarioSimulation
                 continue;
             }
 
+            // A normal move replaces—not appends to—the active command. Its
+            // existing packed segment may already have reserved the next
+            // cell, so restore that claim before planning from the actor's
+            // authoritative source cell. Leaving it active makes the actor
+            // visibly complete one old segment before following the new order.
+            actor.Playback?.Cancel();
+            actor.Playback = null;
             DetachHarvester(actor);
             actor.MineDeployTicksRemaining = 0;
+            actor.AttackTargetInstanceId = null;
             actor.AttackMoveDestination = null;
             actor.GroundSpecialAttackTarget = null;
             actor.MoveOrder = new ActiveMoveOrder(move.TargetCell);
@@ -726,6 +754,7 @@ public sealed class ScenarioSimulation
                 {
                     actor.MoveOrder ??= new ActiveMoveOrder(actor.Movement.OccupiedCell);
                     actor.MoveOrder.LastBlockedCell = actor.Playback.BlockedCell;
+                    var blockedCell = actor.Playback.BlockedCell;
                     actor.Playback = null;
                     // Native blockage handling first attempts to reconstruct a
                     // usable local suffix. The four-execution wait is only the
@@ -733,8 +762,14 @@ public sealed class ScenarioSimulation
                     var repair = StartSegment(actor);
                     if (repair.StepCount == 0)
                     {
-                        if (actor.MoveOrder is { } waitingOrder) waitingOrder.BlockedTicksRemaining = 4;
+                        NotifyAndJitterBlockedActor(actor, blockedCell);
                     }
+                }
+                else if (actor.Playback.CompletedTransitionLastStep)
+                {
+                    // Command-5 clears the notified blocker's +0x35 byte as
+                    // its interpolation completes.
+                    actor.YieldNotificationDirection = null;
                 }
                 else if (status == PackedPathPlaybackStatus.Complete)
                 {
@@ -1910,6 +1945,12 @@ public sealed class ScenarioSimulation
             return new AttackOrderEvent(intent.EntityInstanceId, intent.TargetEntityInstanceId, AttackOrderOutcome.NonHostile);
         if (!TryGetWeapon(attacker, out _))
             return new AttackOrderEvent(intent.EntityInstanceId, intent.TargetEntityInstanceId, AttackOrderOutcome.Unarmed);
+        // Direct attack replaces any queued travel. Otherwise an out-of-range
+        // target is forced to wait for the previous segment to finish before
+        // pursuit begins, despite the player having issued a new order.
+        attacker.Playback?.Cancel();
+        attacker.Playback = null;
+        attacker.MoveOrder = null;
         attacker.AttackMoveDestination = null;
         attacker.MineDeployTicksRemaining = 0;
         attacker.AttackTargetInstanceId = target.Seed.InstanceId;
@@ -1996,6 +2037,8 @@ public sealed class ScenarioSimulation
             return new AttackMoveOrderEvent(intent.EntityInstanceId, intent.TargetCell, AttackMoveOrderOutcome.Unarmed);
         if ((uint)intent.TargetCell.X >= (uint)path.Width || (uint)intent.TargetCell.Z >= (uint)path.Height)
             return new AttackMoveOrderEvent(intent.EntityInstanceId, intent.TargetCell, AttackMoveOrderOutcome.InvalidEndpoint);
+        actor.Playback?.Cancel();
+        actor.Playback = null;
         DetachHarvester(actor);
         actor.MineDeployTicksRemaining = 0;
         actor.AttackTargetInstanceId = null;
@@ -2284,6 +2327,11 @@ public sealed class ScenarioSimulation
         var order = actor.MoveOrder ?? throw new InvalidOperationException("Actor has no move order.");
         if (actor.Movement.OccupiedCell == order.Target)
         {
+            // A queued duplicate of the active target is a legal input edge:
+            // the player can append while the first segment is still in
+            // flight. Do not discard the remainder of the queue merely
+            // because this zero-length segment needs no packed playback.
+            if (order.AdvanceWaypoint()) return StartSegment(actor);
             actor.MoveOrder = null;
             return new MoveCommandOutcome(actor.Seed.InstanceId, order.Target, DiagnosticPathTermination.ReachedTarget, 0);
         }
@@ -2303,5 +2351,57 @@ public sealed class ScenarioSimulation
         actor.Playback = new PackedPathPlayback(actor.Seed.InstanceId, definition.MovementSpeed, actor.Movement, local.Steps, occupancy, actor.Facing);
         order.SegmentCount++;
         return new MoveCommandOutcome(actor.Seed.InstanceId, order.Target, local.Termination, local.Steps.Count);
+    }
+
+    private void NotifyAndJitterBlockedActor(SimulatedActor mover, CellCoordinate? blockedCell)
+    {
+        if (mover.MoveOrder is null) return;
+        var definition = EffectiveDefinition(mover);
+        var occupancy = definition.MovementClass == 0 ? GroundOccupancy : AlternateOccupancy;
+        if (blockedCell is { } cell && occupancy.TryGetOwner(cell, out var blockerId) &&
+            actorsById.TryGetValue(blockerId, out var blocker) &&
+            TeamRelations.Relation(mover.Seed.Team, blocker.Seed.Team) != 0 &&
+            blocker.YieldNotificationDirection is null)
+        {
+            blocker.YieldNotificationDirection = DirectionBetween(mover.Movement.OccupiedCell, cell);
+        }
+
+        var target = mover.MoveOrder.Target;
+        var jittered = new CellCoordinate(
+            Math.Clamp(target.X + NextMovementJitter(), 0, path.Width - 1),
+            Math.Clamp(target.Z + NextMovementJitter(), 0, path.Height - 1));
+        if (jittered != mover.Movement.OccupiedCell)
+        {
+            mover.MoveOrder.JitterTarget(jittered);
+            var retry = StartSegment(mover);
+            if (retry.StepCount != 0) return;
+        }
+        mover.MoveOrder.BlockedTicksRemaining = 4;
+    }
+
+    private int NextMovementJitter() => (int)(NextNativeRandom() % 3) - 1;
+
+    private uint NextNativeRandom()
+    {
+        nativeRandomIndex = (nativeRandomIndex + 1) & 0xff;
+        return nativeRandomTable[nativeRandomIndex];
+    }
+
+    private static PathDirection DirectionBetween(CellCoordinate source, CellCoordinate target)
+    {
+        var dx = Math.Sign(target.X - source.X);
+        var dz = Math.Sign(target.Z - source.Z);
+        return (dx, dz) switch
+        {
+            (-1, -1) => PathDirection.NorthWest,
+            (0, -1) => PathDirection.North,
+            (1, -1) => PathDirection.NorthEast,
+            (-1, 0) => PathDirection.West,
+            (1, 0) => PathDirection.East,
+            (-1, 1) => PathDirection.SouthWest,
+            (0, 1) => PathDirection.South,
+            (1, 1) => PathDirection.SouthEast,
+            _ => throw new InvalidOperationException("Blocked-cell direction cannot be zero."),
+        };
     }
 }

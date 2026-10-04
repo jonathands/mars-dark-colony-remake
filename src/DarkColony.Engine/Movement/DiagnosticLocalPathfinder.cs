@@ -16,8 +16,10 @@ public sealed record DiagnosticLocalPath(
     DiagnosticPathTermination Termination);
 
 /// <summary>
-/// Evidence-bounded local search for visualization. Neighbor order and costs
-/// are not claimed to match dc.exe until the native priority buckets are traced.
+/// Recovered local search.  The executable assigns every neighbour a bucket
+/// priority from the target-relative 9x9 table at 0x47A9B4, then maintains
+/// linked priority buckets at map+0x86ca4.  This is deliberately not a modern
+/// Euclidean/A* cost: the values below are the decoded native bucket costs.
 /// </summary>
 public sealed class DiagnosticLocalPathfinder
 {
@@ -40,20 +42,31 @@ public sealed class DiagnosticLocalPathfinder
             return Empty(DiagnosticPathTermination.NoRoute);
         var allowedRegions = movementClass == 0 ? coarse.Regions.ToHashSet() : null;
 
-        var frontier = new Queue<CellCoordinate>();
+        var frontier = new PriorityQueue<(CellCoordinate Cell, long Sequence), (int Cost, long TieBreak)>();
         var predecessor = new Dictionary<CellCoordinate, (CellCoordinate Cell, PathDirection Direction)>();
-        frontier.Enqueue(start);
+        var costs = new Dictionary<CellCoordinate, int> { [start] = 0 };
+        long sequence = 0;
+        frontier.Enqueue((start, sequence++), (0, 0));
         predecessor[start] = default;
         while (frontier.Count != 0 && !predecessor.ContainsKey(target))
         {
-            var current = frontier.Dequeue();
-            foreach (var direction in Enum.GetValues<PathDirection>())
+            var entry = frontier.Dequeue();
+            var current = entry.Cell;
+            var currentCost = costs[current];
+            // 0x443312 constructs all nine target-relative candidates in
+            // table order.  Equal-priority native bucket entries are linked
+            // at the head, hence the descending table index tie break.
+            foreach (var candidate in OrderedCandidates(current, target))
             {
+                var direction = candidate.Direction;
                 var delta = direction.Delta();
                 var next = new CellCoordinate(current.X + delta.X, current.Z + delta.Z);
-                if (predecessor.ContainsKey(next) || !CanEnter(next, movementClass, movingInstanceId, allowedRegions)) continue;
+                if (!CanEnter(next, movementClass, movingInstanceId, allowedRegions)) continue;
+                var nextCost = checked(currentCost + candidate.Cost);
+                if (costs.TryGetValue(next, out var existing) && existing <= nextCost) continue;
+                costs[next] = nextCost;
                 predecessor[next] = (current, direction);
-                frontier.Enqueue(next);
+                frontier.Enqueue((next, sequence++), (nextCost, -candidate.TableIndex));
             }
         }
 
@@ -89,6 +102,43 @@ public sealed class DiagnosticLocalPathfinder
     }
 
     private bool InBounds(CellCoordinate cell) => (uint)cell.X < (uint)path.Width && (uint)cell.Z < (uint)path.Height;
+
+    private static IEnumerable<(PathDirection Direction, int Cost, int TableIndex)> OrderedCandidates(CellCoordinate current, CellCoordinate target)
+    {
+        var targetColumn = Math.Sign(target.X - current.X) + 1;
+        var targetRow = Math.Sign(target.Z - current.Z) + 1;
+        // 0x4432DE builds the table row as (target-X sign * 3) +
+        // target-Z sign, rather than conventional row-major Z/X indexing.
+        var priorities = NativePriorityTable[targetColumn * 3 + targetRow];
+        return NativeCandidateDirections
+            .Select((direction, index) => (direction, priorities[index], index))
+            .Where(candidate => candidate.direction is not null)
+            .Select(candidate => (candidate.direction!.Value, candidate.Item2, candidate.index))
+            .OrderBy(candidate => candidate.Item2)
+            .ThenByDescending(candidate => candidate.index);
+    }
+
+    // Candidate columns are the padded-cell layout used by 0x443298:
+    // NW,W,SW,N,C,S,NE,E,SE.  Rows are target X/Z signs (-,0,+).
+    private static readonly PathDirection?[] NativeCandidateDirections =
+    [
+        PathDirection.NorthWest, PathDirection.West, PathDirection.SouthWest,
+        PathDirection.North, null, PathDirection.South,
+        PathDirection.NorthEast, PathDirection.East, PathDirection.SouthEast,
+    ];
+
+    private static readonly int[][] NativePriorityTable =
+    [
+        [1, 10, 20, 10, 90, 50, 20, 50, 70],
+        [10, 1, 10, 20, 90, 20, 70, 50, 70],
+        [20, 10, 1, 50, 90, 10, 70, 50, 20],
+        [10, 20, 50, 1, 90, 70, 10, 20, 50],
+        [80, 80, 80, 80, 90, 80, 80, 80, 80],
+        [50, 20, 10, 70, 90, 1, 50, 20, 10],
+        [20, 50, 70, 10, 90, 50, 1, 10, 20],
+        [70, 50, 70, 20, 90, 20, 10, 1, 10],
+        [70, 50, 20, 50, 90, 10, 20, 10, 1],
+    ];
 
     private static DiagnosticLocalPath Empty(DiagnosticPathTermination termination) => new(new PackedLocalPath(), [], termination);
 }

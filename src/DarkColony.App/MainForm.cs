@@ -1078,7 +1078,8 @@ public sealed class MainForm : Form
             _dependencyCatalog ??= DependencyCatalog.Load(_installation.DataFile("gamestat", "depend.txt"));
             var damageMatrix = DamageMatrix.Load(_installation.DataFile("gamestat", "mbullet.txt"));
             _scenarioSimulation = ScenarioSimulation.Create(definition, _entityCatalog, _gameplayPath, footprints,
-                weaponCatalog: _weaponCatalog, damageMatrix: damageMatrix, dependencyCatalog: _dependencyCatalog, areaEffects: _areaEffects);
+                weaponCatalog: _weaponCatalog, damageMatrix: damageMatrix, dependencyCatalog: _dependencyCatalog, areaEffects: _areaEffects,
+                randomTable: NativeRandomTable.Load(_installation.ExecutablePath));
             _groundOccupancy = _scenarioSimulation.GroundOccupancy;
             _alternateOccupancy = _scenarioSimulation.AlternateOccupancy;
             _autonomousEntities = _scenarioSimulation.Actors

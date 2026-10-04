@@ -82,6 +82,11 @@ mutate authoritative gameplay state.
 
 - Preserve observable behavior, not accidental 1990s implementation damage.
 - Keep original data external and decode it through tested readers.
+- Read executable data tables (for example the 1 KiB random stream or the
+  footprint table) from the user's `dc.exe` through `PeImage` at runtime. Only
+  short algorithm constants, such as a 9x9 priority table or direction
+  vectors, may be written into code, and only with their source address
+  documented beside them.
 - Tag conclusions as executable-confirmed, data-derived, observed, provisional,
   or unresolved.
 - Use fixed-width types and named value objects where original packed values

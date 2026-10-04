@@ -378,6 +378,47 @@ Check("packed playback reports a contested destination", () =>
     Equal(7, owner);
 });
 
+Check("local path uses decoded target-relative priority buckets", () =>
+{
+    var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 5];
+    bytes[1 * 256 + 1] = 1;
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var map = PathRegionMap.Parse(bytes, 5, 5);
+    var finder = new DiagnosticLocalPathfinder(map, new CellOccupancy(), new CellOccupancy());
+    var route = finder.Find(new CellCoordinate(1, 1), new CellCoordinate(3, 3), 0, 7);
+    Equal(PathDirection.SouthEast, route.Steps[0]);
+    Equal(PathDirection.SouthEast, route.Steps[1]);
+});
+
+Check("blocked allied actor receives a yield notification before jitter wait", () =>
+{
+    var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 3 0 0 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 6];
+    bytes[1 * 256 + 1] = 1;
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    // Cursor zero increments before each read: entries one and two select
+    // X +0 (1 % 3 - 1) and Z -1 (0 % 3 - 1).
+    var stream = new uint[NativeRandomTable.Length];
+    stream[1] = 1;
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 1),
+        randomTable: NativeRandomTable.FromValues(stream));
+    // The blocker exists as an actor but only enters the occupancy grid after
+    // the mover has committed its initial packed segment, matching a dynamic
+    // playback collision rather than an initial route obstruction.
+    simulation.GroundOccupancy.Release(2);
+    simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(1, new CellCoordinate(5, 0)))]);
+    simulation.GroundOccupancy.ReplaceClaims(2, [new CellCoordinate(3, 0)]);
+    var mover = simulation.Actor(1)!;
+    var blocker = simulation.Actor(2)!;
+    for (var tick = 0; tick < 80 && blocker.YieldNotificationDirection is null; tick++) simulation.Step([]);
+    Equal(PathDirection.East, blocker.YieldNotificationDirection ?? throw new InvalidOperationException("Yield notification missing."));
+    Equal(true, mover.MoveOrder is not null);
+    // The injected X +0 / Z -1 jitter is clamped by the one-row map, leaving
+    // the active target unchanged.
+    Equal(new CellCoordinate(5, 0), mover.MoveOrder!.Target);
+});
+
 Check("scenario simulation consumes move intents and owns motion", () =>
 {
     var entityText = "1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n";
@@ -430,6 +471,51 @@ Check("scenario simulation retains explicit attack targets until stopped", () =>
     Equal(1, simulation.LastDestroyedActors[0].EntityId);
     simulation.Step([new ScheduledWorldCommand(2, 0, new StopIntent(1))]);
     Equal(true, simulation.Actor(1)!.AttackTargetInstanceId is null);
+});
+
+Check("replacement move cancels an explicit attack target", () =>
+{
+    var catalog = EntityCatalog.Parse("2\nATTACKER 0 255 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 90 4 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 1 1 1 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 12];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 3), weaponCatalog: weapons);
+    simulation.Step([new ScheduledWorldCommand(1, 0, new AttackIntent(1, 2))]);
+    Equal(2, simulation.Actor(1)!.AttackTargetInstanceId!.Value);
+    simulation.Step([new ScheduledWorldCommand(2, 0, new MoveIntent(1, new CellCoordinate(3, 0)))]);
+    Equal(true, simulation.Actor(1)!.AttackTargetInstanceId is null);
+});
+
+Check("direct attack replaces an in-flight movement segment", () =>
+{
+    var catalog = EntityCatalog.Parse("2\nATTACKER 0 1 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1 4 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 1 0 2 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 3];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 3), weaponCatalog: weapons);
+    simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(1, new CellCoordinate(4, 0)))]);
+    var oldReserved = simulation.Actor(1)!.Movement.ReservedDestination;
+    Equal(true, simulation.GroundOccupancy.IsOccupied(oldReserved));
+    simulation.Step([new ScheduledWorldCommand(2, 0, new AttackIntent(1, 2))]);
+    Equal(false, simulation.GroundOccupancy.IsOccupied(oldReserved));
+    Equal(2, simulation.Actor(1)!.AttackTargetInstanceId!.Value);
+});
+
+Check("attack-move replaces an in-flight movement segment", () =>
+{
+    var catalog = EntityCatalog.Parse("2\nATTACKER 0 1 25 1 1 1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nTARGET 1 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    var weapons = WeaponCatalog.Parse("1\n1 BULLET 0 0 1 10 1 4 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 0 0 0 100 0\n1 1 0 2 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 3];
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 3), weaponCatalog: weapons);
+    simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(1, new CellCoordinate(4, 0)))]);
+    var oldReserved = simulation.Actor(1)!.Movement.ReservedDestination;
+    simulation.Step([new ScheduledWorldCommand(2, 0, new AttackMoveIntent(1, new CellCoordinate(0, 2)))]);
+    Equal(false, simulation.GroundOccupancy.IsOccupied(oldReserved));
+    Equal(new CellCoordinate(0, 2), simulation.Actor(1)!.AttackMoveDestination!.Value);
 });
 
 Check("weapon bursts use rate between shots then decoded reload", () =>
@@ -899,9 +985,48 @@ Check("scenario simulation preserves queued move waypoints", () =>
     Equal(true, simulation.Actor(1)!.MoveOrder is null);
 });
 
+Check("queued duplicate waypoint does not discard later destinations", () =>
+{
+    var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 6 * 3];
+    bytes[1 * 256 + 1] = 1;
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 3));
+    simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(1, new CellCoordinate(2, 1)))]);
+    simulation.Step([
+        new ScheduledWorldCommand(2, 0, new MoveIntent(1, new CellCoordinate(2, 1), AppendWaypoint: true)),
+        new ScheduledWorldCommand(2, 1, new MoveIntent(1, new CellCoordinate(4, 1), AppendWaypoint: true)),
+    ]);
+    for (var tick = 0; tick < 250 && simulation.Actor(1)!.MoveOrder is not null; tick++) simulation.Step([]);
+    Equal(new CellCoordinate(4, 1), simulation.Actor(1)!.Movement.OccupiedCell);
+    Equal(true, simulation.Actor(1)!.MoveOrder is null);
+});
+
+Check("replacement move cancels the in-flight packed segment", () =>
+{
+    var catalog = EntityCatalog.Parse("1\nUNIT 0 1 25 1 1 -1 -1 -1 1 1 0 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+    const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 100 0\n";
+    var bytes = new byte[PathRegionMap.RouteTableSize + 5 * 5];
+    bytes[1 * 256 + 1] = 1;
+    bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+    var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 5, 5));
+    simulation.Step([new ScheduledWorldCommand(1, 0, new MoveIntent(1, new CellCoordinate(4, 1)))]);
+    var actor = simulation.Actor(1) ?? throw new InvalidOperationException("Actor missing.");
+    var oldReserved = actor.Movement.ReservedDestination;
+    Equal(true, oldReserved != actor.Movement.OccupiedCell);
+    Equal(true, simulation.GroundOccupancy.IsOccupied(oldReserved));
+    simulation.Step([new ScheduledWorldCommand(2, 0, new MoveIntent(1, new CellCoordinate(1, 3)))]);
+    Equal(false, simulation.GroundOccupancy.IsOccupied(oldReserved));
+    Equal(true, simulation.GroundOccupancy.IsOccupied(actor.Movement.ReservedDestination));
+    for (var tick = 0; tick < 250 && simulation.Actor(1)!.MoveOrder is not null; tick++) simulation.Step([]);
+    Equal(new CellCoordinate(1, 3), simulation.Actor(1)!.Movement.OccupiedCell);
+});
+
 Check("active move order caps native waypoint list and ignores consecutive duplicates", () =>
 {
     var order = new ActiveMoveOrder(new CellCoordinate(1, 1));
+    Equal(false, order.TryAppendWaypoint(new CellCoordinate(1, 1)));
     Equal(true, order.TryAppendWaypoint(new CellCoordinate(2, 1)));
     Equal(false, order.TryAppendWaypoint(new CellCoordinate(2, 1)));
     Equal(new[] { new CellCoordinate(2, 1) }, order.PendingWaypoints.ToArray());
@@ -1530,6 +1655,16 @@ if (File.Exists(Path.Combine(dataPath, "dc.exe")))
         var beforeCadence = simulation.Actor(2)!.InspirationTicksRemaining;
         for (var tick = 0; tick < ScenarioSimulation.NativeInspireCountdownCadence; tick++) simulation.Step([]);
         Equal(beforeCadence - 1, simulation.Actor(2)!.InspirationTicksRemaining);
+    });
+
+    Check("native random table reads the executable's shared stream", () =>
+    {
+        var install = GameInstallation.Open(dataPath);
+        var table = NativeRandomTable.Load(install.ExecutablePath);
+        Equal(0x41c6u, table[0]);
+        Equal(0x167eu, table[1]);
+        Equal(0x2781u, table[2]);
+        Equal(0x5d5eu, table[NativeRandomTable.Length - 1]);
     });
 
     Check("boomstat aim weights scatter ordinary area shots while Inspire locks center", () =>

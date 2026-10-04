@@ -356,12 +356,11 @@ one harvester may own or prepare on a vent.
   original random-generator algorithm and order-7-specific setup remain open,
   so the port uses a documented deterministic LCG solely to reproduce the
   recovered masks, timing, and target expression.
-- A diagnostic local search now exercises the route-to-packed-path boundary:
-  eight neighbors, independent diagonal admission/corner-cutting,
-  movement-class occupancy, coarse-region restriction for ground actors, and
-  a maximum 32-step low/high-nibble segment. Its breadth-first costs and
-  tie-breaking are explicitly provisional, so the harness draws the chain but
-  does not dispatch native actor commands or mutate position.
+- Local route expansion now uses the executable-decoded target-relative
+  nine-neighbour priority table at `0x47A9B4` and its linked-bucket tie order,
+  rather than the former breadth-first approximation. It retains independent
+  diagonal admission/corner-cutting, movement-class occupancy, the coarse
+  ground-region restriction, and the maximum 32-step low/high-nibble segment.
 - Fresh disassembly of `0x441504`, `0x412388`, and command-5 executor
   `0x4125BC` confirms 2,048-scale direction vectors: cardinal magnitude 2,048
   and diagonal magnitude 1,448. Velocity is signed integer
@@ -371,8 +370,9 @@ one harvester may own or prepare on a vent.
   residue is preserved.
 - Packed-path playback now rechecks occupancy for each step, atomically moves
   the authoritative cell claim before starting interpolation, and reports a
-  contested destination without releasing the source. Native blockage
-  repair/yield/jitter behavior remains the required next layer.
+  contested destination without releasing the source. Native blockage repair,
+  cooperative yield notification, jitter/replan, and four-tick fallback are
+  applied by the live simulation.
 - `ScenarioSimulation` now owns live actor movement, both occupancy grids,
   autonomous members, and deterministic intent consumption. Corpus creation
   succeeds for all missions with 4,450 seeded actors. Ordinary constructor
@@ -400,11 +400,12 @@ one harvester may own or prepare on a vent.
 - Local unit control is now engine-driven for campaign team 0: selection only
   submits future-tick `MoveIntent` commands, `ScenarioSimulation` owns their
   persistent target/order state, segments paths beyond the 32-step buffer, and
-  immediately rebuilds a local route after a dynamic playback block. It waits
-  four ticks only when that repair cannot find a route. The app only renders
-  this state and exposes selected unit/cell/facing/order feedback. Native
-  blocker notification/yield and one-cell jitter target policy remain to be
-  matched exactly.
+  immediately rebuilds a local route after a dynamic playback block. On repair
+  failure it now applies the recovered cooperative-team blocker notification,
+  one-cell `random % 3 - 1` target jitter, and four-execution fallback wait.
+  Jitter consumes the executable's initialized 256-entry stream at `0x478e04`
+  with its increment-before-read cursor at `0x479204`. The app only renders this state and
+  exposes selected unit/cell/facing/order feedback.
 - The common `intrface/maine` command column is now mapped at its native
   positions: Stop `(518,112)`, Move Only `(518,153)`, Move & Attack
   `(518,194)`, Waypoints `(518,235)`, and Deploy `(518,276)`. The compiled HUD

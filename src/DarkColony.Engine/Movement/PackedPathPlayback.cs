@@ -41,6 +41,8 @@ public sealed class PackedPathPlayback
     public FacingState Facing { get; }
     public int NextStep => nextStep;
     public CellCoordinate? BlockedCell { get; private set; }
+    /// <summary>True only on the execution which finishes a command-5 cell transition.</summary>
+    public bool CompletedTransitionLastStep { get; private set; }
 
     /// <summary>
     /// Cancels a reserved in-flight step by restoring its source claim. The port
@@ -58,11 +60,13 @@ public sealed class PackedPathPlayback
 
     public PackedPathPlaybackStatus Step()
     {
+        CompletedTransitionLastStep = false;
         if (BlockedCell is not null) return PackedPathPlaybackStatus.Blocked;
         if (transition is not null)
         {
             if (transition.Step()) return PackedPathPlaybackStatus.Interpolating;
             transition = null;
+            CompletedTransitionLastStep = true;
             return nextStep == path.Count ? PackedPathPlaybackStatus.Complete : PackedPathPlaybackStatus.Interpolating;
         }
         if (nextStep == path.Count) return PackedPathPlaybackStatus.Complete;
