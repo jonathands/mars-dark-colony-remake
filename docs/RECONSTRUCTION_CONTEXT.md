@@ -304,7 +304,7 @@ one harvester may own or prepare on a vent.
   convenience alongside edge, minimap, and keyboard navigation. The native
   gesture becomes a box after more than 45 Manhattan pixels or 1,500 ms,
   replaces selection normally, Shift-toggles, and caps storage at 800 actors.
-  Rendering, alpha-exact click selection, and visible-body box selection share
+  Rendering, alpha-exact click selection, and alpha-mask box selection share
   the same active FIN-frame projection. The three native selection grids are
   executable-mapped as ground, air, and mines: Alt excludes ground, Ctrl
   excludes air, and the HMINE-only mine layer remains included by either.

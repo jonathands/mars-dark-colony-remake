@@ -60,6 +60,11 @@ public sealed class MainForm : Form
     private readonly WorldSimulation _world = new();
     private readonly FixedStepClock _clock;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 15 };
+    // Presentation retains one completed authoritative step so rendering can
+    // interpolate movement at the display cadence. This has no simulation use:
+    // commands, pathing, collisions, and animation selection continue to read
+    // ScenarioSimulation's exact 66 ms state.
+    private readonly Dictionary<int, FixedPointPosition> _previousActorRenderPositions = [];
     private readonly Direct3DSurface _surface;
     private GameCanvas? _activeCanvas;
     private readonly Dictionary<string, Image> _backgrounds = new(StringComparer.OrdinalIgnoreCase);
@@ -239,6 +244,7 @@ public sealed class MainForm : Form
                 UpdateGameplayEdgeScroll();
                 if (!_gameplayPaused)
                 {
+                    CapturePreviousActorRenderPositions();
                     _world.Step();
                     _scenarioSimulation?.Step(_world.LastCommands);
                     CaptureDeathEffects();
@@ -394,12 +400,14 @@ public sealed class MainForm : Form
 
     private void ShowScreen(MenuScreenId screen)
     {
+        ClearTransientInputState();
         if (screen == MenuScreenId.Gameplay && !_resumeGameplayFromStory)
         {
             DisposeGameplayMinimapPreview();
             ReleaseTerrainGpuTiles();
             _scenarioWorld = null;
             _scenarioSimulation = null;
+            _previousActorRenderPositions.Clear();
             _gameplayMap = null;
             _gameplayTileset = null;
             _gameplayPath = null;
@@ -995,7 +1003,7 @@ public sealed class MainForm : Form
             foreach (var actor in _scenarioSimulation.Actors.Where(actor => !actor.IsDestroyed)
                          .Where(actor => actor.Seed.Team == _localPlayerTeam || _scenarioSimulation.IsActorVisibleToTeam(_localPlayerTeam, actor)))
             {
-                var position = actor.Movement.VisualPosition;
+                var position = RenderActorPosition(actor.Seed.InstanceId, actor.Movement.VisualPosition);
                 var x = GameplayMinimapBounds.X + position.XRaw / 256d / _gameplayMap.Width * GameplayMinimapBounds.Width;
                 var y = GameplayMinimapBounds.Bottom - 1 - position.ZRaw / 256d / _gameplayMap.Height * GameplayMinimapBounds.Height;
                 var marker = actor.Seed.Team == _localPlayerTeam
@@ -1080,6 +1088,7 @@ public sealed class MainForm : Form
             _scenarioSimulation = ScenarioSimulation.Create(definition, _entityCatalog, _gameplayPath, footprints,
                 weaponCatalog: _weaponCatalog, damageMatrix: damageMatrix, dependencyCatalog: _dependencyCatalog, areaEffects: _areaEffects,
                 randomTable: NativeRandomTable.Load(_installation.ExecutablePath));
+            _previousActorRenderPositions.Clear();
             _groundOccupancy = _scenarioSimulation.GroundOccupancy;
             _alternateOccupancy = _scenarioSimulation.AlternateOccupancy;
             _autonomousEntities = _scenarioSimulation.Actors
@@ -3409,8 +3418,20 @@ public sealed class MainForm : Form
         return bitmap;
     }
 
-    private static void DrawPanelText(Graphics graphics, string text, Rectangle bounds)
+    private void DrawPanelText(Graphics graphics, string text, Rectangle bounds)
     {
+        if (_activeCanvas is { } canvas)
+        {
+            var panelFill = Color.FromArgb(140, 0, 0, 0);
+            var panelBorder = Color.FromArgb(85, 125, 80);
+            canvas.FillForeground(bounds, panelFill);
+            canvas.FillForeground(new Rectangle(bounds.X, bounds.Y, bounds.Width, 1), panelBorder);
+            canvas.FillForeground(new Rectangle(bounds.X, bounds.Bottom - 1, bounds.Width, 1), panelBorder);
+            canvas.FillForeground(new Rectangle(bounds.X, bounds.Y, 1, bounds.Height), panelBorder);
+            canvas.FillForeground(new Rectangle(bounds.Right - 1, bounds.Y, 1, bounds.Height), panelBorder);
+            DrawMenuText(graphics, text, bounds, remap: Color.FromArgb(175, 200, 170));
+            return;
+        }
         using var fill = new SolidBrush(Color.FromArgb(140, 0, 0, 0));
         using var border = new Pen(Color.FromArgb(85, 125, 80));
         using var font = new Font(FontFamily.GenericMonospace, 11, FontStyle.Regular, GraphicsUnit.Pixel);
@@ -3936,6 +3957,20 @@ public sealed class MainForm : Form
         return hit;
     }
 
+    private static bool SelectionMaskIntersects(Rectangle selection, GameplayActorVisual visual)
+    {
+        if (!selection.IntersectsWith(visual.OpaqueBounds)) return false;
+        var overlap = Rectangle.Intersect(selection, visual.CanvasBounds);
+        if (overlap.Width <= 0 || overlap.Height <= 0) return false;
+        for (var y = overlap.Top; y < overlap.Bottom; y++)
+        for (var x = overlap.Left; x < overlap.Right; x++)
+        {
+            if (visual.Bitmap.GetPixel(x - visual.CanvasBounds.Left, y - visual.CanvasBounds.Top).A != 0)
+                return true;
+        }
+        return false;
+    }
+
     private void SelectGameplayActorsInRectangle(
         Rectangle bounds,
         bool toggle,
@@ -3945,7 +3980,11 @@ public sealed class MainForm : Form
         var candidates = GameplayEntities()
             .Where(IsVisibleToLocalTeam)
             .Where(entity => GameplayDefinition(entity) is { } definition && layerFilter.Includes(definition))
-            .Where(entity => TryGameplayActorVisual(entity, out var visual) && bounds.IntersectsWith(visual.OpaqueBounds))
+            // Native box selection works from the selected body's mask, not
+            // merely its transparent FIN canvas or its opaque bounding box.
+            // Keep it on the exact same composed frame and alpha predicate as
+            // click selection so a selection edge cannot catch empty pixels.
+            .Where(entity => TryGameplayActorVisual(entity, out var visual) && SelectionMaskIntersects(bounds, visual))
             .Select(entity => entity.InstanceId)
             .OrderBy(instanceId => instanceId)
             .ToArray();
@@ -4720,8 +4759,37 @@ public sealed class MainForm : Form
             _entityCatalog[entity.EntityId].Faction == war.Race;
     }
 
-    private FixedPointPosition ActorPosition(WorldEntity entity) =>
-        _scenarioSimulation?.Actor(entity.InstanceId)?.Movement.VisualPosition ?? entity.Position;
+    private void CapturePreviousActorRenderPositions()
+    {
+        if (_scenarioSimulation is null)
+        {
+            _previousActorRenderPositions.Clear();
+            return;
+        }
+
+        foreach (var actor in _scenarioSimulation.Actors)
+        {
+            if (!actor.IsDestroyed)
+                _previousActorRenderPositions[actor.Seed.InstanceId] = actor.Movement.VisualPosition;
+        }
+    }
+
+    private FixedPointPosition ActorPosition(WorldEntity entity)
+    {
+        var current = _scenarioSimulation?.Actor(entity.InstanceId)?.Movement.VisualPosition ?? entity.Position;
+        return RenderActorPosition(entity.InstanceId, current);
+    }
+
+    private FixedPointPosition RenderActorPosition(int instanceId, FixedPointPosition current)
+    {
+        if (!_previousActorRenderPositions.TryGetValue(instanceId, out var previous)) return current;
+
+        var elapsedSinceStep = Environment.TickCount64 - _clock.AccumulatedTimestamp;
+        var alpha = Math.Clamp(elapsedSinceStep / (double)_clock.IntervalMilliseconds, 0d, 1d);
+        return new FixedPointPosition(
+            (int)Math.Round(previous.XRaw + (current.XRaw - previous.XRaw) * alpha),
+            (int)Math.Round(previous.ZRaw + (current.ZRaw - previous.ZRaw) * alpha));
+    }
 
     private static string WarLobbyTypeLabel(WarLobbyPlayerType type) => type switch
     {
@@ -4836,10 +4904,24 @@ public sealed class MainForm : Form
             _status = "Select at least one local unit before pressing Enter.";
             return;
         }
+        // Enter is the keyboard route to the same contextual slot. It must
+        // preserve that slot's whole-selection ownership rule rather than
+        // filtering a mixed selection down to whichever actor happens to pass
+        // the native immediate-special gate.
+        var contextual = SelectedCommonContextualCommand(selected);
+        if (contextual is null)
+        {
+            _status = "The selected units do not share one native immediate-special action.";
+            return;
+        }
         var eligible = selected.Where(entity =>
             _scenarioSimulation?.Actor(entity.InstanceId) is { } actor &&
             _scenarioSimulation.EffectiveDefinition(actor).ImmediateSpecialCode != 0).ToArray();
-        var contextual = SelectedCommonContextualCommand(eligible);
+        if (eligible.Length != selected.Length)
+        {
+            _status = $"{contextual.Label} is unavailable for one or more selected units.";
+            return;
+        }
         if (contextual?.Command == UnitSpecialCommand.DeployTurret)
         {
             QueueTowerDeployment(eligible);
