@@ -690,9 +690,11 @@ Check("trigger expressions compile and evaluate with the executable's grammar", 
     Equal(15, Run("s(1,2,5)"));
     Equal(1, Run("(b(1,0)==0)"));
     Equal(1, Run("(S==2)"));
-    // alien08/human09 "(b(1,3)&&==0)": the stray && takes its left operand
-    // from the enclosing chain, so the whole conjunction collapses to 0.
+    // human09 "(b(1,3)&&==0)": the stray && takes its left operand from the
+    // enclosing chain, so the chain's last && reads the -1 sentinel below the
+    // stack (0x43CF4C) and keeps the rest.
     Equal(0, Run("((1==1)&&(b(1,3)&&==0))"));
+    Equal(1, Run("((1==1)&&(b(1,2)&&==0))"));
 });
 
 Check("idle armed actors acquire a visible hostile in weapon range", () =>
@@ -3978,5 +3980,5 @@ sealed class FakeTriggerContext : ITriggerExpressionContext
     public int PlayerStat(int player, int stat) => player * 10 + stat - 13;
     public int TypeStat(int player, int stat, int entityType) => player * 10 + entityType;
     public bool MineAlive(int x, int z) => false;
-    public int ScriptWord(int byteOffset) => 0;
+    public int ScriptWord(int index) => 0;
 }

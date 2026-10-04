@@ -150,7 +150,7 @@ The grammar has quirks:
 - `&&` and `||` share one precedence and associate to the right, so
   `A&&B||C&&D` means `A & (B | (C & D))`.
 - An unknown character emits nothing, which makes the malformed `&&==0` of
-  human09/alien08 consume an operand of the enclosing chain.
+  human09 consume an operand of the enclosing chain.
 
 **Statistics.** Player statistics (12 per player):
 
@@ -232,4 +232,4 @@ checks without declared cities skip the slot 4 test.
 | `u(i)` | implemented (`ScriptWords`) |
 | `newtype` | implemented: only the type byte changes, so the health stays. The port keeps the original identity and sets the form override, which every rule reads through `EffectiveDefinition` |
 | Bail delay | provisional: 152 ticks for the native 10,000 ms |
-| Malformed-condition stack floor | provisional (reads 0 below the stack) |
+| Malformed-condition stack floor | confirmed: the evaluator puts a -1 sentinel word below its stack (`0x43CF4C`). In human09's trigger 1 the malformed `(b(1,3)&&==0)` leaves the chain one operand short, so the last `&&` reads the sentinel and keeps the rest; with a 0 floor the mission could never end. Deeper reads would hit unrelated stack memory; the corpus has none |

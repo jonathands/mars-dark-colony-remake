@@ -47,14 +47,17 @@ public static class TriggerExpression
 
     /// <summary>
     /// Runs compiled bytecode. Values are 16-bit; comparisons are signed. The
-    /// stack starts above a zero floor, so the malformed <c>&amp;&amp;==0</c>
-    /// conditions of the corpus read their missing operand from the enclosing
-    /// expression, as the native stack does.
+    /// word below the native stack is a -1 sentinel (<c>0x43CF4C</c>). The
+    /// malformed <c>&amp;&amp;==0</c> of human09's trigger 1 leaves one operand
+    /// short, so its last <c>&amp;&amp;</c> reads that sentinel, which keeps the
+    /// rest of the chain. Deeper reads would hit unrelated stack memory and
+    /// read 0 here; the corpus has none.
     /// </summary>
     public static int Evaluate(ReadOnlySpan<byte> code, ITriggerExpressionContext context)
     {
         Span<short> stack = stackalloc short[264];
         var top = 8;
+        stack[top - 1] = -1;
         var pc = 0;
         while (true)
         {
