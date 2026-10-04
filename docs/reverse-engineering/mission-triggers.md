@@ -101,7 +101,7 @@ their line as an expression. Command → action type:
 | `die` | 1 | debug assertion |
 | `reinforce t x z (type n)×5` | 2 | a transport (entity 92 human / 93 alien, team 8) flies in with the cargo (`0x418F4C`, command 13) |
 | `bail a b` | 3 | stat (0,0) = a, stat (7,0) = b; the game ends 10,000 ms later. The corpus uses a = 0 for victory (`bail 0 1`, text .001) and a = 1 for defeat with text .00b |
-| `aimsg` | 4 | AI message (`0x41AD68`) |
+| `aimsg p n v...` | 4 | message to player p's AI controller (`0x41AD68`) |
 | `newrate r x z` | 5 | the vent at (x, z) pays r × multiplier >> 8 per pulse |
 | `setarray i e` | 6 | type statistic (0, i, 2) = e |
 | `setlifes i e` | 7 | trigger i lives = e |
@@ -228,7 +228,7 @@ checks without declared cities skip the slot 4 test.
 | Artifact sites, `artifact` | implemented (`ScenarioSimulation.Artifacts.cs`); see below. The corpus runs `artifact` only in multiplayer maps when `s(6,0)`, the lobby artifacts option, is set, which this build never does |
 | `nopickup` | implemented (see combat-damage.md, Dying state). Its only reader is the kill routine `0x416308` |
 | `noundeploy` | implemented: the mining command (`0x4137CF`) ignores a pending state-13 request while world `+0x948` is set, and state 13 (`0x4167EF`) refuses the deployed forms 0x2F/0x30. The port answers `RetractHarvesterIntent` with `UndeployLocked`. The third reader (`0x43FD36`) reapplies the flag when a save is loaded |
-| `aimsg` | not modeled; reported as `LastUnmodeledMissionActions` |
+| `aimsg` | delivered: when player p has an AI profile (`+0xBBC`), `0x41AD68` calls method `+0x10` of its controller (vtable list `0x47936C`, indexed by profile - 1) with n and the values. The port queues the values in `AiInbox(p)` for the computer player (block B) to consume. Only human15 and alien15 send any. `ai p v` now keeps the profile number itself (`AiProfile`) |
 | `u(i)` | implemented (`ScriptWords`) |
 | `newtype` | implemented: only the type byte changes, so the health stays. The port keeps the original identity and sets the form override, which every rule reads through `EffectiveDefinition` |
 | Bail delay | implemented: `bail` sets world `+0x471A9` and a deadline of `timeGetTime() + 10,000` (`0x43D973`). The main loop (`0x4011FA`) ends the game once the wall clock passes it, so the world keeps running and a pause does not stop the countdown; a second `bail` moves the deadline. The engine records the request tick; the app counts 10 s of real time, and headless hosts use 152 updates (the default 66 ms interval) |

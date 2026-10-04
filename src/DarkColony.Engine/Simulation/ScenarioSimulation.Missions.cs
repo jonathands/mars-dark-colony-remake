@@ -26,6 +26,9 @@ public sealed record MissionOutcome(int Result, int OutcomeText, ulong Requested
 /// <summary>A <c>msg</c> action: line <c>Index</c> of the scenario's <c>.msg</c> text and its display fields.</summary>
 public sealed record MissionMessageEvent(int Index, int Kind, int Field3, int Field4);
 
+/// <summary>An <c>aimsg</c> to a computer player: the tick it was sent and its values.</summary>
+public sealed record AiMessage(ulong Tick, IReadOnlyList<int> Values);
+
 /// <summary>An action whose native effect the port does not model yet.</summary>
 public sealed record MissionUnmodeledActionEvent(int TriggerSlot, MissionActionType Type, IReadOnlyList<int> Values);
 
@@ -183,11 +186,7 @@ public sealed partial class ScenarioSimulation
             {
                 case MissionActionType.Ai:
                     // Player +0xBBC is the SCN %AI value; nonzero marks a computer player.
-                    if ((uint)v[0] < 8)
-                    {
-                        if (v[1] != 0) computerTeams.Add(v[0]);
-                        else computerTeams.Remove(v[0]);
-                    }
+                    if ((uint)v[0] < PlayerCount) aiProfiles[v[0]] = v[1];
                     break;
                 case MissionActionType.Bail:
                     playerStats[0, 0] = v[0];
@@ -253,7 +252,7 @@ public sealed partial class ScenarioSimulation
                     if ((uint)v[0] < PlayerCount) noPickupPlayers[v[0]] = true;
                     break;
                 case MissionActionType.AiMessage:
-                    unmodeled.Add(new MissionUnmodeledActionEvent(trigger.Slot, action.Type, v));
+                    PostAiMessage(v);
                     break;
                 case MissionActionType.Die:
                     break;
@@ -262,6 +261,28 @@ public sealed partial class ScenarioSimulation
     }
 
     private const int TeamRelationMatrixSize = 10;
+
+    /// <summary>The player's <c>%AI</c> profile (player <c>+0xBBC</c>), 0 for a human player.</summary>
+    public int AiProfile(int player) => (uint)player < PlayerCount ? aiProfiles[player] : 0;
+
+    public bool IsComputerPlayer(int player) => AiProfile(player) > 0;
+
+    /// <summary>Messages posted to a computer player by <c>aimsg</c>, oldest first.</summary>
+    public IReadOnlyList<AiMessage> AiInbox(int player) => (uint)player < PlayerCount ? aiInboxes[player] : [];
+
+    /// <summary>
+    /// <c>aimsg p n v1..vn</c> (<c>0x43D85E</c> -> <c>0x41AD68</c>): when player p has
+    /// an AI profile, its controller's method <c>+0x10</c> (vtable list
+    /// <c>0x47936C</c>, indexed by profile - 1) receives n and the values.
+    /// The computer player consumes its inbox; human15 and alien15 are the
+    /// only scripts that send any.
+    /// </summary>
+    private void PostAiMessage(IReadOnlyList<int> values)
+    {
+        var player = values[0];
+        if (!IsComputerPlayer(player)) return;
+        aiInboxes[player].Add(new AiMessage(simulationTicks, values.Skip(2).Take(values[1]).ToArray()));
+    }
 
     private int Evaluate(MissionAction action) => TriggerExpression.Evaluate(action.Expression!, new MissionContext(this, null));
 

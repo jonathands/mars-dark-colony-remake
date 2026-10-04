@@ -84,7 +84,10 @@ public sealed partial class ScenarioSimulation
     // selection, as in checks built without the executable.
     private NativeTargetRings? targetRings;
     // Teams whose SCN %AI profile is nonzero (native player flag +0xbbc).
-    private HashSet<int> computerTeams = [];
+    /// <summary>Player <c>+0xBBC</c>: the SCN <c>%AI</c> profile, 0 for a human player.</summary>
+    private readonly int[] aiProfiles = new int[PlayerCount];
+    /// <summary><c>aimsg</c> messages each computer player has not handled yet.</summary>
+    private readonly List<AiMessage>[] aiInboxes = Enumerable.Range(0, PlayerCount).Select(_ => new List<AiMessage>()).ToArray();
     // Per-tick team visibility snapshots used by the target selector.
     // City building actor per (team, slot), created from %AISlots/%City.
     private readonly Dictionary<(int Team, int Slot), int> cityBuildings = [];
@@ -314,7 +317,8 @@ public sealed partial class ScenarioSimulation
         foreach (var site in simulation.actors.Where(actor => actor.Seed.EntityId == ArtifactSiteEntity)) site.ArtifactExcavationTicks = -1;
         foreach (var actor in simulation.actors) simulation.RegisterCommander(actor);
         simulation.LoadTerrainSight(terrain);
-        simulation.computerTeams = scenario.Teams.Where(team => team.Enabled && team.AiProfile > 0).Select(team => team.TeamId).ToHashSet();
+        foreach (var team in scenario.Teams.Where(team => team.Enabled && team.TeamId is >= 0 and < PlayerCount))
+            simulation.aiProfiles[team.TeamId] = Math.Max(0, team.AiProfile ?? 0);
         simulation.citiesDeclared = scenario.Teams.Any(team => team.CityOrigin is not null);
         foreach (var city in cityBuildings) simulation.cityBuildings[(city.Team, city.Slot)] = city.InstanceId;
         simulation.buildTimings = buildTimings;

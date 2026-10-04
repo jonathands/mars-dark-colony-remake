@@ -155,7 +155,7 @@ public sealed partial class ScenarioSimulation
     /// </summary>
     private int? SecondScanRadius(SimulatedActor actor, EntityDefinition definition, bool damaged)
     {
-        if (actor.Seed.Team >= 8 || computerTeams.Contains(actor.Seed.Team)) return NativeTargetRings.MaximumRing;
+        if (actor.Seed.Team >= 8 || IsComputerPlayer(actor.Seed.Team)) return NativeTargetRings.MaximumRing;
         if (definition.MovementClass != 0) return null;
         return damaged ? NativeIdleDamagedRadius : NativeIdleCalmRadius;
     }
