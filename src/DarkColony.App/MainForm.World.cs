@@ -476,24 +476,44 @@ public sealed partial class MainForm
     // and camera it drew them at. The cursor and the selection hit tests read
     // them instead of composing every actor again.
     private readonly List<(WorldEntity Entity, GameplayActorVisual Visual)> _drawnActorVisuals = [];
-    private (ulong Tick, int CameraX, int CameraY)? _drawnActorVisualsAt;
+    private (ulong Tick, int CameraX, int CameraY, bool RevealMap)? _drawnActorVisualsAt;
 
     /// <summary>
     /// Every actor's visual in painter's order: higher on screen first, which
     /// is larger world Z, then left to right. The frame's own pass rebuilds
     /// them; a hit test reuses that pass while the update and the camera are
-    /// the same, so it tests what the player sees.
+    /// the same, so it tests what the player sees. Units hidden by the fog of
+    /// war are left out, so they are neither drawn nor hit.
     /// </summary>
     private IReadOnlyList<(WorldEntity Entity, GameplayActorVisual Visual)> ActorVisualsInPaintersOrder(bool rebuild = false)
     {
-        var at = (_world.TickCount, _cameraX, _cameraY);
+        var at = (_world.TickCount, _cameraX, _cameraY, _revealMap);
         if (!rebuild && _drawnActorVisualsAt == at) return _drawnActorVisuals;
         _drawnActorVisuals.Clear();
         foreach (var entity in GameplayEntities().OrderByDescending(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
-            if (TryGameplayActorVisual(entity, out var visual)) _drawnActorVisuals.Add((entity, visual));
+            if (!HiddenByFog(entity) && TryGameplayActorVisual(entity, out var visual)) _drawnActorVisuals.Add((entity, visual));
         _drawnActorVisualsAt = at;
         return _drawnActorVisuals;
     }
+
+    /// <summary>
+    /// The fog of war: another team's unit that the local player does not
+    /// see now is not drawn, hovered or clicked. Sight is the team's last
+    /// visibility picture (rebuilt every 16 updates, vision.md), which also
+    /// holds the players it shares vision with. Structures stay drawn on
+    /// explored ground; the original's remembered overlays (grid bits 10-17)
+    /// are not decoded. <c>--reveal-map</c> (Ctrl+F12) shows everything.
+    /// </summary>
+    private bool HiddenByFog(WorldEntity entity)
+    {
+        if (_revealMap || entity.Team == _localPlayerTeam || _scenarioSimulation is not { } simulation ||
+            simulation.Actor(entity.InstanceId) is not { } actor || actor.Definition.MovementSpeed <= 0) return false;
+        return !simulation.IsActorVisibleToTeam(_localPlayerTeam, actor);
+    }
+
+    /// <summary>Whether a shot, explosion or death at the position lies outside the local player's current sight.</summary>
+    private bool HiddenByFog(FixedPointPosition position) =>
+        !_revealMap && _scenarioSimulation is { } simulation && !simulation.IsCellVisibleToTeam(_localPlayerTeam, position.Cell);
 
     // How high the delivery ship starts and ends its flight above the slot.
     // Command 22 (0x4183B8) lowers it over 50 updates on a quadratic curve;
@@ -655,7 +675,7 @@ public sealed partial class MainForm
             foreach (var projectile in _scenarioSimulation.Projectiles)
             {
                 // 0x439DCB: a projectile still waiting at its muzzle is not drawn.
-                if (projectile.LaunchDelaySubsteps > 0) continue;
+                if (projectile.LaunchDelaySubsteps > 0 || HiddenByFog(projectile.Position)) continue;
                 if (projectile.IsBurning)
                 {
                     DrawBurn(canvas, projectile);
@@ -792,7 +812,7 @@ public sealed partial class MainForm
                 _impactEffects.RemoveAt(index);
                 continue;
             }
-            if (WorldFrame(fileName, frame) is not { } sprite) continue;
+            if (HiddenByFog(effect.Position) || WorldFrame(fileName, frame) is not { } sprite) continue;
             canvas.Draw(sprite.Image, effect.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + sprite.Origin.Y);
         }
     }
@@ -859,7 +879,7 @@ public sealed partial class MainForm
                 _deathEffects.RemoveAt(index);
                 continue;
             }
-            if (WorldFrame(fileName, frame) is not { } sprite) continue;
+            if (HiddenByFog(effect.Position) || WorldFrame(fileName, frame) is not { } sprite) continue;
             canvas.Draw(sprite.Image, effect.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + sprite.Origin.Y);
         }
     }

@@ -24,6 +24,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 16 | Is the Napalm attack working? | it fired and its research gate worked, but it hit once at the impact. Now it burns as in the original: 14 hits over ~211 updates, its empty cells blocked, the NAPALM animation looping (Disease alike) |
 | 17 | Selecting units makes the game hang, and the later game hangs | done: box selection and the cursor no longer read pixels through GDI+ or compose every actor again; the frame is one sprite batch from atlas pages, paced by the swap chain instead of a WinForms timer; the per-frame garbage is a tenth (`docs/PERFORMANCE.md`) |
 | 18 | Add an option to hide the debugging guides (P7 markers, path traces) | done: DEBUG GUIDES in the Video panel (`--guides on\|off`), off by default. It hides the P7 vent markers, the move path and target, the waypoints, the attacked-actor boxes and the drop label |
+| 19 | The game has fog of war: units outside a friendly unit's line of sight should be hidden | done: another team's units outside the local player's current sight (rebuilt every 16 updates, as `dc.exe`) are no longer drawn, hovered or clicked, nor are shots, explosions and deaths on unseen cells; the port used to black out only unexplored ground. Structures stay drawn on explored ground |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)
