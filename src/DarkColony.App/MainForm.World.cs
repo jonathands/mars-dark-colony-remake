@@ -470,6 +470,38 @@ public sealed partial class MainForm
         return true;
     }
 
+    /// <summary>
+    /// A producing city building plays the troop's build animation once on its
+    /// second channel (<c>0x42630C</c> mode 1, over its body channel): the door
+    /// opening and the troop walking out. It starts when the exit is reserved,
+    /// and the troop appears on the update it stops (<c>0x414314</c>).
+    /// </summary>
+    private void DrawProductionAnimation(GameCanvas canvas, WorldEntity building)
+    {
+        if (_scenarioSimulation is not { } simulation || _buildingFootprints is null || _entityAnimations is null) return;
+        int? queue = null;
+        for (var slot = 0; slot < 15 && queue is null; slot++)
+            if (simulation.CityBuilding(building.Team, slot)?.Seed.InstanceId == building.InstanceId) queue = _buildingFootprints.SlotProductionQueue(slot);
+        if (queue is null) return;
+        var state = simulation.ProductionQueues.FirstOrDefault(candidate => candidate.TeamId == building.Team && candidate.Queue == queue && !candidate.Ready);
+        if (state is null || state.QueuedEntityIds.Count == 0 || _entityAnimations.PreferredBuild(state.QueuedEntityIds[0]) is not { } animation) return;
+        var fileName = Path.GetFileName(animation.FinPath);
+        // The building's clock: the steps since the exit was reserved.
+        var total = TroopBuildTimings.PlayOnceTicks(
+            Enumerable.Range(animation.FirstFrame, animation.LastFrame - animation.FirstFrame + 1)
+                .Select(frame => _animationDefinitions.TryGetValue(fileName, out var definition) ? definition.LogicalFrames[frame].Delay : (ushort)0).ToArray());
+        _ = Animation(fileName, string.Empty);
+        var frame = NativeFrame(fileName, animation.FirstFrame, animation.LastFrame, (ulong)Math.Max(0, total - state.TicksRemaining), NativeAnimationMode.Once);
+        if (frame < 0 || WorldAnimationBitmap(fileName, frame) is not { } bitmap) return;
+        var origin = WorldAnimationOrigin(fileName, frame);
+        var position = simulation.CityArtAnchor(building.InstanceId) ?? ActorPosition(building);
+        canvas.Draw(GpuBitmap(bitmap), new Rectangle(
+            position.XRaw / 8 - _cameraX + origin.X,
+            WorldPixelY(position.ZRaw) - _cameraY + origin.Y,
+            bitmap.Width,
+            bitmap.Height));
+    }
+
     private void DrawGameplayActors(Graphics graphics, GameCanvas canvas)
     {
         if (_installation is null || _scenarioSimulation is null) return;
@@ -512,6 +544,7 @@ public sealed partial class MainForm
                     canvas.Ellipse(new Rectangle(centerX - 25, groundY - 12, 50, 20), Color.FromArgb(72, 255, 255), thickness: 2, foreground: true);
                 }
                 canvas.Draw(GpuBitmap(bitmap), visual.CanvasBounds);
+                if (actorState is not null && actorState.Definition.MovementSpeed <= 0) DrawProductionAnimation(canvas, entity);
 
                 // Status indicators are foreground UI. Draw them after the
                 // FIN composite and bind target geometry to the visible pixels,

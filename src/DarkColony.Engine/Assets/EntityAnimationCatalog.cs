@@ -25,6 +25,7 @@ public sealed class EntityAnimationCatalog
     private readonly IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> fireCandidates;
     private readonly IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> hitCandidates;
     private readonly IReadOnlyDictionary<int, IReadOnlyList<EntityAnimationCandidate>> deathCandidates;
+    private Dictionary<int, EntityAnimationCandidate> buildCandidates = [];
 
     private EntityAnimationCatalog(
         IReadOnlyDictionary<int, IReadOnlyList<EntityAnimationCandidate>> candidates,
@@ -71,6 +72,7 @@ public sealed class EntityAnimationCatalog
         var firesByCode = codes.ToDictionary(code => code, _ => new List<(int Sector, EntityAnimationCandidate Candidate)>(), StringComparer.OrdinalIgnoreCase);
         var hitsByCode = codes.ToDictionary(code => code, _ => new List<(int Sector, EntityAnimationCandidate Candidate)>(), StringComparer.OrdinalIgnoreCase);
         var deathsByCode = codes.ToDictionary(code => code, _ => new List<EntityAnimationCandidate>(), StringComparer.OrdinalIgnoreCase);
+        var builds = new Dictionary<string, List<EntityAnimationCandidate>>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in Directory.GetFiles(animateDirectory, "*.fin", SearchOption.TopDirectoryOnly).Order(StringComparer.OrdinalIgnoreCase))
         {
             AnimationDefinition definition;
@@ -90,6 +92,12 @@ public sealed class EntityAnimationCatalog
                 if (deathCode is not null) deathsByCode[deathCode].Add(new EntityAnimationCandidate(
                     path, animation.Name, animation.FirstFrame, animation.LastFrame,
                     Path.GetFileNameWithoutExtension(path).Equals(deathCode, StringComparison.OrdinalIgnoreCase)));
+
+                if (animation.Name.EndsWith("BUILDSTAND0", StringComparison.OrdinalIgnoreCase) || animation.Name.EndsWith("BUILD0", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!builds.TryGetValue(animation.Name, out var named)) builds[animation.Name] = named = [];
+                    named.Add(new EntityAnimationCandidate(path, animation.Name, animation.FirstFrame, animation.LastFrame, false));
+                }
 
                 AddDirectional("MOVE", movesByCode);
                 AddDirectional("DEPLOY", deploysByCode);
@@ -156,8 +164,23 @@ public sealed class EntityAnimationCatalog
                 .ToArray();
         }
 
-        return new EntityAnimationCatalog(result, moveResult, deployResult, retractResult, fireResult, hitResult, deathResult);
+        var buildResult = new Dictionary<int, EntityAnimationCandidate>();
+        foreach (var entity in entities.Entities)
+        {
+            // 0x43C18C: <code>BUILDSTAND, else <code>BUILD, the first one loaded.
+            var named = builds.GetValueOrDefault(entity.Code + "BUILDSTAND0") ?? builds.GetValueOrDefault(entity.Code + "BUILD0");
+            if (named is not null) buildResult[entity.Id] = named.OrderBy(FileRank).ThenBy(item => item.FinPath, StringComparer.OrdinalIgnoreCase).First();
+        }
+
+        return new EntityAnimationCatalog(result, moveResult, deployResult, retractResult, fireResult, hitResult, deathResult) { buildCandidates = buildResult };
     }
+
+    /// <summary>
+    /// The troop's build animation (entity <c>+0x98</c>), which a producing
+    /// city building plays once: in <c>hubu.fin</c> and <c>albu.fin</c> the door
+    /// opening and the troop walking out. See <see cref="TroopBuildTimings"/>.
+    /// </summary>
+    public EntityAnimationCandidate? PreferredBuild(int entityId) => buildCandidates.GetValueOrDefault(entityId);
 
     public IReadOnlyList<EntityAnimationCandidate> Candidates(int entityId) => candidates.GetValueOrDefault(entityId, []);
     public EntityAnimationCandidate? Preferred(int entityId) => Candidates(entityId).FirstOrDefault();

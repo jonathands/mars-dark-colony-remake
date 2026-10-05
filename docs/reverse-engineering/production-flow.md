@@ -57,7 +57,11 @@ the city, recounted at the start of the update) is below the cap. Otherwise
 it drops the order, refunds its price (`0x438090`), and posts message `0x77`.
 
 The gamestat loader (`0x43C18C`) resolves `+0x98` to `<code>BUILDSTAND`, or
-else `<code>BUILD`. The frame loader `0x425674` turns each FIN frame delay `d`
+else `<code>BUILD`. These live in the buildings' FINs (`hubu.fin`,
+`albu.fin`, `burn.fin`, `psyc.fin`). Each is the building's door opening and
+the troop walking out, so the port draws the current frame over the
+producing building at its art anchor (`MainForm.DrawProductionAnimation`,
+`EntityAnimationCatalog.PreferredBuild`). The frame loader `0x425674` turns each FIN frame delay `d`
 (0 meaning 15) into `(d + 3) * 15 / 100` ticks. The stepper `0x4264C8` leaves
 frame 0 on its first tick and stops one step after the last frame. A marine
 (`TRSCBUILD0`, 22 frames of delay 6) therefore takes 22 ticks, an Exploiter 9,

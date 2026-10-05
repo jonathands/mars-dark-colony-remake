@@ -122,6 +122,26 @@ internal static class AssetsChecks
             Equal((-15, 22), (cursors.Compose(0, Load).X, cursors.Compose(0, Load).Y));
         }, CheckTags.Data);
 
+        Check("every troop's build animation is the one its production time comes from", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var entities = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+            var animations = EntityAnimationCatalog.Build(entities, install.DataFile("animate"), EntityAnimationCatalog.LoadOrder(install.DataFile("anim.dat")));
+            var timings = TroopBuildTimings.Load(entities, install);
+            // The marine walks out of the barracks in hubu.fin, the Gray warrior out of its hive in albu.fin.
+            Equal(("hubu.fin", "TRSCBUILD0"), (Path.GetFileName(animations.PreferredBuild(0)!.FinPath), animations.PreferredBuild(0)!.AnimationName));
+            Equal(("albu.fin", "GRAYBUILDSTAND0"), (Path.GetFileName(animations.PreferredBuild(8)!.FinPath), animations.PreferredBuild(8)!.AnimationName));
+            foreach (var entity in entities.Entities)
+            {
+                var build = animations.PreferredBuild(entity.Id);
+                Equal(timings.BuildTicks(entity.Id) is not null, build is not null);
+                if (build is null) continue;
+                var definition = AnimationDefinition.Load(build.FinPath);
+                var delays = Enumerable.Range(build.FirstFrame, build.LastFrame - build.FirstFrame + 1).Select(frame => definition.LogicalFrames[frame].Delay).ToArray();
+                Equal(timings.BuildTicks(entity.Id) ?? -1, TroopBuildTimings.PlayOnceTicks(delays));
+            }
+        }, CheckTags.Data);
+
         Check("world sprites hang from their layer's bottom row and city art from the city origin", () =>
         {
             var install = GameInstallation.Open(dataPath);
