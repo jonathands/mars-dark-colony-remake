@@ -215,6 +215,55 @@ a player queue, a building queue, or an external delivery record; it will also
 reveal source-rate depletion, charge time, and queue capacity without modifying
 or pausing the original process.
 
+## Building delivery
+
+A building bought with command 9 is not instant. The rebuild `0x444F14` calls
+`0x41822C`, which marks the slot rising (player `+0xC10 + slot`) and pushes
+command 19 (`0x4187E4`) on the new building. The SCN loader also goes through
+`0x444F14`, but before the fourth update, so the starting city stands at
+once.
+
+**The phases of command 19** (the word of its record):
+
+| Phase | What happens |
+| --- | --- |
+| 0 | Waits while the player's earlier delivery runs (player `+0x19AA`), then sets the flag. With a build animation (entity `+0x98`) and after the third update, puts that animation on the body channel and calls `0x418504` to bring the ship down. Phase 1. Without one, phase 5 ends the command at once. |
+| 1 | The ship comes down. `0x418504` creates DROP (92), or SAUC (93) for race 1, on team 8 above the slot (`0x444BA0`) and pushes command 22 (`0x4183B8`), a vertical flight whose counter runs from 50 to 0. |
+| 2 | The build animation plays. When it stops (`+0x1A == 2`), the building takes its stand animation and the slot stops rising (`0x418997`). `0x418504` then sends the ship back up. Phase 3. |
+| 3 | The ship goes up, its counter from 0 to 50. |
+| 4 / 5 | The player's flag is cleared (`0x418A2D`) and the command pops. |
+
+**While the slot rises:**
+
+- the item's status is 2 (`0x438279`, before anything else);
+- items that need it are unavailable (`0x437DD8`);
+- the building does not produce, because command 19 sits above its idle
+  command.
+
+The build animations show the whole scene: the ship (`drop` or `sauc`
+layers), the building appearing, dust (`duts`, `clod`) and sparks (`glit`).
+Examples are `SCNCPODBUILD0` in `drop.fin` and `MINDHIVBUILD0` in
+`sauc2.fin`.
+
+**Port.** `ScenarioSimulation.Delivery.cs` keeps the phases. The flights last
+the 50 updates of command 22, and the build animation its play-once ticks
+(`TroopBuildTimings`).
+
+As in the original, a building killed during its delivery loses command 19
+with the rest of its stack (`0x416308`). Its player then stays busy and its
+slot rising, so that player gets no further deliveries and cannot buy that
+slot again. Only the command's end clears the two flags.
+
+The app draws each phase:
+
+- the ship layers of the animation's first frame coming down;
+- the animation itself;
+- the standing building with the last frame's ship going up.
+
+The flight's height curve is the port's (quadratic, 240 pixels), since
+command 22's constants are not decoded. The ship's engine sound (`0x4319C0`,
+45 or 82) is not played yet.
+
 ## The player's catalog and BUILD
 
 The player buys through the catalog's `count` gadgets and the BUILD button,

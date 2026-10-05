@@ -109,7 +109,9 @@ public sealed partial class ScenarioSimulation
         {
             if (footprints.SlotProductionQueue(slot) is not { } queue ||
                 !productionQueues.TryGetValue((team, queue), out var state) ||
-                !actorsById.TryGetValue(instanceId, out var building) || building.IsDestroyed) continue;
+                !actorsById.TryGetValue(instanceId, out var building) || building.IsDestroyed ||
+                // Command 19 sits above the idle command until the delivery ends.
+                deliveries.ContainsKey(instanceId)) continue;
             if (!state.Ready)
             {
                 if (--state.TicksRemaining > 0) continue;

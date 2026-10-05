@@ -470,6 +470,52 @@ public sealed partial class MainForm
         return true;
     }
 
+    // How high the delivery ship starts and ends its flight above the slot.
+    // Command 22 (0x4183B8) lowers it over 50 updates on a quadratic curve;
+    // its height constants are not decoded, so this height is the port's.
+    private const int DeliveryFlightHeight = 240;
+
+    /// <summary>
+    /// A city building being delivered (command 19, <c>0x4187E4</c>). While the
+    /// player's earlier delivery runs it stands as usual. Then the ship of its
+    /// build animation comes down, the animation plays (the ship lowering the
+    /// building), and the ship goes back up over the standing building.
+    /// Returns whether it drew the building's body itself.
+    /// </summary>
+    private bool DrawBuildingDelivery(GameCanvas canvas, WorldEntity building, GameplayActorVisual visual)
+    {
+        if (_scenarioSimulation is not { } simulation || simulation.Delivery(building.InstanceId) is not { } delivery ||
+            delivery.Phase == BuildingDeliveryPhase.Waiting || _entityAnimations?.PreferredBuild(building.EntityId) is not { } animation) return false;
+        var fileName = Path.GetFileName(animation.FinPath);
+        _ = Animation(fileName, string.Empty);
+        var position = simulation.CityArtAnchor(building.InstanceId) ?? ActorPosition(building);
+        void DrawAt(Bitmap? bitmap, Point origin, int lift)
+        {
+            if (bitmap is null) return;
+            canvas.Draw(GpuBitmap(bitmap), new Rectangle(
+                position.XRaw / 8 - _cameraX + origin.X,
+                WorldPixelY(position.ZRaw) - _cameraY + origin.Y - lift,
+                bitmap.Width,
+                bitmap.Height));
+        }
+        var share = delivery.PhaseTicks <= 0 ? 0.0 : (double)delivery.TicksRemaining / delivery.PhaseTicks;
+        switch (delivery.Phase)
+        {
+            case BuildingDeliveryPhase.Arriving:
+                DrawAt(DeliveryShipBitmap(fileName, animation.FirstFrame), DeliveryShipOrigin(fileName, animation.FirstFrame), (int)(DeliveryFlightHeight * share * share));
+                return true;
+            case BuildingDeliveryPhase.Building:
+                var frame = NativeFrame(fileName, animation.FirstFrame, animation.LastFrame,
+                    (ulong)Math.Max(0, delivery.PhaseTicks - delivery.TicksRemaining), NativeAnimationMode.Hold);
+                DrawAt(WorldAnimationBitmap(fileName, frame), WorldAnimationOrigin(fileName, frame), 0);
+                return true;
+            default:
+                canvas.Draw(GpuBitmap(visual.Bitmap), visual.CanvasBounds);
+                DrawAt(DeliveryShipBitmap(fileName, animation.LastFrame), DeliveryShipOrigin(fileName, animation.LastFrame), (int)(DeliveryFlightHeight * (1 - share) * (1 - share)));
+                return true;
+        }
+    }
+
     /// <summary>
     /// A producing city building plays the troop's build animation once on its
     /// second channel (<c>0x42630C</c> mode 1, over its body channel): the door
@@ -543,7 +589,7 @@ public sealed partial class MainForm
                     var groundY = opaque.Bottom;
                     canvas.Ellipse(new Rectangle(centerX - 25, groundY - 12, 50, 20), Color.FromArgb(72, 255, 255), thickness: 2, foreground: true);
                 }
-                canvas.Draw(GpuBitmap(bitmap), visual.CanvasBounds);
+                if (!DrawBuildingDelivery(canvas, entity, visual)) canvas.Draw(GpuBitmap(bitmap), visual.CanvasBounds);
                 if (actorState is not null && actorState.Definition.MovementSpeed <= 0) DrawProductionAnimation(canvas, entity);
 
                 // Status indicators are foreground UI. Draw them after the

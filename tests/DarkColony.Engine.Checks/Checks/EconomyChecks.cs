@@ -420,13 +420,28 @@ internal static class EconomyChecks
             Send(new BuildIntent(0));
             Equal(2, simulation.LastBuildingPlacements.Count(placement => placement.Outcome == BuildingDropOutcome.Placed));
             Equal((0, 0, p7 - 3000), (economy.CatalogCount(1), economy.CatalogCount(2), economy.P7));
+            // Both are delivered one at a time (command 19, player +0x19AA). Until
+            // its build animation ends a slot is rising (+0xC10), and what needs
+            // it stays unavailable.
+            var barracks = simulation.CityBuilding(0, 1)!.Seed.InstanceId;
+            var laboratory = simulation.CityBuilding(0, 3)!.Seed.InstanceId;
+            Equal((BuildingDeliveryPhase.Arriving, BuildingDeliveryPhase.Waiting), (simulation.Delivery(barracks)!.Value.Phase, simulation.Delivery(laboratory)!.Value.Phase));
+            Equal((true, true), (simulation.IsSlotRising(0, 1), simulation.IsSlotRising(0, 3)));
+            Equal(new[] { CatalogItemState.Done, CatalogItemState.Done, CatalogItemState.Unavailable, CatalogItemState.Unavailable, CatalogItemState.Unavailable }, States());
+            var updates = 0;
+            while (simulation.Delivery(barracks) is not null && updates++ < 1000) Send();
+            Equal((false, BuildingDeliveryPhase.Arriving), (simulation.IsSlotRising(0, 1), simulation.Delivery(laboratory)!.Value.Phase));
+            Equal(CatalogItemState.Offered, simulation.CatalogState(0, 9));
+            while (simulation.Delivery(laboratory) is not null && updates++ < 1000) Send();
             Equal(new[] { CatalogItemState.Done, CatalogItemState.Done, CatalogItemState.Offered, CatalogItemState.Offered, CatalogItemState.Offered }, States());
+            // Passive income ran during the deliveries.
+            p7 = economy.P7;
             Send(new CatalogCountIntent(0, 1));
-            Equal((0, p7 - 3000), (economy.CatalogCount(1), economy.P7));
+            Equal((0, p7), (economy.CatalogCount(1), economy.P7));
 
             // Troops count up to 50 and queue with their count; research needs no building.
             Send([.. Enumerable.Repeat<WorldCommand>(new CatalogCountIntent(0, 9), 52), new CatalogCountIntent(0, 59), new CatalogCountIntent(0, 59)]);
-            Equal((50, 1, p7 - 3000 - 50 * 350 - 1000), (economy.CatalogCount(9), economy.CatalogCount(59), economy.P7));
+            Equal((50, 1, p7 - 50 * 350 - 1000), (economy.CatalogCount(9), economy.CatalogCount(59), economy.P7));
             Send(new BuildIntent(0));
             Equal(UnitProductionOutcome.Queued, simulation.LastUnitProductions.Single().Outcome);
             Equal(true, simulation.ProductionQueues.Single(queue => queue.TeamId == 0 && queue.Queue == 0).QueuedEntityIds.Count is 49 or 50);

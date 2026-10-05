@@ -110,6 +110,7 @@ public sealed partial class ScenarioSimulation
         // 0x444F14 writes the footprint over whatever stands there.
         GroundOccupancy.ReplaceClaims(instanceId, footprints.CitySlotCells(origin, slot));
         cityBuildings[(purchase.TeamId, slot)] = instanceId;
+        StartDelivery(actor, purchase.TeamId, slot);
         economy.MarkCompleted(dependencyCatalog, item.Id);
         SyncCitySlotItems(purchase.TeamId, slot);
         if (footprints.SlotProductionQueue(slot) is { } queue && productionQueues.TryGetValue((purchase.TeamId, queue), out var state))

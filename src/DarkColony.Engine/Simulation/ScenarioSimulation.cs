@@ -798,6 +798,7 @@ public sealed partial class ScenarioSimulation
         var fired = events.Fired;
         var attackMoveAcquisitions = events.AttackMoveAcquisitions;
         var harvesterDeployments = events.HarvesterDeployments;
+        UpdateBuildingDeliveries();
         UpdateCityProduction(events);
         foreach (var actor in actors.ToArray())
         {

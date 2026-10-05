@@ -120,13 +120,15 @@ public sealed class AnimationDefinition
     /// canvas. Otherwise the frame's Y is added to the layer's, which is how
     /// the interface art is laid out.
     /// </summary>
+    /// <param name="includeLayer">Composes only the layers it accepts (all when null).</param>
     public CompositeFrame Compose(int frameIndex, Func<string, Sprite> spriteLoader, bool bottomAnchored = false,
-        IReadOnlyList<VgaColor>? palette = null)
+        IReadOnlyList<VgaColor>? palette = null, Func<DrawLayer, bool>? includeLayer = null)
     {
         ArgumentNullException.ThrowIfNull(spriteLoader);
         var logical = LogicalFrames[frameIndex];
-        if (logical.Layers.Count == 0) return new CompositeFrame(0, 0, 1, 1, new byte[4]);
-        var sources = logical.Layers.Select(layer =>
+        var layers = includeLayer is null ? logical.Layers : [.. logical.Layers.Where(includeLayer)];
+        if (layers.Count == 0) return new CompositeFrame(0, 0, 1, 1, new byte[4]);
+        var sources = layers.Select(layer =>
         {
             var sprite = spriteLoader(layer.SpriteName);
             var frame = sprite.Frames[layer.SpriteFrame];

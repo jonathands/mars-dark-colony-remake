@@ -31,8 +31,8 @@ The steps are:
 1. Buy the six buildings that can be bought, through their HUD buttons, in
    prerequisite order: barracks, science lab, robot factory, then the
    level-2 lab and factory on the same buttons, then the research center.
-   Each one is counted on its button, then BUILD orders it. A screenshot
-   follows each purchase.
+   Each one is counted on its button, then BUILD orders it, and a ship
+   delivers it. A screenshot follows each delivery.
 2. Count one of each of the nine troops on the Build tab, then press the
    space bar, which is BUILD too.
 3. Count the first research button on the Research tab, then BUILD.
@@ -117,7 +117,9 @@ try {
     # A click counts an item on its button; BUILD (pushb 19) orders it.
     $build = Hud 559 435
     foreach ($step in $buildings.Keys) {
-        Send @($buildings[$step], 'wait:300', $build, 'move:258,240', 'wait:1500')
+        # A ship delivers each building (command 19): about 150 updates, ten
+        # seconds, before what needs it can be bought.
+        Send @($buildings[$step], 'wait:300', $build, 'move:258,240', 'wait:11000')
         Shot $step
     }
 

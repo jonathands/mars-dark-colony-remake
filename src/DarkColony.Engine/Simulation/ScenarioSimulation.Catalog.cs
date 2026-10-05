@@ -47,7 +47,11 @@ public sealed partial class ScenarioSimulation
                 return CatalogItemState.Done;
             if (item.IsUpgrade && economy.ResearchLevel(dependencyCatalog, item.UpgradeEntityId!.Value, item.UpgradeCategory!.Value) >= item.UpgradeLevel)
                 return CatalogItemState.Done;
-            if (item.PrerequisiteItemIds.Any(prerequisite => CatalogState(team, prerequisite, visiting) != CatalogItemState.Done) ||
+            // 0x437DD8 / 0x437E19: a prerequisite building, or the item's own
+            // slot, still rising after its delivery also makes it unavailable.
+            if (item.PrerequisiteItemIds.Any(prerequisite => CatalogState(team, prerequisite, visiting) != CatalogItemState.Done ||
+                    dependencyCatalog.TryGet(prerequisite, out var needed) && needed.IsBuilding && IsSlotRising(team, needed.BuildingSlot!.Value)) ||
+                item.IsBuilding && IsSlotRising(team, item.BuildingSlot!.Value) ||
                 economy.DisabledItems.Contains(itemId))
                 return CatalogItemState.Unavailable;
             return CatalogItemState.Offered;

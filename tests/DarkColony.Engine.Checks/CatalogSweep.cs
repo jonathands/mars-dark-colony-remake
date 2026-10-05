@@ -156,8 +156,11 @@ internal sealed class CatalogSweep
             }
             if (!Economy.CompletedItems.Contains(item.Id)) Fail($"building item {item.Id} {Name(entityId)} is not counted as built");
             if (building.Health != building.MaximumHealth) Fail($"building item {item.Id} {Name(entityId)} rose with {building.Health}/{building.MaximumHealth} health");
+            // The ship brings it down; its slot rises until the build animation ends.
+            var delivered = StepUntil(() => simulation.Delivery(building.Seed.InstanceId) is null, 600);
+            if (delivered < 0) Fail($"building item {item.Id} {Name(entityId)}: still being delivered after 600 updates");
             StepIdle(5);
-            Report.Add($"{RaceName} building {item.Id} {Name(entityId)}: built in slot {slot}");
+            Report.Add($"{RaceName} building {item.Id} {Name(entityId)}: built in slot {slot}, delivered in {delivered} updates");
             Buildings++;
         }
     }

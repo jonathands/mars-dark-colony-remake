@@ -82,7 +82,7 @@ public sealed partial class ScenarioSimulation
     /// built (slot and variant out), and 2 otherwise: an unknown, disabled,
     /// or non-building item, another race's item, or a prerequisite that is
     /// not itself at 0. A slot whose new building is still rising
-    /// (<c>+0xC10</c>) also gives 2; the port builds at once and has no such state.
+    /// (<c>+0xC10</c>, <c>0x438279</c>) gives 2 before anything else.
     /// </summary>
     internal int NativeBuildingStatus(int team, int itemId, out int slot, out int variant)
     {
@@ -92,6 +92,7 @@ public sealed partial class ScenarioSimulation
             economy.DisabledItems.Contains(itemId) || !item.IsBuilding || teamRaces.GetValueOrDefault(team) != item.BuildingFaction) return 2;
         var itemSlot = item.BuildingSlot!.Value;
         var itemVariant = item.BuildingVariant!.Value;
+        if (IsSlotRising(team, itemSlot)) return 2;
         if (CityBuilding(team, itemSlot) is not null && CitySlotVariant(team, itemSlot) is { } live && itemVariant <= live) return 0;
         foreach (var prerequisite in item.PrerequisiteItemIds)
             if (prerequisite == itemId || NativeBuildingStatus(team, prerequisite, out _, out _) != 0) return 2;

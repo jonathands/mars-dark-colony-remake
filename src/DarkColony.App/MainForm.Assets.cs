@@ -303,10 +303,19 @@ public sealed partial class MainForm
     /// </summary>
     private Bitmap? WorldAnimationBitmap(string fileName, int frameIndex) => AnimationBitmap(fileName, frameIndex, world: true);
 
-    private Bitmap? AnimationBitmap(string fileName, int frameIndex, bool remapWarControlPalette = false, bool world = false, bool dimmed = false)
+    /// <summary>
+    /// Only the delivery ship of a building's build animation: its <c>drop</c>
+    /// or <c>sauc</c> layers, composed like a world sprite.
+    /// </summary>
+    private Bitmap? DeliveryShipBitmap(string fileName, int frameIndex) => AnimationBitmap(fileName, frameIndex, world: true, shipOnly: true);
+
+    private Point DeliveryShipOrigin(string fileName, int frameIndex) =>
+        _animationOrigins.GetValueOrDefault($"{fileName}:{frameIndex}:ship");
+
+    private Bitmap? AnimationBitmap(string fileName, int frameIndex, bool remapWarControlPalette = false, bool world = false, bool dimmed = false, bool shipOnly = false)
     {
         if (_installation is null) return null;
-        var key = $"{fileName}:{frameIndex}:{(world ? "world" : remapWarControlPalette ? "war-controls" : dimmed ? "dim" : "base")}";
+        var key = $"{fileName}:{frameIndex}:{(shipOnly ? "ship" : world ? "world" : remapWarControlPalette ? "war-controls" : dimmed ? "dim" : "base")}";
         try
         {
             if (_animationFrames.TryGetValue(key, out var cached)) return cached;
@@ -316,7 +325,8 @@ public sealed partial class MainForm
                 _animationDefinitions[fileName] = definition;
             }
 
-            var composite = definition.Compose(frameIndex, LoadSprite, bottomAnchored: world);
+            var composite = definition.Compose(frameIndex, LoadSprite, bottomAnchored: world,
+                includeLayer: shipOnly ? layer => layer.SpriteName.Equals("drop", StringComparison.OrdinalIgnoreCase) || layer.SpriteName.Equals("sauc", StringComparison.OrdinalIgnoreCase) : null);
             if (remapWarControlPalette && fileName.Equals("knobe.fin", StringComparison.OrdinalIgnoreCase))
             {
                 // `multie` uses the same knobe sprites as the green menus,
