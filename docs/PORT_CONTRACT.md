@@ -77,20 +77,37 @@ and readers in the subsystem folders above. Event records live in
 The engine must not reference WinForms, Direct3D, audio APIs, wall-clock frame
 deltas, or screen pixels.
 
+### `DarkColony.Presentation`
+
+Platform-free presentation rules, with no WinForms or Direct3D types (only
+`System.Drawing` primitives), so the engine checks can test them:
+
+- `DisplayLayout`: where the logical picture lands on the output, and the
+  output↔logical point mapping;
+- `DisplaySettings` and `DisplaySettingsEditor`: the port's display settings,
+  their flags and file, and the Video panel's rows;
+- `GameplayScreen` and `GameplayHudLayout`: the gameplay screen at any size,
+  with the `maine` HUD anchored to its edges.
+
+See `docs/DISPLAY.md`. Nothing here may reach the simulation.
+
 ### `DarkColony.App`
 
 Windows platform and presentation code:
 
-- `Rendering`: D3D11 device lifetime, GPU resources, sprite commands, palette
-  remaps, render ordering, native 640x480 target, and display scaling;
+- `Rendering`: D3D11 device lifetime, the flip-model swap chain, GPU
+  resources, sprite commands, palette remaps, render ordering, the logical
+  frame target (640x480 or the gameplay view) and its placement on the
+  output (`DisplayLayout`), and display-mode switching;
 - `Ui`: reconstructed screen definitions and interaction adapters;
 - `Audio`: playback backend and event-to-sound binding when implemented;
 - host/input code that translates OS events into engine commands.
 
 `MainForm` is likewise split by responsibility: `MainForm.cs` (fields,
 screen switching, frame composition) plus `Menus`, `WarLobby`,
-`Encyclopedia`, `Assets`, `World`, `Feedback`, `Hud`, `Input`, and
-`Commands` partial files.
+`Encyclopedia`, `Assets`, `World`, `Feedback`, `Hud`, `Input`, `Commands`,
+`Display` (window modes, DPI, gameplay screen size, pointer) and
+`VideoPanel` partial files.
 
 Presentation can interpolate between completed simulation states but cannot
 mutate authoritative gameplay state.

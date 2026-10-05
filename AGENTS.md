@@ -32,6 +32,8 @@ a web-preview approximation into engine behavior.
 
 - `src/DarkColony.Engine`: platform-independent simulation and original-data readers.
 - `src/DarkColony.App`: Windows desktop host and renderer.
+- `src/DarkColony.Presentation`: platform-free presentation rules (display
+  layout and settings, the anchored gameplay HUD), tested by the checks.
 - `tests/DarkColony.Engine.Checks`: dependency-free executable verification.
 - `docs/`: compilation-focused specifications and milestone notes.
 

@@ -226,7 +226,8 @@ presentation library. See `docs/DISPLAY.md`.
   - a Multi Player War started from an expanded setting plays classic
     (`Run-NetworkPair.ps1`).
 
-**Phase 5: documentation and merge**
+**Phase 5: documentation and merge** — done (2026-10-04) except the merge,
+which waits for the user.
 - `docs/DISPLAY.md`: modes, flags, file format, what is faithful and what is
   port-only.
 - README flags; PORT_CONTRACT (`Rendering` gains the display layer).

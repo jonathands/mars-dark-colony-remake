@@ -33,6 +33,23 @@ Or double-click [`run-war-lobby-debug.cmd`](run-war-lobby-debug.cmd).
 If `--data` is omitted, the app checks `DARKCOLONY_DATA` and then the adjacent
 `../Dark Colony` directory. The original files are never copied into this port.
 
+### Display
+
+The port runs windowed or fullscreen, sharp at the monitor's native DPI, and
+can show a larger gameplay view. The original picture stays exact at window
+scale 1 with the classic view. See [docs/DISPLAY.md](docs/DISPLAY.md).
+
+| Control | Effect |
+| --- | --- |
+| Alt+Enter | Windowed ↔ fullscreen |
+| F10 (main menu) or VIDEO (in-game OPTIONS) | The Video panel: mode, size, scaling, view, vsync, pointer lock |
+| `--windowed`, `--fullscreen`, `--exclusive [WxH[@Hz]]` | Window mode for this run |
+| `--window-scale N` | Window size in multiples of 640x480; 0 follows the DPI |
+| `--scale-mode integer\|fit\|stretch` | How the picture fits the output |
+| `--view classic\|auto\|WxH` | Gameplay view (network games stay classic) |
+| `--vsync on\|off`, `--confine-cursor on\|off` | Vsync and pointer lock |
+| `--display-settings <file>` | Settings file (default `%LOCALAPPDATA%\DarkColonyPort\display.json`) |
+
 ## Diagnostics
 
 Every session writes a plain-text log to
@@ -52,8 +69,11 @@ For unattended checks from PowerShell 7:
 
 `Run-Port.ps1` starts the Debug build with `--no-dialogs`, captures the window
 into `screenshots/`, closes it, and prints the log from `artifacts/logs/`.
-`Send-PortInput.ps1` posts clicks, drags, and keys in native 640×480
-coordinates without moving the real cursor or taking focus.
+It passes `--windowed --window-scale 1 --view classic --confine-cursor off`,
+so its coordinates are window coordinates; `-ExtraArguments` can override
+them. `Send-PortInput.ps1` posts clicks, drags, and keys in game coordinates
+without moving the real cursor or taking focus. With `-LogPath`, it maps them
+through the log's `Presentation:` line onto a scaled picture.
 
 ## Verify
 

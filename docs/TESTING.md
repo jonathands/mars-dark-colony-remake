@@ -23,8 +23,9 @@ with `--data <installation>`). Without it they are reported as `SKIP`.
 | `CatalogSweep.cs` | Every building, troop, research and unit of both races ([CATALOG_SWEEP.md](CATALOG_SWEEP.md)). |
 
 The topics are World, Determinism, Assets, Movement, Acquisition, Combat,
-Specials, Vision, Economy, Missions, ComputerPlayer, War, ReplayAndNetwork, and
-Interface.
+Specials, Vision, Economy, Missions, ComputerPlayer, War, ReplayAndNetwork,
+Interface, and Presentation (the `DarkColony.Presentation` library: display
+layout, settings, the Video panel's rows, the anchored gameplay HUD).
 
 To add a check, put it in its topic's file:
 
@@ -91,6 +92,25 @@ The test passes only if all of these hold:
 - the app exits normally.
 
 Screenshots go to `screenshots/live-<race>-*`, and the log to `artifacts/logs/live-<race>.log`.
+
+Display options run the same steps in another display mode. Clicks are mapped
+through the log's `Presentation:` line, and HUD clicks follow the anchored
+HUD (`docs/DISPLAY.md`):
+
+- `-WindowScale N`;
+- `-ScaleMode integer|fit|stretch`;
+- `-Fullscreen` (borderless);
+- `-View classic|auto|WxH`.
+
+Two more live tests cover the display:
+
+- `tools/Test-VideoPanel.ps1` drives the Video panel with a throwaway
+  settings file: apply and save, an exclusive mode that reverts when
+  unanswered, and the panel over a fullscreen picture. `-NoExclusive` skips
+  switching the monitor's mode.
+- `Run-Port.ps1 -ExtraArguments '--display-cycle','20' -Seconds 120` switches
+  windowed → borderless → exclusive 20 times and logs live resources at
+  every step; they must stay steady.
 
 Its first runs found three bugs:
 
