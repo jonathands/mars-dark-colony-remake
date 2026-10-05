@@ -800,15 +800,24 @@ public sealed partial class MainForm
 
     private void DrawGameplayCursor(Graphics graphics)
     {
-        if (_gameplayPointer is not { } pointer) return;
-        var animation = Animation("curs.fin", GameplayCursorAnimation(pointer));
+        if (_gameplayPointer is { } pointer) DrawCursor(graphics, GameplayCursorAnimation(pointer), pointer);
+    }
+
+    /// <summary>
+    /// Draws a <c>curs.fin</c> animation on the pointer, which is the FIN
+    /// origin. The cursor animations resolve through <c>0x425544</c> like the
+    /// world's, and are composed like world sprites (each layer's bottom row
+    /// on its FIN Y). That centres all 38 frames on the pointer: DEFAULT is
+    /// 31x31 at (-15,-15), MOVE 39x33 at (-19,-16). The interface layout would
+    /// hang each one 22 pixels below it, so clicks landed above the picture.
+    /// </summary>
+    private void DrawCursor(Graphics graphics, string animationName, Point pointer)
+    {
+        var animation = Animation("curs.fin", animationName);
         if (animation is null) return;
         var frame = NativeFrame("curs.fin", animation.FirstFrame, animation.LastFrame, _world.TickCount - _screenStartedAtTick);
-        var bitmap = AnimationBitmap("curs.fin", frame);
-        if (bitmap is null) return;
-        // Cursor FIN layers have their own negative hotspot offsets. Unlike a
-        // UI gadget rectangle, the pointer itself is that logical origin.
-        var origin = AnimationOrigin("curs.fin", frame);
+        if (WorldAnimationBitmap("curs.fin", frame) is not { } bitmap) return;
+        var origin = WorldAnimationOrigin("curs.fin", frame);
         if (_activeCanvas is { } canvas)
             canvas.DrawForeground(GpuBitmap(bitmap), pointer.X + origin.X, pointer.Y + origin.Y);
         else
@@ -822,10 +831,10 @@ public sealed partial class MainForm
         // 0x4337c8 picks the cursor from the same 3x3 edge table as the
         // scroll timers (gameplay +0xb8), over the HUD too.
         if (GameplayEdgeCursorAnimation(ScrollEdges(pointer)) is { } edge) return edge;
-            if (pointer.X >= 0 && pointer.X < GameplayWorldArea.Width && pointer.Y >= 0 && pointer.Y < GameplayWorldArea.Height)
-            {
-                if (_gameplayCommandMode is GameplayCommandMode.AttackTarget or GameplayCommandMode.GroundSpecialTarget) return "ATTACK";
-                if (_gameplayCommandMode is GameplayCommandMode.Waypoints or GameplayCommandMode.HarvestVent or GameplayCommandMode.PlaceBuilding)
+        if (pointer.X >= 0 && pointer.X < GameplayWorldArea.Width && pointer.Y >= 0 && pointer.Y < GameplayWorldArea.Height)
+        {
+            if (_gameplayCommandMode is GameplayCommandMode.AttackTarget or GameplayCommandMode.GroundSpecialTarget) return "ATTACK";
+            if (_gameplayCommandMode is GameplayCommandMode.Waypoints or GameplayCommandMode.HarvestVent or GameplayCommandMode.PlaceBuilding)
                 return "MOVE";
             if (FindGameplayActorAt(pointer, locallyControllableOnly: true) is not null) return "UNITSELECT";
         }

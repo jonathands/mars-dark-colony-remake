@@ -331,12 +331,6 @@ public sealed partial class MainForm
     private void DrawMenuCursor(Graphics graphics)
     {
         if (!UsesSoftwareMenuCursor || _menuPointer is not { } pointer || !_pointerInsideSurface) return;
-        var animation = Animation("curs.fin", "DEFAULT");
-        if (animation is null) return;
-        var frame = NativeFrame("curs.fin", animation.FirstFrame, animation.LastFrame, _world.TickCount - _screenStartedAtTick);
-        if (AnimationBitmap("curs.fin", frame) is not { } bitmap) return;
-        var origin = AnimationOrigin("curs.fin", frame);
-        if (_activeCanvas is { } canvas) canvas.DrawForeground(GpuBitmap(bitmap), pointer.X + origin.X, pointer.Y + origin.Y);
-        else graphics.DrawImageUnscaled(bitmap, pointer.X + origin.X, pointer.Y + origin.Y);
+        DrawCursor(graphics, "DEFAULT", pointer);
     }
 }

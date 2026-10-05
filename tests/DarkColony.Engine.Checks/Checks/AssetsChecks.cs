@@ -103,6 +103,25 @@ internal static class AssetsChecks
                 if (from < -22 || to > 38) throw new InvalidOperationException($"SCGMSTAND2 spans {from}..{to}");
         }, CheckTags.Data);
 
+        Check("every curs.fin cursor centres on the pointer when composed like a world sprite", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            Sprite Load(string name) => Sprite.Load(install.DataFile("sprites", $"{name}.spr"));
+            // The pointer is the FIN origin. Bottom-anchored, every frame's
+            // centre lands on it: DEFAULT 31x31 at (-15,-15), MOVE 39x33 at
+            // (-19,-16), DIG 43x42 at (-21,-21).
+            var cursors = AnimationDefinition.Load(install.DataFile("animate", "curs.fin"));
+            Equal((18, 38), (cursors.Animations.Count, cursors.LogicalFrames.Count));
+            for (var frame = 0; frame < cursors.LogicalFrames.Count; frame++)
+            {
+                var cursor = cursors.Compose(frame, Load, bottomAnchored: true);
+                if ((cursor.X, cursor.Y) != (-(cursor.Width / 2), -(cursor.Height / 2)))
+                    throw new InvalidOperationException($"frame {frame}: ({cursor.X},{cursor.Y}) {cursor.Width}x{cursor.Height}");
+            }
+            // The interface layout hangs DEFAULT 22 pixels below the pointer.
+            Equal((-15, 22), (cursors.Compose(0, Load).X, cursors.Compose(0, Load).Y));
+        }, CheckTags.Data);
+
         Check("world sprites hang from their layer's bottom row and city art from the city origin", () =>
         {
             var install = GameInstallation.Open(dataPath);

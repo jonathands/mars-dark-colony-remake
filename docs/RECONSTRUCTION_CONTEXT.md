@@ -321,7 +321,10 @@ one harvester may own or prepare on a vent.
   Human/Gray identity groups, including all eight commander-rank records on
   F1. Shift toggles these sets and Ctrl/Alt reuse the native layer filters.
 - The compiled surface now renders the recovered `animate/curs.fin` cursor in
-  place of the generic OS cursor, preserving each composed FIN hotspot offset. It
+  place of the generic OS cursor. The pointer is the FIN origin, and the frames
+  are composed like world sprites (each layer's bottom row on its FIN Y), which
+  centres all 38 of them on the pointer; the interface layout had hung them 22
+  pixels below it, so clicks landed about 37 pixels above the picture. It
   selects data-named `DEFAULT`, `UNITSELECT`, `DRAWBOX`, `MOVE`, `ATTACK`, and
   the eight recovered edge-scroll cursor ranges from actual input state; the
   special repair/dig/confirm cursor transitions are still not implemented.
