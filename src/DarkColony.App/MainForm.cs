@@ -142,6 +142,9 @@ public sealed partial class MainForm : Form
     private bool _showPathRegions;
     private bool _revealMap;
     private GameplayCommandMode _gameplayCommandMode = GameplayCommandMode.MoveOnly;
+    // Gameplay +0x46A7: Move & Attack (checkb 35, key A) is checked, so a map
+    // order is an attack move (order 7) instead of a move (order 2).
+    private bool _attackMoveMode;
     private int? _pendingBuildingItemId;
     private GameplayHudTab _gameplayHudTab = GameplayHudTab.Build;
     private bool _gameplayPaused;
@@ -419,6 +422,7 @@ public sealed partial class MainForm : Form
             _gameplayPath = null;
             _selectedEntityInstanceIds.Clear();
             _gameplayHudTab = GameplayHudTab.Build;
+            _attackMoveMode = false;
             _gameplayPaused = false;
             _showAlliesPanel = false;
             _pendingBuildingItemId = null;

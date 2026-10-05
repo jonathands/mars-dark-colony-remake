@@ -13,6 +13,7 @@ using DarkColony.Engine.World;
 using DarkColony.Engine.Commands;
 using DarkColony.Engine.Missions;
 using DarkColony.Engine.Movement;
+using DarkColony.Presentation;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -836,6 +837,13 @@ public sealed partial class MainForm
             if (_gameplayCommandMode is GameplayCommandMode.AttackTarget or GameplayCommandMode.GroundSpecialTarget) return "ATTACK";
             if (_gameplayCommandMode is GameplayCommandMode.Waypoints or GameplayCommandMode.HarvestVent or GameplayCommandMode.PlaceBuilding)
                 return "MOVE";
+            // With units selected, the cursor shows the order a click gives.
+            if (SelectedGameplayActors().Any())
+            {
+                if (FindGameplayActorAt(pointer, locallyControllableOnly: false) is { } under && _scenarioSimulation?.TeamRelations.IsHostile(_localPlayerTeam, under.Team) == true)
+                    return "ATTACK";
+                if (_display.Mouse == MouseControls.Original || FindGameplayActorAt(pointer, locallyControllableOnly: true) is null) return "MOVE";
+            }
             if (FindGameplayActorAt(pointer, locallyControllableOnly: true) is not null) return "UNITSELECT";
         }
         return "DEFAULT";

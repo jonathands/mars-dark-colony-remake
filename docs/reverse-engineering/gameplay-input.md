@@ -21,10 +21,52 @@ the existing reservation must remain completable.
 
 Napalm/Disease use the original target-mode-2 coordinate semantics: the engine
 receives an exact map cell rather than an actor identity. The original mode-2
-loop consumes a left world click; the compiled control adapter currently keeps
-its established RTS convention of selecting with left click and committing all
-map orders with right click. That input-side difference does not alter the
-serialized deterministic `GroundSpecialAttackIntent`.
+loop consumes a left world click, as the port's original controls do.
+
+## Mouse buttons and Move & Attack
+
+The viewport handler `0x4096E8` dispatches on the event code. The release
+of a button is the press code with bit 8 set, so a left release is `0x104`.
+
+Normal mode (`+0x7C6 == 0`):
+
+- **Left button with no selection, with Shift (bit 2), or while a box is
+  being drawn:** the selection gesture (`0x409997`).
+- **Left button with units selected** (`+0x150 >= 0`):
+  - the press only records the point (`+0x4678`, `+0x4680`);
+  - the release orders through `0x4094F4` (`0x409AD0`);
+  - dragging first turns the press into a box selection.
+- **`0x4094F4`** looks for an actor under the point (`0x409470`):
+  - none: the units move there, through `0x4092AC`;
+  - a hostile (`0x41AEB4` false): it is attacked (`0x409358`, ATTACK
+    cursor);
+  - anything else: the units move there.
+- **`0x4092AC`** sends order 2 (move), or order 7 (attack move) while
+  gameplay `+0x46A7` is set.
+- **Right button** (code 3, `0x409B48`): clears the selection (`0x4377D4`)
+  and gives no order.
+
+Move Only (`checkb 33`) and Move & Attack (`checkb 35`) are one checked
+pair. Clicking one unchecks the other (`0x433124` event 2) and sets
+`+0x46A7` to 0 or 1. The keys do the same: M (`0x40A6B0`) and A
+(`0x40A6E9`). The flag stays set until changed, and it is not a targeting
+mode.
+
+The port follows this with `MouseControls.Original`, the default. The
+settings panel's MOUSE row (or `--mouse modern`) switches to the earlier
+port convention: the left button selects, the right one orders.
+
+Both schemes:
+
+- keep the Move & Attack flag (`_attackMoveMode`);
+- with units selected, show the cursor of the order a click would give
+  (ATTACK over a hostile, otherwise MOVE).
+
+The original controls differ from `dc.exe` in two places:
+
+- a right click first leaves a waiting map command;
+- a left click selects when only structures, or units the player does not
+  control, are selected.
 
 ## Unresolved frame 65
 

@@ -215,8 +215,9 @@ public sealed partial class MainForm
         // slot. Keep its label/frame tied to the original `maine` controls.
         var commandState = GameplayCommandState(selected);
         DrawGameplayCommandButton(graphics, _gameplayHudLayout.Stop, commandState.AnyCanStop);
-        DrawGameplayCommandButton(graphics, _gameplayHudLayout.MoveOnly, commandState.AnyCanMove, GameplayCommandMode.MoveOnly);
-        DrawGameplayCommandButton(graphics, _gameplayHudLayout.MoveAndAttack, commandState.AnyCanAttack, GameplayCommandMode.AttackTarget);
+        // checkb 33 and 35 show which of the pair is checked (+0x46A7).
+        DrawGameplayCommandButton(graphics, _gameplayHudLayout.MoveOnly, commandState.AnyCanMove, isChecked: !_attackMoveMode);
+        DrawGameplayCommandButton(graphics, _gameplayHudLayout.MoveAndAttack, commandState.AnyCanAttack, isChecked: _attackMoveMode);
         DrawGameplayCommandButton(graphics, _gameplayHudLayout.Waypoints, commandState.AnyCanUseWaypoints, GameplayCommandMode.Waypoints);
         var special = SelectedUnitSpecial(selected);
         DrawGameplayCommandButton(graphics, _gameplayHudLayout.Contextual with { Frame = special.Frame, Label = special.Label },
@@ -611,10 +612,11 @@ public sealed partial class MainForm
         Graphics graphics,
         GameplayHudButton button,
         bool available,
-        GameplayCommandMode? selectedMode = null)
+        GameplayCommandMode? selectedMode = null,
+        bool isChecked = false)
     {
         var hovered = _gameplayPointer is { } pointer && button.Bounds.Contains(pointer);
-        DrawGameplayIconButton(graphics, button.Bounds, button.Frame, selectedMode == _gameplayCommandMode || hovered, available);
+        DrawGameplayIconButton(graphics, button.Bounds, button.Frame, isChecked || selectedMode == _gameplayCommandMode || hovered, available);
     }
 
     private string? HoveredGameplayCommandLabel(IReadOnlyList<GameplayHudButton> buttons)

@@ -6,6 +6,15 @@ using System.Text.Json.Serialization;
 namespace DarkColony.Presentation;
 
 /// <summary>Where the game is shown.</summary>
+/// <summary>Which mouse button orders units in a game.</summary>
+public enum MouseControls
+{
+    /// <summary>As <c>dc.exe</c> (<c>0x4096E8</c>): the left button selects, and orders the selected units; the right one deselects.</summary>
+    Original,
+    /// <summary>The left button selects; the right one orders.</summary>
+    Modern,
+}
+
 public enum WindowMode
 {
     /// <summary>A window sized to the picture times <see cref="DisplaySettings.WindowScale"/>.</summary>
@@ -97,6 +106,13 @@ public sealed record DisplaySettings
     /// </summary>
     public bool? ConfineCursor { get; init; }
 
+    /// <summary>
+    /// The mouse buttons in a game: <see cref="MouseControls.Original"/> as
+    /// <c>dc.exe</c> (the left button selects and orders, the right one
+    /// deselects), or <see cref="MouseControls.Modern"/> (the right button orders).
+    /// </summary>
+    public MouseControls Mouse { get; init; } = MouseControls.Original;
+
     /// <summary>Whether <c>avi/intro.avi</c> plays before the main menu at start-up (PLAY INTRO always plays it).</summary>
     public bool IntroVideo { get; init; } = true;
 
@@ -142,6 +158,7 @@ public sealed record DisplaySettings
         Mode = Enum.IsDefined(Mode) ? Mode : WindowMode.Windowed,
         WindowScale = WindowScale is >= 0 and <= 8 ? WindowScale : 0,
         Scale = Enum.IsDefined(Scale) ? Scale : ScaleMode.Integer,
+        Mouse = Enum.IsDefined(Mouse) ? Mouse : MouseControls.Original,
         ExclusiveMode = ExclusiveMode is { Width: >= 320, Height: >= 200 } mode ? mode : null,
         View = string.Equals(View, "auto", StringComparison.OrdinalIgnoreCase) ? "auto"
             : ParseView(View) is { } size ? string.Create(CultureInfo.InvariantCulture, $"{size.Width}x{size.Height}")
@@ -188,7 +205,7 @@ public sealed record DisplaySettings
     /// Applies command-line overrides: <c>--windowed</c>, <c>--fullscreen</c>
     /// (borderless), <c>--exclusive [WxH[@Hz]]</c>, <c>--window-scale N</c>,
     /// <c>--scale-mode integer|fit|stretch</c>, <c>--view classic|auto|WxH</c>,
-    /// <c>--vsync on|off</c>, <c>--confine-cursor on|off</c>,
+    /// <c>--vsync on|off</c>, <c>--confine-cursor on|off</c>, <c>--mouse original|modern</c>,
     /// <c>--intro-video on|off</c> and <c>--show-fps on|off</c>. Unknown
     /// values are reported and ignored.
     /// </summary>
@@ -234,6 +251,10 @@ public sealed record DisplaySettings
                 case "--confine-cursor":
                     if (Switch(value) is { } confine) settings = settings with { ConfineCursor = confine };
                     else found.Add($"--confine-cursor {value}: expected on or off.");
+                    break;
+                case "--mouse":
+                    if (Enum.TryParse<MouseControls>(value, ignoreCase: true, out var mouse) && Enum.IsDefined(mouse)) settings = settings with { Mouse = mouse };
+                    else found.Add($"--mouse {value}: expected original or modern.");
                     break;
                 case "--intro-video":
                     if (Switch(value) is { } intro) settings = settings with { IntroVideo = intro };

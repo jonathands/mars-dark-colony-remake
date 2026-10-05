@@ -71,8 +71,10 @@ function Expect([string] $pattern, [string] $what) {
 function Saved { Get-Content -Raw $settings | ConvertFrom-Json }
 # Row arrows (MainForm.VideoPanel.cs): right arrow x 372, rows from y 138 every 24.
 function Right([int] $row) { "click:380,$(143 + 24 * $row)" }
-$ok = 'click:336,360'
-$cancel = 'click:376,360'
+$ok = 'click:336,384'
+$cancel = 'click:376,384'
+# The display-mode confirmation's own OK, higher up (MainForm.VideoPanel.cs).
+$confirmOk = 'click:336,240'
 
 try {
     Send @('key:F10', 'wait:500')
@@ -92,6 +94,9 @@ try {
         Start-Sleep -Seconds 16
         Expect 'Display mode not kept; reverting' 'an unanswered confirmation reverts'
         if ((Saved).mode -ne 'windowed') { $failures.Add("after the revert the saved mode is $((Saved).mode)") }
+        Send @('key:F10', 'wait:400', (Right 0), (Right 0), $ok, 'wait:1500', $confirmOk, 'wait:500')
+        Expect 'Display mode kept' 'OK on the confirmation keeps the mode'
+        Send @('key:F10', 'wait:400', (Right 0), $ok, 'wait:1500')
     }
 
     Send @('key:F10', 'wait:400', (Right 0), $ok, 'wait:1500')

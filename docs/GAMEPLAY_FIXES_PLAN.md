@@ -15,9 +15,11 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 7 | The land mine never attacks | open |
 | 8 | The dropship button and action do not work | open |
 | 9 | A troop leaves its building with an animation (the marine from the barracks, the Gray from its hive) | open |
-| 10 | Some commands, attack-move among them, do not work | open |
+| 10 | Some commands, attack-move among them, do not work | done: Move & Attack is the original's checked pair, and the original mouse buttons are the default (MOUSE option) |
 | 11 | A marine hit by a Gray beyond its own range does not respond | open |
 | 12 | Esc in a game should ask for confirmation | done: the original's lqce dialog, also for QUIT and Q |
+| 13 | A Single Player War is never won after destroying everything | open |
+| 14 | P7 multipliers in Single Player War (and probably multiplayer) do not work as intended | open |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

@@ -150,6 +150,7 @@ OPTIONS popup's art (`popp.spr`, the `mfonto7` font), and it opens:
 | POINTER LOCK | FULLSCREEN (default), ALWAYS, NEVER |
 | INTRO VIDEO | ON (default), OFF: whether `avi/intro.avi` plays at start-up. PLAY INTRO still plays it |
 | SHOW FPS | OFF (default), ON: frames drawn per second, in the picture's top-left corner |
+| MOUSE | ORIGINAL (default): the left button selects and orders, the right one deselects. MODERN: the right button orders |
 
 The arrows step through each row. OK applies and saves; Cancel and Esc
 discard. A new exclusive display mode asks "KEEP THIS DISPLAY MODE?": OK
@@ -178,6 +179,7 @@ Command-line flags override the file for one run, without saving:
 | `--confine-cursor on\|off` | Keep the pointer on the picture during play, in every mode (unset: fullscreen only) |
 | `--intro-video on\|off` | Play the intro at start-up |
 | `--show-fps on\|off` | Show the frame rate |
+| `--mouse original\|modern` | Which button orders units |
 | `--display-settings <file>` | Use another settings file (the tests use a throwaway one) |
 
 The Video panel and Alt+Enter save the settings in effect, flags included.

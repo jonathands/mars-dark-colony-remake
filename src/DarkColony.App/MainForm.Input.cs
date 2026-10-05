@@ -12,6 +12,7 @@ using DarkColony.Engine.Scenario;
 using DarkColony.Engine.World;
 using DarkColony.Engine.Commands;
 using DarkColony.Engine.Movement;
+using DarkColony.Presentation;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -112,14 +113,21 @@ public sealed partial class MainForm
             StopSelectedUnits();
             return true;
         }
-        if (key is Keys.M or Keys.W)
+        // 0x40A6B0 / 0x40A6E9: M checks Move Only and A checks Move & Attack,
+        // with or without a selection.
+        if (key is Keys.M or Keys.A && !shift && !control && !alt)
+        {
+            SetAttackMoveMode(key == Keys.A);
+            return true;
+        }
+        if (key is Keys.W)
         {
             if (!SelectedGameplayActors().Any())
             {
                 _status = "Select at least one local mobile unit first.";
                 return true;
             }
-            SetGameplayCommandMode(key == Keys.M ? GameplayCommandMode.MoveOnly : GameplayCommandMode.Waypoints);
+            SetGameplayCommandMode(GameplayCommandMode.Waypoints);
             return true;
         }
         if (key == Keys.Enter)
@@ -177,6 +185,32 @@ public sealed partial class MainForm
     /// <summary>BUILD (<c>pushb 19</c> or the space bar, <c>0x437F3C</c>): the simulation orders every counted item.</summary>
     private void QueueBuild() =>
         _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new BuildIntent(_localPlayerTeam));
+
+    /// <summary>With the original controls, whether a left click orders instead of selecting: units are selected, or a map command waits.</summary>
+    private bool LeftClickOrders => SelectedGameplayActors().Any() || _gameplayCommandMode != GameplayCommandMode.MoveOnly;
+
+    /// <summary>The original right button (<c>0x409B48</c>): it clears the selection. The port also leaves a map command first.</summary>
+    private void CancelOrDeselect()
+    {
+        if (_gameplayCommandMode != GameplayCommandMode.MoveOnly &&
+            !(_gameplayCommandMode == GameplayCommandMode.PlaceBuilding && _pendingBuildingItemId is not null))
+        {
+            _gameplayCommandMode = GameplayCommandMode.MoveOnly;
+            _status = "Command mode cancelled.";
+            return;
+        }
+        if (_selectedEntityInstanceIds.Count == 0) return;
+        _selectedEntityInstanceIds.Clear();
+        _status = "Selection cleared.";
+    }
+
+    /// <summary>Checks Move & Attack (attack moves) or Move Only (moves): the pair of checkb 35 and 33.</summary>
+    private void SetAttackMoveMode(bool attackMove)
+    {
+        _attackMoveMode = attackMove;
+        if (_gameplayCommandMode is GameplayCommandMode.AttackTarget) _gameplayCommandMode = GameplayCommandMode.MoveOnly;
+        _status = attackMove ? "Move & Attack: units attack what they meet on the way." : "Move only.";
+    }
 
     private void SetGameplayCommandMode(GameplayCommandMode mode)
     {
@@ -361,12 +395,16 @@ public sealed partial class MainForm
         }
         else if (button is null && !wasMapDrag && _screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left)
         {
-            SelectGameplayActor(eventArgs.Location, selectionToggle, selectionLayerFilter);
+            // Original controls (0x4096E8): with units selected, releasing the
+            // left button orders them (0x4094F4); Shift still toggles the selection.
+            if (_display.Mouse == MouseControls.Original && !selectionToggle && LeftClickOrders) QueueOrderAt(eventArgs.Location);
+            else SelectGameplayActor(eventArgs.Location, selectionToggle, selectionLayerFilter);
         }
         if (button is null && _screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Right &&
             !HandleCatalogCountClick(eventArgs.Location, remove: true))
         {
-            QueueDiagnosticMove(eventArgs.Location);
+            if (_display.Mouse == MouseControls.Modern) QueueOrderAt(eventArgs.Location);
+            else if (eventArgs.X < GameplayWorldArea.Width && eventArgs.Y < GameplayWorldArea.Height) CancelOrDeselect();
         }
         if (button is null && _screen == MenuScreenId.Main && eventArgs.Button == MouseButtons.Left && MainMenuOptionsButton.Contains(eventArgs.Location))
             OpenVideoPanel();
@@ -830,6 +868,7 @@ public sealed partial class MainForm
                 return true;
             }
             SetGameplayCommandMode(GameplayCommandMode.MoveOnly);
+            SetAttackMoveMode(false);
             return true;
         }
         if (_gameplayHudLayout.MoveAndAttack.Bounds.Contains(point))
@@ -839,7 +878,8 @@ public sealed partial class MainForm
                 _status = "Select a unit with a resolved weapon before entering attack mode.";
                 return true;
             }
-            SetGameplayCommandMode(GameplayCommandMode.AttackTarget);
+            SetGameplayCommandMode(GameplayCommandMode.MoveOnly);
+            SetAttackMoveMode(true);
             return true;
         }
         if (_gameplayHudLayout.Waypoints.Bounds.Contains(point))

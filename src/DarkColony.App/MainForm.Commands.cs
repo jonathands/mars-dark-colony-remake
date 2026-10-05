@@ -29,11 +29,16 @@ public sealed partial class MainForm
         return actor is not null && _scenarioSimulation!.IsActorVisibleToTeam(_localPlayerTeam, actor);
     }
 
-    private void QueueDiagnosticMove(Point point)
+    /// <summary>
+    /// A map order at a point, like <c>0x4094F4</c>: a visible hostile under it
+    /// is attacked (<c>0x409358</c>), anywhere else the units move there or
+    /// attack-move (<c>0x4092AC</c>); a waiting map command takes the point.
+    /// </summary>
+    private void QueueOrderAt(Point point)
     {
         if (_gameplayMap is null || _gameplayPath is null || _scenarioSimulation is null ||
             _entityCatalog is null || _groundOccupancy is null || _alternateOccupancy is null || point.X >= GameplayWorldArea.Width || point.Y >= GameplayWorldArea.Height) return;
-        if (_gameplayCommandMode == GameplayCommandMode.AttackTarget)
+        if (_gameplayCommandMode is GameplayCommandMode.AttackTarget or GameplayCommandMode.MoveOnly)
         {
             var targetActor = FindGameplayActorAt(point, locallyControllableOnly: false);
             if (targetActor is not null && _scenarioSimulation.TeamRelations.IsHostile(_localPlayerTeam, targetActor.Team))
@@ -118,7 +123,7 @@ public sealed partial class MainForm
             .OrderBy(entity => entity.InstanceId)
             .ToArray();
         if (selected.Length == 0) { _status = "Select at least one mobile local team-0 unit."; return; }
-        if (_gameplayCommandMode == GameplayCommandMode.AttackTarget)
+        if (_gameplayCommandMode == GameplayCommandMode.AttackTarget || _attackMoveMode && _gameplayCommandMode == GameplayCommandMode.MoveOnly)
         {
             var attackers = selected.Where(HasWeapon).ToArray();
             if (attackers.Length == 0)

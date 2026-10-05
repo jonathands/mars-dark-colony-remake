@@ -13,6 +13,7 @@ public enum DisplaySettingRow
     PointerLock,
     IntroVideo,
     ShowFps,
+    Mouse,
 }
 
 /// <summary>
@@ -35,6 +36,7 @@ public static class DisplaySettingsEditor
         DisplaySettingRow.PointerLock => "POINTER LOCK",
         DisplaySettingRow.IntroVideo => "INTRO VIDEO",
         DisplaySettingRow.ShowFps => "SHOW FPS",
+        DisplaySettingRow.Mouse => "MOUSE",
         _ => throw new ArgumentOutOfRangeException(nameof(row), row, null),
     };
 
@@ -58,6 +60,7 @@ public static class DisplaySettingsEditor
         DisplaySettingRow.PointerLock => settings.ConfineCursor switch { null => "FULLSCREEN", true => "ALWAYS", false => "NEVER" },
         DisplaySettingRow.IntroVideo => settings.IntroVideo ? "ON" : "OFF",
         DisplaySettingRow.ShowFps => settings.ShowFps ? "ON" : "OFF",
+        DisplaySettingRow.Mouse => settings.Mouse.ToString().ToUpperInvariant(),
         _ => throw new ArgumentOutOfRangeException(nameof(row), row, null),
     };
 
@@ -99,6 +102,8 @@ public static class DisplaySettingsEditor
                 return settings with { IntroVideo = !settings.IntroVideo };
             case DisplaySettingRow.ShowFps:
                 return settings with { ShowFps = !settings.ShowFps };
+            case DisplaySettingRow.Mouse:
+                return settings with { Mouse = settings.Mouse == MouseControls.Original ? MouseControls.Modern : MouseControls.Original };
             default:
                 throw new ArgumentOutOfRangeException(nameof(row), row, null);
         }

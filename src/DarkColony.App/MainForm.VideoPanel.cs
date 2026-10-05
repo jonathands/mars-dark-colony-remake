@@ -20,8 +20,11 @@ public sealed partial class MainForm
     private const int VideoPanelTop = 96;
     private const int VideoPanelRowsTop = 138;
     private const int VideoPanelRowStep = 24;
-    private static readonly Rectangle VideoPanelOk = new(320, 344, 32, 32);
-    private static readonly Rectangle VideoPanelCancel = new(360, 344, 32, 32);
+    private static readonly Rectangle VideoPanelOk = new(320, 368, 32, 32);
+    private static readonly Rectangle VideoPanelCancel = new(360, 368, 32, 32);
+    // The display-mode confirmation draws its own OK and Cancel higher up.
+    private static readonly Rectangle DisplayConfirmOk = new(320, 224, 32, 32);
+    private static readonly Rectangle DisplayConfirmCancel = new(360, 224, 32, 32);
     // The in-game OPTIONS popup's port-only VIDEO button, left of OK/Cancel.
     private static readonly Rectangle OptionsVideoButton = new(152, 336, 112, 24);
     // The main menu's port-only OPTIONS button, in the free top-right corner.
@@ -68,8 +71,8 @@ public sealed partial class MainForm
     {
         if (_displayConfirm is { } confirm)
         {
-            if (VideoPanelOk.Contains(point)) KeepDisplayMode();
-            else if (VideoPanelCancel.Contains(point)) RevertDisplayMode(confirm.Previous);
+            if (DisplayConfirmOk.Contains(point)) KeepDisplayMode();
+            else if (DisplayConfirmCancel.Contains(point)) RevertDisplayMode(confirm.Previous);
             return;
         }
         if (_videoDraft is not { } draft) return;
@@ -147,7 +150,7 @@ public sealed partial class MainForm
 
         // The lopte panel pieces: top, middle strips every 16 pixels, bottom.
         var confirm = _displayConfirm;
-        var bottom = confirm is null ? 384 : 272;
+        var bottom = confirm is null ? 408 : 272;
         Picture(0, 112, VideoPanelTop);
         for (var y = VideoPanelTop + 16; y < bottom; y += 16) Picture(1, 112, y);
         Picture(2, 112, bottom);
@@ -158,8 +161,8 @@ public sealed partial class MainForm
             Centred("KEEP THIS DISPLAY MODE?", 112, 304, 160);
             var seconds = (int)Math.Ceiling(Math.Max(0, pending.Deadline - Environment.TickCount64) / 1000.0);
             Centred($"REVERTING IN {seconds}", 112, 304, 184);
-            Picture(7, VideoPanelOk.X, 224);
-            Picture(8, VideoPanelCancel.X, 224);
+            Picture(7, DisplayConfirmOk.X, DisplayConfirmOk.Y);
+            Picture(8, DisplayConfirmCancel.X, DisplayConfirmCancel.Y);
             return;
         }
         if (_videoDraft is not { } draft) return;
@@ -177,7 +180,7 @@ public sealed partial class MainForm
             }
             Centred(DisplaySettingsEditor.Value(draft, row), 260, 112, y);
         }
-        if (IsNetworkGame || InNetworkLobby || !draft.IsClassicView) Centred("NETWORK GAMES PLAY CLASSIC", 112, 304, 324);
+        if (IsNetworkGame || InNetworkLobby || !draft.IsClassicView) Centred("NETWORK GAMES PLAY CLASSIC", 112, 304, 352);
         Picture(7, VideoPanelOk.X, VideoPanelOk.Y);
         Picture(8, VideoPanelCancel.X, VideoPanelCancel.Y);
     }
