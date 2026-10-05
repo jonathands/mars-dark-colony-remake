@@ -29,6 +29,7 @@ dotnet run --project src/DarkColony.App -- --data "..\Dark Colony" --single-play
 ```
 
 Or double-click [`run-war-lobby-debug.cmd`](run-war-lobby-debug.cmd).
+`run-debug.cmd` passes its arguments on to the port.
 
 If `--data` is omitted, the app checks `DARKCOLONY_DATA` and then the adjacent
 `../Dark Colony` directory. The original files are never copied into this port.
@@ -49,6 +50,24 @@ scale 1 with the classic view. See [docs/DISPLAY.md](docs/DISPLAY.md).
 | `--view classic\|auto\|WxH` | Gameplay view (network games stay classic) |
 | `--vsync on\|off`, `--confine-cursor on\|off` | Vsync and pointer lock |
 | `--display-settings <file>` | Settings file (default `%LOCALAPPDATA%\DarkColonyPort\display.json`) |
+
+The [`run-display`](run-display) folder holds one-click presets. Each one runs
+`run-debug.cmd` with its flags, passes extra arguments on (for example
+`run-display\fullscreen-auto.cmd --single-player-war`), and keeps its own
+settings file in `%LOCALAPPDATA%\DarkColonyPort\presets`. Picture sizes are
+for a 1920x1080 monitor:
+
+| Preset | Gameplay view | On the screen |
+| --- | --- | --- |
+| `windowed-2x` | 640x480 | 1280x960 window, 2x |
+| `fullscreen-classic` | 640x480 | 2x, with black bars |
+| `fullscreen-auto` | 960x540 | 2x |
+| `fullscreen-1280x720` | 1280x720 | 1.5x, sharp-bilinear |
+| `fullscreen-1600x900` | 1600x900 | 1.2x, sharp-bilinear |
+| `fullscreen-1920x1080` | 1920x1080 | 1x, native |
+| `exclusive-640x480` | 640x480 | The monitor switches to 640x480 |
+
+Menus stay 640x480 pictures, and network games always play the classic view.
 
 ## Diagnostics
 

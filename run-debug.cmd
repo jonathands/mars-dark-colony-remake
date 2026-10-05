@@ -11,7 +11,7 @@ if not exist "%DARKCOLONY_GAME_DATA%\dc.exe" (
   exit /b 1
 )
 
-dotnet run --project "src\DarkColony.App\DarkColony.App.csproj" --configuration Debug -- --data "%DARKCOLONY_GAME_DATA%"
+dotnet run --project "src\DarkColony.App\DarkColony.App.csproj" --configuration Debug -- --data "%DARKCOLONY_GAME_DATA%" %*
 set "DARKCOLONY_EXIT=%ERRORLEVEL%"
 
 if not "%DARKCOLONY_EXIT%"=="0" (

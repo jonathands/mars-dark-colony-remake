@@ -180,6 +180,9 @@ The log records those settings (`Display:`). It also writes a
 `Presentation:` line with the output, logical size and destination rectangle
 every time they change.
 
+The `run-display` presets (README) pass these flags with a settings file of
+their own, so a change made in a preset never reaches `display.json`.
+
 ## Automation
 
 - `tools/Run-Port.ps1` and `tools/Run-NetworkPair.ps1` pass
