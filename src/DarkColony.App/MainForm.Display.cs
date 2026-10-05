@@ -25,6 +25,8 @@ public sealed partial class MainForm
     private Rectangle _cursorClip;
     // The monitor whose mode exclusive fullscreen changed, until it is restored.
     private string? _exclusiveDevice;
+    // The gameplay screen: classic, or a larger view with the HUD anchored.
+    private GameplayScreen _gameplayScreen = GameplayScreen.Classic;
 
     /// <summary>The display settings in effect: the settings file plus command-line overrides.</summary>
     public DisplaySettings DisplaySettings
@@ -52,6 +54,8 @@ public sealed partial class MainForm
             SetGameplayCursorVisibility(visible: _screen != MenuScreenId.Gameplay);
             UpdateCursorClip();
         };
+        // An automatic gameplay view follows the output's size.
+        _surface.SizeChanged += (_, _) => UpdateGameplayScreen();
         if (_display.Mode != WindowMode.Windowed) _lastFullscreenMode = _display.Mode;
         // Exclusive fullscreen needs a visible window: start borderless and
         // let OnShown enter it.
@@ -68,9 +72,42 @@ public sealed partial class MainForm
         _display = settings.Sanitized();
         _surface.ScaleMode = _display.Scale;
         _surface.VSync = _display.VSync;
-        _surface.LogicalSize = CurrentLogicalSize();
         ApplyWindowMode();
+        UpdateGameplayScreen();
     }
+
+    /// <summary>
+    /// Picks the gameplay screen from the settings and the output, and the
+    /// logical size of the current screen. Network games always play the
+    /// classic 640x480 (the user's choice: nobody sees more of the map than
+    /// the others). The camera keeps its centre when the view changes.
+    /// </summary>
+    private void UpdateGameplayScreen()
+    {
+        var wanted = IsNetworkGame || InNetworkLobby
+            ? GameplayScreen.Classic
+            : new GameplayScreen(_display.GameplayViewFor(_surface.ClientSize));
+        if (wanted != _gameplayScreen)
+        {
+            var before = _gameplayScreen.WorldArea;
+            var after = wanted.WorldArea;
+            _cameraX += (before.Width - after.Width) / 2;
+            _cameraY += (before.Height - after.Height) / 2;
+            _gameplayScreen = wanted;
+            _gameplayHudLayout = GameplayHudLayout.Load(_installation, wanted);
+            ClampGameplayCamera();
+            RuntimeLog.Info($"Gameplay view {wanted.Size.Width}x{wanted.Size.Height}.");
+        }
+        _surface.LogicalSize = CurrentLogicalSize();
+    }
+
+    /// <summary>Where 640x480 popups sit on the current screen.</summary>
+    private Point PopupOffset => _screen == MenuScreenId.Gameplay ? _gameplayScreen.PopupOffset : Point.Empty;
+
+    private static Point Unshift(Point point, Point offset) => new(point.X - offset.X, point.Y - offset.Y);
+
+    /// <summary>The world part of the gameplay screen: 516x458 at 640x480.</summary>
+    private Size GameplayWorldArea => _gameplayScreen.WorldArea;
 
     protected override void OnShown(EventArgs eventArgs)
     {
@@ -281,8 +318,8 @@ public sealed partial class MainForm
         });
     }
 
-    /// <summary>The size the next frame is drawn at.</summary>
-    private Size CurrentLogicalSize() => DisplaySettings.ClassicSize;
+    /// <summary>The size the next frame is drawn at: the gameplay view on the gameplay screen, 640x480 elsewhere.</summary>
+    private Size CurrentLogicalSize() => _screen == MenuScreenId.Gameplay && _video is null ? _gameplayScreen.Size : DisplaySettings.ClassicSize;
 
     /// <summary>
     /// Menus are drawn with the game's own cursor when the picture is not

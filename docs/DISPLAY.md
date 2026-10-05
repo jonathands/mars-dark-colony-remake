@@ -76,6 +76,61 @@ applies in fullscreen only. `--confine-cursor on` extends it to windowed;
 objects and private memory at every step, then closes. It never saves
 settings.
 
+## Expanded gameplay view
+
+The gameplay screen can be larger than 640x480 (`--view WxH`, `--view auto`,
+or the panel's VIEW row). Menus, briefings, the encyclopedia and videos stay
+640x480 pictures, scaled to fit. **Network games always play classic**
+(the user's decision): in the network lobby and a network game the view is
+640x480 whatever the setting.
+
+`GameplayScreen` (presentation library) defines the larger screen.
+
+**Anchoring.** Every HUD point at or right of x 400 moves right by the extra
+width, and every point at or below y 392 moves down by the extra height:
+
+| What | Moves |
+| --- | --- |
+| The right panel (minimap, tabs, command slots) | Right |
+| Its lower block (identity strip, BUILD, days, P7, dial) | Right and down |
+| The message buttons and lower readouts | Down |
+| The message strip | Grows |
+
+`GameplayHudLayout` applies the same rule to every `maine` rectangle, so
+drawing and clicks agree. The minimap keeps its 96x84 size and its
+`0x409c94` transform.
+
+**Picture.** The HUD picture is composed at run time from the player's
+`intrface.gif`; nothing is stored. Each screen pixel takes the picture's
+column and row:
+
+- itself before the split;
+- shifted back after the inserted stretch;
+- in the stretch, a repeated plain band:
+  - columns 200-399: the top border, the black view, and the message strip;
+  - rows 342-391: the left border, the black view, and the empty command
+    column, whose rows are identical in the picture.
+
+**World view.** It is (4, 6, W - 128, H - 32), which is (4,6,512,448) at
+640x480. It replaces every old 516x458 constant:
+
+- drawing, fog, clipping;
+- selection, the actor pick, world clicks;
+- the camera clamp;
+- the minimap's camera rectangle;
+- centring on a start point or a minimap click (the view centre instead of
+  (260,230)).
+
+When the view changes during play, the camera keeps its centre. Scroll
+edges are the larger picture's edges.
+
+**Popups.** OPTIONS and the Video panel are 640x480 popups. A larger view
+centres them: the canvas is translated, and clicks are shifted back.
+
+**Auto view.** The output divided by the largest whole scale that keeps at
+least 640x480: 960x540 at 2x on 1920x1080, 853x480 at 3x on 2560x1440. It
+follows the window when it is resized.
+
 ## Video panel
 
 The Video panel is the port's own. It is drawn with the OPTIONS popup's art
@@ -165,6 +220,16 @@ every time they change.
 - **Borderless:** 1920x1080 shows the 2x picture centred.
   `Test-LiveConstruction -Fullscreen` passes, and a pointer held at the
   right edge scrolls the view.
+
+- **Expanded view:**
+  - `Test-LiveConstruction -View 1280x720 -WindowScale 2` (Human) and
+    `-Fullscreen -View 1920x1080` (Gray) pass, with the HUD clicks anchored;
+  - the human01 campaign mission starts in 1280x720;
+  - OPTIONS → VIDEO opens the centred panel in an auto 960x540 view;
+  - a right click in the anchored minimap centres the view;
+  - a network pair started with `--view 1280x720` plays 640x480, and its
+    lockstep digests agree;
+  - classic gameplay is unchanged, apart from the animated cursor's frame.
 
 Not verified yet:
 

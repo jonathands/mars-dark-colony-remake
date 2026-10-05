@@ -32,7 +32,7 @@ public sealed partial class MainForm
     private void QueueDiagnosticMove(Point point)
     {
         if (_gameplayMap is null || _gameplayPath is null || _scenarioSimulation is null ||
-            _entityCatalog is null || _groundOccupancy is null || _alternateOccupancy is null || point.X >= 516 || point.Y >= 458) return;
+            _entityCatalog is null || _groundOccupancy is null || _alternateOccupancy is null || point.X >= GameplayWorldArea.Width || point.Y >= GameplayWorldArea.Height) return;
         if (_gameplayCommandMode == GameplayCommandMode.AttackTarget)
         {
             var targetActor = FindGameplayActorAt(point, locallyControllableOnly: false);

@@ -207,7 +207,10 @@ player's file.
   - a corrupted file falls back to defaults with a log line;
   - the panel is driven by posted input in a live test.
 
-**Phase 4: expanded gameplay view** (decision 1: not in network games)
+**Phase 4: expanded gameplay view** — done (2026-10-04; decision 1: not in
+network games). `GameplayScreen` anchors at x 400 and y 392 and repeats
+columns 200-399 and rows 342-391. `GameplayHudLayout` moved into the
+presentation library. See `docs/DISPLAY.md`.
 - `GameplayHudLayout` anchoring; the HUD frame composed from `intrface.gif`.
 - A `GameplayView` property replacing every `516`/`458`.
 - Logical sizes: classic, 800x600, 1024x768, 1280x720, 1280x800, 1366x768,

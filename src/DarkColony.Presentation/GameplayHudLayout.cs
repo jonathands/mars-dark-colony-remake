@@ -1,7 +1,7 @@
 using System.Drawing;
 using DarkColony.Engine.Data;
 
-namespace DarkColony.App.Ui;
+namespace DarkColony.Presentation;
 
 /// <summary>
 /// Source-layout identity for the common unit controls in
@@ -9,23 +9,29 @@ namespace DarkColony.App.Ui;
 /// IDs, and mainbut frames together so the gameplay adapter cannot drift into
 /// an unrelated port-only HUD layout.
 /// </summary>
-internal sealed record GameplayHudButton(int UiId, Rectangle Bounds, int Frame, string Label);
-internal sealed record GameplayHudReadout(int UiId, Point Origin, int CharacterCapacity);
+public sealed record GameplayHudButton(int UiId, Rectangle Bounds, int Frame, string Label);
+public sealed record GameplayHudReadout(int UiId, Point Origin, int CharacterCapacity);
 
-internal sealed class GameplayHudLayout
+/// <remarks>
+/// Every rectangle is placed on <see cref="Screen"/>: the authored 640x480
+/// position, anchored to the right and bottom edges of a larger view
+/// (<see cref="GameplayScreen.Anchor(Rectangle)"/>), so drawing and hit tests agree.
+/// </remarks>
+public sealed class GameplayHudLayout
 {
     private readonly InterfaceDefinition? source;
 
-    private GameplayHudLayout(InterfaceDefinition? source)
+    private GameplayHudLayout(InterfaceDefinition? source, GameplayScreen screen)
     {
         this.source = source;
+        Screen = screen;
         BuildTab = Tab(source, 0, 3, "BUILD", new Rectangle(518, 92, 40, 20), 77);
         ResearchTab = Tab(source, 1, 4, "RESEARCH", new Rectangle(557, 92, 41, 20), 78);
         OptionsTab = Tab(source, 2, 5, "OPTIONS", new Rectangle(598, 92, 40, 20), 79);
         // The tab buttons have no picture of their own (frame -1). Pictures
         // 3-5 draw all three tabs as one strip over them; its frame shows
         // which tab is pressed.
-        TabStrip = source?.Controls.TryGetValue(3, out var strip) == true ? ToRectangle(strip.Bounds) : new Rectangle(521, 96, 110, 12);
+        TabStrip = screen.Anchor(source?.Controls.TryGetValue(3, out var strip) == true ? ToRectangle(strip.Bounds) : new Rectangle(521, 96, 110, 12));
         Stop = Button(source, 150, "STOP", new Rectangle(518, 112, 59, 41), 62);
         MoveOnly = Button(source, 33, "MOVE", new Rectangle(518, 153, 59, 41), 63);
         MoveAndAttack = Button(source, 35, "MOVE & ATTACK", new Rectangle(518, 194, 59, 41), 65);
@@ -60,6 +66,9 @@ internal sealed class GameplayHudLayout
         IssuingRefundMessage = Message(source, 183, "Issuing refund");
     }
 
+    /// <summary>The screen the rectangles are placed on.</summary>
+    public GameplayScreen Screen { get; }
+
     public GameplayHudButton Stop { get; }
     public GameplayHudButton BuildTab { get; }
     public GameplayHudButton ResearchTab { get; }
@@ -93,10 +102,10 @@ internal sealed class GameplayHudLayout
     /// Resolves a data-authored production or research gadget by its native UI
     /// ID. The caller owns the explicit fallback for the no-data host path.
     /// </summary>
-    public Rectangle CatalogBounds(int uiId, Rectangle fallback) =>
+    public Rectangle CatalogBounds(int uiId, Rectangle fallback) => Screen.Anchor(
         source?.Controls.TryGetValue(uiId, out var control) == true
             ? ToRectangle(control.Bounds)
-            : fallback;
+            : fallback);
 
     /// <summary>The <c>mainbut</c> frame a production or research gadget draws, if authored.</summary>
     public int? CatalogFrame(int uiId) =>
@@ -109,47 +118,48 @@ internal sealed class GameplayHudLayout
     /// </summary>
     public string? ControlText(int uiId) => source?.LabelFor(uiId);
 
-    public static GameplayHudLayout Load(GameInstallation? installation)
+    public static GameplayHudLayout Load(GameInstallation? installation, GameplayScreen? screen = null)
     {
-        if (installation is null) return new GameplayHudLayout(null);
+        screen ??= GameplayScreen.Classic;
+        if (installation is null) return new GameplayHudLayout(null, screen);
         try
         {
-            return new GameplayHudLayout(InterfaceDefinition.Load(installation.DataFile("intrface", "maine")));
+            return new GameplayHudLayout(InterfaceDefinition.Load(installation.DataFile("intrface", "maine")), screen);
         }
         catch (IOException)
         {
             // The host still exposes its data-location error screen without
             // requiring UI source files to be present.
-            return new GameplayHudLayout(null);
+            return new GameplayHudLayout(null, screen);
         }
         catch (FormatException)
         {
             // Unknown modded interface syntax cannot silently become gameplay
             // behavior. Keep the explicit shipped-layout fallback instead.
-            return new GameplayHudLayout(null);
+            return new GameplayHudLayout(null, screen);
         }
     }
 
-    private static GameplayHudButton Button(InterfaceDefinition? source, int id, string fallbackLabel, Rectangle fallbackBounds, int fallbackFrame)
+    private GameplayHudButton Button(InterfaceDefinition? source, int id, string fallbackLabel, Rectangle fallbackBounds, int fallbackFrame)
     {
         if (source?.Controls.TryGetValue(id, out var control) == true && control.Frame is { } frame)
-            return new GameplayHudButton(id, ToRectangle(control.Bounds), frame, source.LabelFor(id) ?? fallbackLabel);
-        return new GameplayHudButton(id, fallbackBounds, fallbackFrame, fallbackLabel);
+            return new GameplayHudButton(id, Screen.Anchor(ToRectangle(control.Bounds)), frame, source.LabelFor(id) ?? fallbackLabel);
+        return new GameplayHudButton(id, Screen.Anchor(fallbackBounds), fallbackFrame, fallbackLabel);
     }
 
-    private static GameplayHudButton Tab(InterfaceDefinition? source, int controlId, int pictureId, string fallbackLabel, Rectangle fallbackBounds, int fallbackFrame)
+    private GameplayHudButton Tab(InterfaceDefinition? source, int controlId, int pictureId, string fallbackLabel, Rectangle fallbackBounds, int fallbackFrame)
     {
         if (source?.Controls.TryGetValue(controlId, out var control) == true &&
             source.Controls.TryGetValue(pictureId, out var picture) && picture.Frame is { } frame)
-            return new GameplayHudButton(controlId, ToRectangle(control.Bounds), frame, source.LabelFor(controlId) ?? fallbackLabel);
-        return new GameplayHudButton(controlId, fallbackBounds, fallbackFrame, fallbackLabel);
+            return new GameplayHudButton(controlId, Screen.Anchor(ToRectangle(control.Bounds)), frame, source.LabelFor(controlId) ?? fallbackLabel);
+        return new GameplayHudButton(controlId, Screen.Anchor(fallbackBounds), fallbackFrame, fallbackLabel);
     }
 
-    private static GameplayHudReadout Readout(InterfaceDefinition? source, int id, Point fallbackOrigin, int fallbackCapacity)
+    private GameplayHudReadout Readout(InterfaceDefinition? source, int id, Point fallbackOrigin, int fallbackCapacity)
     {
         if (source?.Controls.TryGetValue(id, out var control) == true)
-            return new GameplayHudReadout(id, new Point(control.Bounds.X, control.Bounds.Y), control.Bounds.Width);
-        return new GameplayHudReadout(id, fallbackOrigin, fallbackCapacity);
+            return new GameplayHudReadout(id, Screen.Anchor(new Point(control.Bounds.X, control.Bounds.Y)), control.Bounds.Width);
+        return new GameplayHudReadout(id, Screen.Anchor(fallbackOrigin), fallbackCapacity);
     }
 
     private static string Message(InterfaceDefinition? source, int id, string fallback) =>

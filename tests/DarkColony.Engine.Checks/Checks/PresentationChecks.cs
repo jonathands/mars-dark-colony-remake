@@ -1,4 +1,5 @@
 using System.Drawing;
+using DarkColony.Engine.Data;
 using DarkColony.Presentation;
 using static CheckHelpers;
 
@@ -7,7 +8,62 @@ internal static class PresentationChecks
 {
     public static void Register(CheckSuite suite)
     {
+        var dataPath = suite.DataPath;
         void Check(string name, Action action, CheckTags tags = CheckTags.None) => suite.Add("Presentation", name, tags, action);
+
+        Check("the classic gameplay screen is the original 640x480 layout, unmoved", () =>
+        {
+            var screen = GameplayScreen.Classic;
+            Equal((new Rectangle(4, 6, 512, 448), new Size(516, 458), new Point(260, 230), Point.Empty),
+                (screen.Viewport, screen.WorldArea, screen.ViewCentre, screen.PopupOffset));
+            for (var y = 0; y < 480; y++) if (screen.SourceRow(y) != y) throw new InvalidOperationException($"row {y}");
+            for (var x = 0; x < 640; x++) if (screen.SourceColumn(x) != x) throw new InvalidOperationException($"column {x}");
+            Equal(new Rectangle(519, 6, 96, 84), screen.Anchor(new Rectangle(519, 6, 96, 84)));
+            Equal(true, Throws(() => new GameplayScreen(new Size(639, 480))));
+        });
+
+        Check("a larger gameplay screen anchors the HUD to its edges and repeats plain bands of the picture", () =>
+        {
+            var screen = new GameplayScreen(new Size(1280, 720));
+            Equal((new Size(640, 240), new Rectangle(4, 6, 1152, 688), new Size(1156, 698), new Point(580, 350), new Point(320, 120)),
+                (screen.Extra, screen.Viewport, screen.WorldArea, screen.ViewCentre, screen.PopupOffset));
+            // Minimap and tabs move right; the identity strip, BUILD and P7 also move down;
+            // the message buttons and lower readouts only move down.
+            Equal((new Point(1159, 6), new Point(1161, 96), new Point(1160, 644), new Point(1164, 696), new Point(4, 700), new Point(10, 665)),
+                (screen.Anchor(new Point(519, 6)), screen.Anchor(new Point(521, 96)), screen.Anchor(new Point(520, 404)),
+                 screen.Anchor(new Point(524, 456)), screen.Anchor(new Point(4, 460)), screen.Anchor(new Point(10, 425))));
+            // The picture: itself before the split, shifted after the inserted stretch,
+            // and the band in between, phased to end on the column just before the
+            // split (640 extra columns: the stretch starts at band column 360).
+            Equal((399, 360, 399, 400, 639), (screen.SourceColumn(399), screen.SourceColumn(400), screen.SourceColumn(1039), screen.SourceColumn(1040), screen.SourceColumn(1279)));
+            Equal((391, 391, 392, 479), (screen.SourceRow(391), screen.SourceRow(631), screen.SourceRow(632), screen.SourceRow(719)));
+            for (var x = 400; x < 1040; x++)
+                if (screen.SourceColumn(x) is < 200 or >= 400) throw new InvalidOperationException($"column {x} -> {screen.SourceColumn(x)}");
+            for (var y = 392; y < 632; y++)
+                if (screen.SourceRow(y) is < 342 or >= 392) throw new InvalidOperationException($"row {y} -> {screen.SourceRow(y)}");
+        });
+
+        Check("maine's controls land on the anchored HUD at three screen sizes, clear of the world view", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var maine = InterfaceDefinition.Load(install.DataFile("intrface", "maine"));
+            foreach (var size in new[] { new Size(640, 480), new Size(1280, 720), new Size(1920, 1080) })
+            {
+                var screen = new GameplayScreen(size);
+                var layout = GameplayHudLayout.Load(install, screen);
+                var (dw, dh) = (screen.Extra.Width, screen.Extra.Height);
+                Equal((new Point(518 + dw, 112), new Point(520 + dw, 404 + dh), new Point(50, 462 + dh), new Point(4, 460 + dh), new Point(521 + dw, 96)),
+                    (layout.Stop.Bounds.Location, layout.PanelIdentity.Origin, layout.MessageStatus.Origin, layout.LastMessage.Bounds.Location, layout.TabStrip.Location));
+                Equal(new Rectangle(518 + dw, 112, 59, 41), layout.CatalogBounds(87, Rectangle.Empty));
+                // Every panel gadget right of the view stays right of it and on the screen.
+                foreach (var control in maine.Controls.Values.Where(control => control.Bounds.X >= 516))
+                {
+                    var bounds = screen.Anchor(new Rectangle(control.Bounds.X, control.Bounds.Y, control.Bounds.Width, control.Bounds.Height));
+                    if (bounds.X < screen.Viewport.Right || bounds.Right > size.Width || bounds.Y < 0 || bounds.Y >= size.Height)
+                        throw new InvalidOperationException($"{size.Width}x{size.Height}: control {control.Id} at {bounds}");
+                }
+            }
+        }, CheckTags.Data);
 
         Check("the classic picture on a 640x480 output is drawn 1:1", () =>
         {
@@ -107,6 +163,12 @@ internal static class PresentationChecks
                 (DisplaySettingsEditor.NeedsConfirmation(settings, exclusive), DisplaySettingsEditor.NeedsConfirmation(exclusive, chosen),
                  DisplaySettingsEditor.NeedsConfirmation(chosen, chosen with { VSync = false }), DisplaySettingsEditor.NeedsConfirmation(chosen, borderless)));
         });
+
+        static bool Throws(Action action)
+        {
+            try { action(); return false; }
+            catch (ArgumentOutOfRangeException) { return true; }
+        }
 
         Check("display settings parse their flags, reject bad values and survive a save", () =>
         {

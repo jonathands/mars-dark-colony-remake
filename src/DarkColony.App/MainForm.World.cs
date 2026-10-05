@@ -46,8 +46,8 @@ public sealed partial class MainForm
 
             var firstCellX = Math.Max(0, _cameraX / TerrainRasterizer.TileSize);
             var firstCellY = Math.Max(0, _cameraY / TerrainRasterizer.TileSize);
-            var lastCellX = Math.Min(_gameplayMap.Width - 1, (_cameraX + 516 - 1) / TerrainRasterizer.TileSize);
-            var lastCellY = Math.Min(_gameplayMap.Height - 1, (_cameraY + 458 - 1) / TerrainRasterizer.TileSize);
+            var lastCellX = Math.Min(_gameplayMap.Width - 1, (_cameraX + GameplayWorldArea.Width - 1) / TerrainRasterizer.TileSize);
+            var lastCellY = Math.Min(_gameplayMap.Height - 1, (_cameraY + GameplayWorldArea.Height - 1) / TerrainRasterizer.TileSize);
             for (var cellY = firstCellY; cellY <= lastCellY; cellY++)
             {
                 for (var cellX = firstCellX; cellX <= lastCellX; cellX++)
@@ -131,8 +131,8 @@ public sealed partial class MainForm
             GameplayMinimapBounds.X + (int)Math.Round(_cameraX / (double)worldWidth * GameplayMinimapBounds.Width),
             // The camera is in screen pixels, which run top-down like the minimap.
             GameplayMinimapBounds.Y + (int)Math.Round(_cameraY / (double)worldHeight * GameplayMinimapBounds.Height),
-            Math.Max(1, (int)Math.Ceiling(516d / worldWidth * GameplayMinimapBounds.Width)),
-            Math.Max(1, (int)Math.Ceiling(458d / worldHeight * GameplayMinimapBounds.Height)));
+            Math.Max(1, (int)Math.Ceiling(GameplayWorldArea.Width / (double)worldWidth * GameplayMinimapBounds.Width)),
+            Math.Max(1, (int)Math.Ceiling(GameplayWorldArea.Height / (double)worldHeight * GameplayMinimapBounds.Height)));
         var camera = Color.FromArgb(240, 225, 245, 210);
         if (_activeCanvas is { } foreground)
         {
@@ -151,7 +151,7 @@ public sealed partial class MainForm
     /// </param>
     private static Bitmap BuildGameplayMinimap(TerrainMap map, BtsTileset tileset, Func<CellCoordinate, bool>? explored)
     {
-        var image = new Bitmap(GameplayMinimapBounds.Width, GameplayMinimapBounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        var image = new Bitmap(ClassicMinimapBounds.Width, ClassicMinimapBounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         for (var y = 0; y < image.Height; y++)
         for (var x = 0; x < image.Width; x++)
         {
@@ -235,8 +235,8 @@ public sealed partial class MainForm
                             .FirstOrDefault();
             if (start is { } point)
             {
-                _cameraX = point.X * 32 - 258;
-                _cameraY = CellPixelTop(point.Z) + 32 - 229;
+                _cameraX = point.X * 32 - GameplayWorldArea.Width / 2;
+                _cameraY = CellPixelTop(point.Z) + 32 - GameplayWorldArea.Height / 2;
             }
             ClampGameplayCamera();
             _status = $"Loaded {scenario.Directory}\\{scenario.Name}: {_scenarioSimulation.Actors.Count} actors / {missionScript?.Triggers.Count ?? 0} triggers.";
@@ -254,13 +254,13 @@ public sealed partial class MainForm
         if (!_showPathRegions || _gameplayPath is null) return;
         var canvas = _activeCanvas;
         var state = canvas is null ? graphics.Save() : null;
-        if (canvas is null) graphics.SetClip(new Rectangle(0, 0, 516, 458));
+        if (canvas is null) graphics.SetClip(new Rectangle(Point.Empty, GameplayWorldArea));
         using var zero = canvas is null ? new SolidBrush(Color.FromArgb(65, 220, 35, 35)) : null;
         using var boundary = canvas is null ? new Pen(Color.FromArgb(150, 40, 220, 230)) : null;
         var firstX = Math.Max(0, _cameraX / 32);
         var firstRow = Math.Max(0, _cameraY / 32);
-        var lastX = Math.Min(_gameplayPath.Width - 1, (_cameraX + 515) / 32);
-        var lastRow = Math.Min(_gameplayPath.Height - 1, (_cameraY + 457) / 32);
+        var lastX = Math.Min(_gameplayPath.Width - 1, (_cameraX + GameplayWorldArea.Width - 1) / 32);
+        var lastRow = Math.Min(_gameplayPath.Height - 1, (_cameraY + GameplayWorldArea.Height - 1) / 32);
         for (var row = firstRow; row <= lastRow; row++)
         for (var x = firstX; x <= lastX; x++)
         {
@@ -306,7 +306,7 @@ public sealed partial class MainForm
             return;
         }
         var state = graphics.Save();
-        graphics.SetClip(new Rectangle(0, 0, 516, 458));
+        graphics.SetClip(new Rectangle(Point.Empty, GameplayWorldArea));
         using var unclaimed = new Pen(Color.FromArgb(220, 230, 185, 40), 2);
         using var claimed = new Pen(Color.FromArgb(220, 65, 230, 110), 2);
         using var text = new SolidBrush(Color.FromArgb(220, 230, 185, 40));
@@ -327,12 +327,12 @@ public sealed partial class MainForm
         // explored memory). Hostile units outside current sight are hidden by
         // the actor pass, not here.
         var state = _activeCanvas is null ? graphics.Save() : null;
-        if (_activeCanvas is null) graphics.SetClip(new Rectangle(0, 0, 516, 458));
+        if (_activeCanvas is null) graphics.SetClip(new Rectangle(Point.Empty, GameplayWorldArea));
         using var unseen = _activeCanvas is null ? new SolidBrush(Color.Black) : null;
         var firstX = Math.Max(0, _cameraX / 32);
         var firstRow = Math.Max(0, _cameraY / 32);
-        var lastX = Math.Min(_gameplayMap.Width - 1, (_cameraX + 515) / 32);
-        var lastRow = Math.Min(_gameplayMap.Height - 1, (_cameraY + 457) / 32);
+        var lastX = Math.Min(_gameplayMap.Width - 1, (_cameraX + GameplayWorldArea.Width - 1) / 32);
+        var lastRow = Math.Min(_gameplayMap.Height - 1, (_cameraY + GameplayWorldArea.Height - 1) / 32);
         for (var row = firstRow; row <= lastRow; row++)
         for (var x = firstX; x <= lastX; x++)
         {
@@ -356,7 +356,7 @@ public sealed partial class MainForm
         // transport/drop animation itself has not been recovered yet.
         var canvas = _activeCanvas;
         var state = canvas is null ? graphics.Save() : null;
-        if (canvas is null) graphics.SetClip(new Rectangle(0, 0, 516, 458));
+        if (canvas is null) graphics.SetClip(new Rectangle(Point.Empty, GameplayWorldArea));
         var fillColor = valid ? Color.FromArgb(70, 65, 230, 105) : Color.FromArgb(80, 235, 65, 50);
         var borderColor = valid ? Color.FromArgb(235, 80, 245, 120) : Color.FromArgb(235, 250, 80, 55);
         using var fill = canvas is null ? new SolidBrush(fillColor) : null;
@@ -395,7 +395,7 @@ public sealed partial class MainForm
         cells = [];
         valid = false;
         if (_pendingBuildingItemId is not { } itemId || _gameplayPointer is not { } pointer ||
-            pointer.X is < 0 or >= 516 || pointer.Y is < 0 or >= 458 ||
+            pointer.X < 0 || pointer.X >= GameplayWorldArea.Width || pointer.Y < 0 || pointer.Y >= GameplayWorldArea.Height ||
             _dependencyCatalog?.TryGet(itemId, out item) != true || _buildingFootprints is null ||
             !_buildingFootprints.TryResolveBuildingEntity(item.BuildingFaction!.Value, item.BuildingVariant!.Value, item.BuildingSlot!.Value, out entityId))
             return false;
@@ -416,8 +416,8 @@ public sealed partial class MainForm
     private void ClampGameplayCamera()
     {
         if (_gameplayMap is null) return;
-        _cameraX = Math.Clamp(_cameraX, 0, Math.Max(0, _gameplayMap.Width * 32 - 516));
-        _cameraY = Math.Clamp(_cameraY, 0, Math.Max(0, _gameplayMap.Height * 32 - 458));
+        _cameraX = Math.Clamp(_cameraX, 0, Math.Max(0, _gameplayMap.Width * 32 - GameplayWorldArea.Width));
+        _cameraY = Math.Clamp(_cameraY, 0, Math.Max(0, _gameplayMap.Height * 32 - GameplayWorldArea.Height));
     }
 
     /// <summary>
@@ -478,7 +478,7 @@ public sealed partial class MainForm
             _weaponEffects ??= _weaponCatalog is null ? null : WeaponEffectCatalog.Build(_weaponCatalog, _installation.DataFile("animate"),
                 name => File.Exists(_installation.DataFile("sprites", $"{name}.spr")) || File.Exists(_installation.DataFile("intrface", $"{name}.spr")));
             var state = graphics.Save();
-            graphics.SetClip(new Rectangle(0, 0, 516, 458));
+            graphics.SetClip(new Rectangle(Point.Empty, GameplayWorldArea));
             var targetedInstanceIds = _scenarioSimulation.Actors
                 .Where(actor => !actor.IsDestroyed && actor.AttackTargetInstanceId is not null)
                 .Select(actor => actor.AttackTargetInstanceId!.Value)
@@ -822,7 +822,7 @@ public sealed partial class MainForm
         // 0x4337c8 picks the cursor from the same 3x3 edge table as the
         // scroll timers (gameplay +0xb8), over the HUD too.
         if (GameplayEdgeCursorAnimation(ScrollEdges(pointer)) is { } edge) return edge;
-            if (pointer.X is >= 0 and < 516 && pointer.Y is >= 0 and < 458)
+            if (pointer.X >= 0 && pointer.X < GameplayWorldArea.Width && pointer.Y >= 0 && pointer.Y < GameplayWorldArea.Height)
             {
                 if (_gameplayCommandMode is GameplayCommandMode.AttackTarget or GameplayCommandMode.GroundSpecialTarget) return "ATTACK";
                 if (_gameplayCommandMode is GameplayCommandMode.Waypoints or GameplayCommandMode.HarvestVent or GameplayCommandMode.PlaceBuilding)

@@ -272,12 +272,12 @@ public sealed partial class MainForm
         if (_video is not null) return;
         if (VideoPanelOpen)
         {
-            if (eventArgs.Button == MouseButtons.Left) HandleVideoPanelClick(eventArgs.Location);
+            if (eventArgs.Button == MouseButtons.Left) HandleVideoPanelClick(Unshift(eventArgs.Location, PopupOffset));
             return;
         }
         if (_optionsDraft is not null)
         {
-            if (eventArgs.Button == MouseButtons.Left) HandleGameOptionsClick(eventArgs.Location);
+            if (eventArgs.Button == MouseButtons.Left) HandleGameOptionsClick(Unshift(eventArgs.Location, PopupOffset));
             return;
         }
         if (_screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left && (!InNetworkLobby || IsNetworkHost) &&
@@ -307,7 +307,7 @@ public sealed partial class MainForm
             _surface.Invalidate();
             return;
         }
-        if (_screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left && eventArgs.X < 516 && eventArgs.Y < 458)
+        if (_screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Left && eventArgs.X < GameplayWorldArea.Width && eventArgs.Y < GameplayWorldArea.Height)
         {
             _selectionDragStart = eventArgs.Location;
             _selectionDragCurrent = eventArgs.Location;
@@ -318,7 +318,7 @@ public sealed partial class MainForm
                 ModifierKeys.HasFlag(Keys.Alt));
             _surface.Capture = true;
         }
-        if (_screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Middle && eventArgs.X < 516 && eventArgs.Y < 458)
+        if (_screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Middle && eventArgs.X < GameplayWorldArea.Width && eventArgs.Y < GameplayWorldArea.Height)
         {
             _mapDragStart = eventArgs.Location;
             _mapDragCamera = new Point(_cameraX, _cameraY);
@@ -436,11 +436,13 @@ public sealed partial class MainForm
         if (_gameplayMap is null) return;
         // The native camera is the view's centre (0x40a73b draws 16x14 cells
         // from 8 left and 7 below it); the 512x448 view starts at (4,6), so
-        // the centre is screen pixel (260,230). Our camera is the world pixel
-        // at screen (0,0), with rows running down from the top of the map.
+        // the centre is screen pixel (260,230), or the larger view's centre.
+        // Our camera is the world pixel at screen (0,0), with rows running
+        // down from the top of the map.
         var (x, z) = MinimapWorldPoint(point);
-        SetGameplayCamera(x * TerrainRasterizer.TileSize / 256 - 260,
-            ((_gameplayMap.Height << 8) - z) * TerrainRasterizer.TileSize / 256 - 230);
+        var centre = _gameplayScreen.ViewCentre;
+        SetGameplayCamera(x * TerrainRasterizer.TileSize / 256 - centre.X,
+            ((_gameplayMap.Height << 8) - z) * TerrainRasterizer.TileSize / 256 - centre.Y);
     }
 
     // 0x409c94 → 0x4092ac: a primary click on the minimap makes the point a
@@ -519,7 +521,7 @@ public sealed partial class MainForm
 
     private void SelectGameplayActor(Point point, bool toggle, UnitSelectionLayerFilter layerFilter)
     {
-        if (_scenarioSimulation is null || _entityCatalog is null || _entityAnimations is null || point.X >= 516 || point.Y >= 458)
+        if (_scenarioSimulation is null || _entityCatalog is null || _entityAnimations is null || point.X >= GameplayWorldArea.Width || point.Y >= GameplayWorldArea.Height)
         {
             _selectedEntityInstanceIds.Clear();
             _status = "Selection cleared.";
@@ -549,7 +551,7 @@ public sealed partial class MainForm
         bool locallyControllableOnly,
         UnitSelectionLayerFilter? selectionLayerFilter = null)
     {
-        if (_scenarioSimulation is null || _entityCatalog is null || _entityAnimations is null || point.X >= 516 || point.Y >= 458) return null;
+        if (_scenarioSimulation is null || _entityCatalog is null || _entityAnimations is null || point.X >= GameplayWorldArea.Width || point.Y >= GameplayWorldArea.Height) return null;
         WorldEntity? hit = null;
         // Same painter's order as drawing: the last hit is the topmost sprite.
         foreach (var entity in GameplayEntities().OrderByDescending(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
@@ -622,7 +624,7 @@ public sealed partial class MainForm
     {
         if (_scenarioSimulation is null || _entityCatalog is null) return;
         var entityIds = NativeUnitSelectionHotkeys.EntityIds(functionKey);
-        var viewport = new Rectangle(0, 0, 516, 458);
+        var viewport = new Rectangle(Point.Empty, GameplayWorldArea);
         var candidates = GameplayEntities()
             .Where(IsVisibleToLocalTeam)
             .Where(entity => GameplayDefinition(entity) is { } definition && entityIds.Contains(definition.Id))
@@ -684,7 +686,8 @@ public sealed partial class MainForm
             _status = "Game options tab.";
             return true;
         }
-        if (point.X < 518 || point.X >= 638 || point.Y < 112 || point.Y >= 399) return false;
+        var commandArea = _gameplayScreen.Anchor(Rectangle.FromLTRB(518, 112, 638, 399));
+        if (!commandArea.Contains(point)) return false;
         if (_gameplayHudTab == GameplayHudTab.Options)
         {
             if (_showAlliesPanel)

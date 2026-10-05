@@ -29,6 +29,8 @@ public sealed class GameCanvas
     private readonly Dictionary<int, GpuImage> _solidImages = [];
     private readonly Dictionary<(int Width, int Height, int Color, int Thickness, bool Filled), GpuImage> _ellipses = [];
 
+    private Point _origin;
+
     public IReadOnlyList<SpriteCommand> Commands => _commands;
     public IReadOnlyList<SpriteCommand> ForegroundCommands => _foregroundCommands;
 
@@ -36,19 +38,39 @@ public sealed class GameCanvas
     {
         _commands.Clear();
         _foregroundCommands.Clear();
+        _origin = Point.Empty;
+    }
+
+    /// <summary>
+    /// Moves everything drawn until the result is disposed by
+    /// <paramref name="offset"/>: a 640x480 popup is centred on a larger view.
+    /// </summary>
+    public Translation Translate(Point offset)
+    {
+        var previous = _origin;
+        _origin = new Point(_origin.X + offset.X, _origin.Y + offset.Y);
+        return new Translation(this, previous);
+    }
+
+    public readonly struct Translation(GameCanvas canvas, Point previous) : IDisposable
+    {
+        public void Dispose() => canvas._origin = previous;
     }
 
     public void Draw(GpuImage image, int x, int y) =>
-        _commands.Add(new SpriteCommand(image, new Rectangle(x, y, image.Width, image.Height)));
+        _commands.Add(new SpriteCommand(image, new Rectangle(x + _origin.X, y + _origin.Y, image.Width, image.Height)));
 
     public void Draw(GpuImage image, Rectangle destination) =>
-        _commands.Add(new SpriteCommand(image, destination));
+        _commands.Add(new SpriteCommand(image, Shifted(destination)));
 
     public void DrawForeground(GpuImage image, int x, int y) =>
-        _foregroundCommands.Add(new SpriteCommand(image, new Rectangle(x, y, image.Width, image.Height)));
+        _foregroundCommands.Add(new SpriteCommand(image, new Rectangle(x + _origin.X, y + _origin.Y, image.Width, image.Height)));
 
     public void DrawForeground(GpuImage image, Rectangle destination) =>
-        _foregroundCommands.Add(new SpriteCommand(image, destination));
+        _foregroundCommands.Add(new SpriteCommand(image, Shifted(destination)));
+
+    private Rectangle Shifted(Rectangle destination) =>
+        _origin.IsEmpty ? destination : new Rectangle(destination.X + _origin.X, destination.Y + _origin.Y, destination.Width, destination.Height);
 
     public void Fill(Rectangle destination, Color color)
     {

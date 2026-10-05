@@ -1,5 +1,6 @@
 using DarkColony.App.Diagnostics;
 using DarkColony.App.Ui;
+using DarkColony.Presentation;
 using DarkColony.App.Rendering;
 using DarkColony.Engine.Assets;
 using DarkColony.Engine.Combat;
@@ -24,19 +25,22 @@ namespace DarkColony.App;
 public sealed partial class MainForm
 {
     // The world view: 0x41ec1e gives the gameplay view object the rectangle
-    // (4,6) 512x448. The HUD picture's black is see-through only here; the
-    // panels' black (the empty command slots, for example) stays black.
-    private static readonly Rectangle GameplayViewport = new(4, 6, 512, 448);
+    // (4,6) 512x448, growing with a larger view. The HUD picture's black is
+    // see-through only here; the panels' black (the empty command slots, for
+    // example) stays black.
+    private Rectangle GameplayViewport => _gameplayScreen.Viewport;
 
     private void DrawGameplayHud(Graphics graphics, Image hud)
     {
         if (_activeCanvas is { } canvas)
         {
-            canvas.Fill(new Rectangle(0, 0, 640, GameplayViewport.Top), Color.Black);
-            canvas.Fill(new Rectangle(0, GameplayViewport.Bottom, 640, 480 - GameplayViewport.Bottom), Color.Black);
-            canvas.Fill(new Rectangle(0, GameplayViewport.Top, GameplayViewport.Left, GameplayViewport.Height), Color.Black);
-            canvas.Fill(new Rectangle(GameplayViewport.Right, GameplayViewport.Top, 640 - GameplayViewport.Right, GameplayViewport.Height), Color.Black);
-            canvas.Draw(GpuColorKeyImage("gameplay-hud", hud), new Rectangle(0, 0, 640, 480));
+            var size = _gameplayScreen.Size;
+            var view = GameplayViewport;
+            canvas.Fill(new Rectangle(0, 0, size.Width, view.Top), Color.Black);
+            canvas.Fill(new Rectangle(0, view.Bottom, size.Width, size.Height - view.Bottom), Color.Black);
+            canvas.Fill(new Rectangle(0, view.Top, view.Left, view.Height), Color.Black);
+            canvas.Fill(new Rectangle(view.Right, view.Top, size.Width - view.Right, view.Height), Color.Black);
+            canvas.Draw(GameplayHudImage(hud), new Rectangle(Point.Empty, size));
             return;
         }
         using var attributes = new ImageAttributes();
@@ -55,6 +59,32 @@ public sealed partial class MainForm
     // UI 79's texts for this frame; DrawGameplayPanelIdentityStrip picks one.
     private string? _panelIdentityText;
     private string? _hoveredHudText;
+
+    /// <summary>
+    /// The HUD picture for the current screen: <c>intrface.gif</c> itself at
+    /// 640x480, or composed from it for a larger view, each pixel taken from
+    /// the column and row <see cref="GameplayScreen"/> maps it to.
+    /// </summary>
+    private GpuImage GameplayHudImage(Image hud)
+    {
+        var classic = GpuColorKeyImage("gameplay-hud", hud);
+        var screen = _gameplayScreen;
+        if (screen.IsClassic) return classic;
+        var key = $"gameplay-hud-{screen.Size.Width}x{screen.Size.Height}";
+        if (_gpuColorKeyImages.TryGetValue(key, out var cached)) return cached;
+        var (width, height) = (screen.Size.Width, screen.Size.Height);
+        var columns = Enumerable.Range(0, width).Select(screen.SourceColumn).ToArray();
+        var rgba = new byte[width * height * 4];
+        for (var y = 0; y < height; y++)
+        {
+            var sourceRow = screen.SourceRow(y) * classic.Width;
+            for (var x = 0; x < width; x++)
+                Buffer.BlockCopy(classic.Rgba, (sourceRow + columns[x]) * 4, rgba, (y * width + x) * 4, 4);
+        }
+        var image = new GpuImage(width, height, rgba);
+        _gpuColorKeyImages[key] = image;
+        return image;
+    }
 
     private void DrawGameplayUnitHud(Graphics graphics)
     {
@@ -79,7 +109,7 @@ public sealed partial class MainForm
             // maine in_text 234: the original HUD's days counter at 613,433.
             // 0x43abb0 formats it with "%3.3d" ("000"); remap 0 draws it red.
             DrawMenuText(graphics, _scenarioSimulation.DayNight.CompletedDays.ToString("000", CultureInfo.InvariantCulture),
-                new Rectangle(604, 427, 30, 14), remap: Color.FromArgb(255, 31, 31));
+                _gameplayScreen.Anchor(new Rectangle(604, 427, 30, 14)), remap: Color.FromArgb(255, 31, 31));
         }
         var inspected = SelectedInspectableGameplayEntities().ToArray();
         var selected = inspected.Where(IsLocallyControllable).ToArray();
@@ -622,12 +652,15 @@ public sealed partial class MainForm
         SetGameplayPanelIdentity("ALLIES");
     }
 
-    private static Rectangle[] AllianceSlots() =>
+    private Rectangle[] AllianceSlots() =>
     [
-        new(518, 112, 59, 41), new(577, 112, 59, 41),
-        new(518, 153, 59, 41), new(577, 153, 59, 41),
-        new(518, 194, 59, 41), new(577, 194, 59, 41),
-        new(518, 235, 59, 41), new(577, 235, 59, 41),
+        .. new Rectangle[]
+        {
+            new(518, 112, 59, 41), new(577, 112, 59, 41),
+            new(518, 153, 59, 41), new(577, 153, 59, 41),
+            new(518, 194, 59, 41), new(577, 194, 59, 41),
+            new(518, 235, 59, 41), new(577, 235, 59, 41),
+        }.Select(_gameplayScreen.Anchor),
     ];
 
     private IReadOnlyList<int> AllianceTargetTeams() => _scenarioSimulation?.TeamResources.Keys

@@ -11,7 +11,9 @@ param(
     # the port's "Presentation:" log line, so the steps stay in game coordinates.
     [ValidateRange(1, 8)] [int] $WindowScale = 1,
     [ValidateSet('integer', 'fit', 'stretch')] [string] $ScaleMode = 'integer',
-    [switch] $Fullscreen
+    [switch] $Fullscreen,
+    # The gameplay view: classic, auto or WxH. HUD clicks follow the anchored HUD.
+    [string] $View = 'classic'
 )
 
 <#+
@@ -49,7 +51,8 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $exe = Join-Path $repo "src\DarkColony.App\bin\$Configuration\net8.0-windows\DarkColony.App.exe"
 if (-not (Test-Path $exe)) { throw "Build the port first: $exe is missing." }
-$name = "live-$($Race.ToLowerInvariant())" + $(if ($Fullscreen) { '-fullscreen' } elseif ($WindowScale -ne 1 -or $ScaleMode -ne 'integer') { "-x$WindowScale-$ScaleMode" } else { '' })
+$name = "live-$($Race.ToLowerInvariant())" + $(if ($Fullscreen) { '-fullscreen' } elseif ($WindowScale -ne 1 -or $ScaleMode -ne 'integer') { "-x$WindowScale-$ScaleMode" } else { '' }) +
+    $(if ($View -ne 'classic') { "-view-$View" } else { '' })
 $logDirectory = Join-Path $repo 'artifacts\logs'
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 $log = Join-Path $logDirectory "$name.log"
@@ -59,7 +62,7 @@ $capture = Join-Path $repo 'capture-port-window.ps1'
 $start = [Diagnostics.ProcessStartInfo]::new($exe)
 $start.WorkingDirectory = $repo
 $start.UseShellExecute = $false
-$display = @($(if ($Fullscreen) { '--fullscreen' } else { '--windowed' }), '--window-scale', "$WindowScale", '--scale-mode', $ScaleMode, '--view', 'classic', '--confine-cursor', 'off')
+$display = @($(if ($Fullscreen) { '--fullscreen' } else { '--windowed' }), '--window-scale', "$WindowScale", '--scale-mode', $ScaleMode, '--view', $View, '--confine-cursor', 'off')
 foreach ($argument in @('--data', (Resolve-Path $DataPath).Path, '--no-dialogs', '--no-music', '--no-video',
         '--single-player-war', '--grant-p7', "$GrantP7", '--log', $log) + $display) {
     $start.ArgumentList.Add($argument)
@@ -86,6 +89,13 @@ try {
     if ($Race -eq 'Gray') { Send @('click:217,29', 'wait:300') }
     Shot '00-lobby'
     Send @('click:574,463', 'wait:3000')
+    # A larger gameplay view moves the HUD right and down
+    # (GameplayScreen.Anchor: x >= 400 and y >= 392 follow the edges).
+    $presentation = Select-String -Path $log -Pattern 'Presentation: .*logical (\d+)x(\d+)' | Select-Object -Last 1
+    $extraWidth = [int]$presentation.Matches[0].Groups[1].Value - 640
+    $extraHeight = [int]$presentation.Matches[0].Groups[2].Value - 480
+    Write-Output "gameplay view: $($extraWidth + 640)x$($extraHeight + 480)"
+    function Hud([int] $x, [int] $y) { "click:$($x + $(if ($x -ge 400) { $extraWidth } else { 0 })),$($y + $(if ($y -ge 392) { $extraHeight } else { 0 }))" }
     # Team 4's view starts at (87,14); its city is at (90,21).
     Send (@(1..12 | ForEach-Object { 'key:Up' }) + @(1..4 | ForEach-Object { 'key:Right' }) + @('wait:500'))
     Shot '01-start'
@@ -94,12 +104,12 @@ try {
     # science lab, robot factory, research center. The level-2 lab and
     # factory replace their level-1 button.
     $buildings = [ordered]@{
-        '02-barracks' = 'click:606,255'
-        '03-science-lab' = 'click:606,296'
-        '04-robot-factory' = 'click:606,337'
-        '05-science-lab-2' = 'click:606,296'
-        '06-robot-factory-2' = 'click:606,337'
-        '07-research-center' = 'click:606,378'
+        '02-barracks' = Hud 606 255
+        '03-science-lab' = Hud 606 296
+        '04-robot-factory' = Hud 606 337
+        '05-science-lab-2' = Hud 606 296
+        '06-robot-factory-2' = Hud 606 337
+        '07-research-center' = Hud 606 378
     }
     foreach ($step in $buildings.Keys) {
         Send @($buildings[$step], 'move:258,240', 'wait:1500')
@@ -107,8 +117,8 @@ try {
     }
 
     # The troop buttons: the left column top to bottom, then the right column's first two.
-    $troops = @('click:547,132', 'click:547,173', 'click:547,214', 'click:547,255', 'click:547,296',
-        'click:547,337', 'click:547,378', 'click:606,132', 'click:606,173')
+    $troops = @((Hud 547 132), (Hud 547 173), (Hud 547 214), (Hud 547 255), (Hud 547 296),
+        (Hud 547 337), (Hud 547 378), (Hud 606 132), (Hud 606 173))
     foreach ($troop in $troops) { Send @($troop, 'wait:400') }
     # Rest the pointer inside the map view: left at the HUD's edge it would scroll the view.
     Send @('move:258,240')

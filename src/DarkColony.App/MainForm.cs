@@ -1,5 +1,6 @@
 using DarkColony.App.Diagnostics;
 using DarkColony.App.Ui;
+using DarkColony.Presentation;
 using DarkColony.App.Rendering;
 using DarkColony.Engine.Assets;
 using DarkColony.Engine.Combat;
@@ -57,7 +58,7 @@ public sealed partial class MainForm : Form
     // player's selected faction in the decoded SCN roster.
     private int _localPlayerTeam;
     private readonly GameInstallation? _installation;
-    private readonly GameplayHudLayout _gameplayHudLayout;
+    private GameplayHudLayout _gameplayHudLayout;
     private readonly WorldSimulation _world = new();
     private FixedStepClock _clock;
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 15 };
@@ -314,6 +315,7 @@ public sealed partial class MainForm : Form
         _timer.Tick += (_, _) =>
         {
             UpdateDisplayConfirmation();
+            _surface.LogicalSize = CurrentLogicalSize();
             if (_video is not null)
             {
                 AdvanceVideo();
@@ -457,6 +459,8 @@ public sealed partial class MainForm : Form
         };
         _surface.Cursor = screen == MenuScreenId.Gameplay ? Cursors.Cross : Cursors.Hand;
         SetGameplayCursorVisibility(visible: screen != MenuScreenId.Gameplay);
+        UpdateCursorClip();
+        UpdateGameplayScreen();
         _surface.Invalidate();
     }
 
@@ -482,9 +486,13 @@ public sealed partial class MainForm : Form
             DrawGameplayMinimap(graphics);
             DrawGameplayUnitHud(graphics);
             DrawGameplayPanelIdentityStrip(graphics);
-            DrawGameOptions(graphics);
-            DrawOptionsVideoButton(graphics);
-            DrawVideoPanel(graphics);
+            // The 640x480 popups are centred on a larger view.
+            using (canvas.Translate(PopupOffset))
+            {
+                DrawGameOptions(graphics);
+                DrawOptionsVideoButton(graphics);
+                DrawVideoPanel(graphics);
+            }
             DrawGameplayCursor(graphics);
             // Keep the native gameplay viewport clear. The previous
             // developer-control panel covered the upper-left map area, which
@@ -527,8 +535,10 @@ public sealed partial class MainForm : Form
 
     // `0x409c94` subtracts 0x207 from pointer X and 0x5a from pointer Y,
     // then divides against 0x60 by 0x54. Those operands identify this exact
-    // native 96x84 interior, inside the top-right HUD well.
-    private static readonly Rectangle GameplayMinimapBounds = new(519, 6, 96, 84);
+    // native 96x84 interior, inside the top-right HUD well; a larger view
+    // anchors it to the right edge.
+    private static readonly Rectangle ClassicMinimapBounds = new(519, 6, 96, 84);
+    private Rectangle GameplayMinimapBounds => _gameplayScreen.Anchor(ClassicMinimapBounds);
 
     // `maine` group 84 (Human) and group 53 (Gray) combine their troop
     // controls with the building group. The two advanced Sci-Pod/Robo-Ftr
