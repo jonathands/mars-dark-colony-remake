@@ -119,15 +119,17 @@ public sealed record SinglePlayerWarLaunch(
     public ScenarioDefinition ApplyTo(ScenarioDefinition scenario)
     {
         ArgumentNullException.ThrowIfNull(scenario);
-        if (Seats is { } seats) return WarSession.Apply(scenario, seats, Settings.CommanderRank);
-        return scenario.WithSelectedWarRoster(LocalTeamId, Race, Settings.CommanderRank).WithComputerOpponents(LocalTeamId);
+        var options = WarSessionOptions.From(Settings);
+        if (Seats is { } seats) return WarSession.Apply(scenario, seats, Settings.CommanderRank).WithWarOptions(options);
+        return scenario.WithSelectedWarRoster(LocalTeamId, Race, Settings.CommanderRank).WithComputerOpponents(LocalTeamId).WithWarOptions(options);
     }
 }
 
 /// <summary>
 /// Native Single Player War lobby settings, retained with the launch selection.
-/// Values are UI-confirmed; their gameplay application is intentionally not
-/// inferred until the executable's scenario-start handoff is decoded.
+/// The session start hands all but the commander rank to the simulation as
+/// players 1-6 stat 0 (<see cref="WarSessionOptions"/>); the rank picks the
+/// local commander.
 /// </summary>
 public readonly record struct SinglePlayerWarSettings(
     int StorageCells,

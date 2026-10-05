@@ -306,6 +306,37 @@ internal static class WarChecks
             Equal("1,3", string.Join(',', cityTeams));
         }, CheckTags.Data);
 
+        Check("the War lobby's options become players 1-6 stat 0 and scale every vent's rate and money", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var rules = SimulationRules.Load(install);
+            var catalog = SinglePlayerWarCatalog.Load(install);
+            WarLobbyRow[] rows =
+            [
+                new(WarSeatKind.Human, 0, 0), new(WarSeatKind.Computer, 1),
+                new(WarSeatKind.None, 0), new(WarSeatKind.None, 1), new(WarSeatKind.None, 0),
+                new(WarSeatKind.None, 1), new(WarSeatKind.None, 0), new(WarSeatKind.None, 1),
+            ];
+            var file = install.DataFile("scenario", "mplayer", "j4play01.scn");
+            var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+            ScenarioSimulation Start(SinglePlayerWarSettings settings)
+            {
+                Equal(true, catalog.Scenarios.Single(war => war.Stem == "j4play01").TryCreateSession(rows, 0, settings, rules.RandomTable, out var launch));
+                return ScenarioSimulation.Create(launch.ApplyTo(ScenarioDefinition.Load(file)),
+                    PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height), rules, MissionScript.LoadForScenario(file), map);
+            }
+            var standard = Start(SinglePlayerWarSettings.Default);
+            Equal("256 256 0 0 0 0", string.Join(' ', Enumerable.Range(1, 6).Select(player => standard.PlayerStatistic(player, 0))));
+
+            // Flow 50%, quantity 200%, both vent options, storage 2, artifacts 1.
+            var custom = Start(new SinglePlayerWarSettings(2, 1, true, true, 200, 50, 0));
+            Equal("128 512 1 1 2 1", string.Join(' ', Enumerable.Range(1, 6).Select(player => custom.PlayerStatistic(player, 0))));
+            // The vent loader: rate x stat (1,0) >> 8, money x stat (2,0) >> 8.
+            foreach (var (normal, scaled) in standard.PetraVents.Zip(custom.PetraVents))
+                Equal((normal.Rate / 2, normal.InitialReservoir * 2), (scaled.Rate, scaled.InitialReservoir));
+            Equal(true, standard.PetraVents.Any(vent => vent.Rate > 0));
+        }, CheckTags.Data);
+
         Check("a War ends once every player still in it is allied both ways with the first, units and empty positions included", () =>
         {
             var install = GameInstallation.Open(dataPath);

@@ -19,7 +19,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 11 | A marine hit by a Gray beyond its own range does not respond | open |
 | 12 | Esc in a game should ask for confirmation | done: the original's lqce dialog, also for QUIT and Q |
 | 13 | A Single Player War is never won after destroying everything | done: the native War end (0x40DEAC); units and empty positions' placed units count |
-| 14 | P7 multipliers in Single Player War (and probably multiplayer) do not work as intended | open |
+| 14 | P7 multipliers in Single Player War (and probably multiplayer) do not work as intended | done: all six lobby options reach players 1-6 stat 0 (0x40183B) |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

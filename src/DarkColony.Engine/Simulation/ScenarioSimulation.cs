@@ -331,10 +331,11 @@ public sealed partial class ScenarioSimulation
         simulation.buildTimings = buildTimings;
         simulation.critterReserve = scenario.AutonomousSpawnGroups.Sum(group => group.DesiredPopulation);
         // Session start 0x40123C/0x401848: players 1-6 stat 0 hold the lobby
-        // options; this build never changes their defaults (vent rate and
-        // vent money multipliers 4 << 6 = 256, the rest 0).
-        simulation.playerStats[1, 0] = 256;
-        simulation.playerStats[2, 0] = 256;
+        // options: P7 flow and quantity (the vent rate and money multipliers,
+        // 4 << 6 = 256 by default), erupting and renewable vents, storage
+        // cells and artifacts (0 by default).
+        var session = scenario.WarOptions?.SessionStatistics ?? [256, 256, 0, 0, 0, 0];
+        for (var player = 1; player <= session.Count; player++) simulation.playerStats[player, 0] = session[player - 1];
         // 0x41BDFD counts each team's starting money as earned P7 (stat 1).
         foreach (var (team, resource) in resources) simulation.RecordP7Earned(team, resource);
         simulation.InitializeMission(missionScript);

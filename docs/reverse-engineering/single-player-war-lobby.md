@@ -83,9 +83,32 @@ at `0x4112dd-0x4116f6`; the display refresh lives at `0x40f310-0x40f572`.
 Rank text is selected from Human messages 30-33 (`LEUT.`, `CAPT.`, `MAJ.`,
 `COL.`) or Gray messages 40-43 (`XIMAL.`, `IDRAC.`, `SITRUC.`, `REGLIA.`).
 
-The current port mirrors those control choices in the UI state. It must not
-claim that Storage, Artifacts, vents, P7, or rank affect simulation until the
-launch packet/state-to-scenario handoff is separately traced and implemented.
+The lobby's state lives at `0x48A010`, so `+0xA670`-`+0xA688` are the
+globals `0x494680`-`0x494698`. Their defaults (`0x4012B4`) are 0, with P7
+Flow and P7 Quantity at step 4.
+
+A War launch (`0x4014B9`, game type 2) shifts both P7 steps left by 6, so
+100% is 256. The session start (`0x40183B`) then copies the options into
+players 1-6 stat 0:
+
+| Stat | Option |
+| --- | --- |
+| s(1,0) | P7 Flow << 6: the vent rate multiplier |
+| s(2,0) | P7 Quantity << 6: the vent money multiplier |
+| s(3,0) | Erupting Vents (0/1) |
+| s(4,0) | Renewable Vents (0/1) |
+| s(5,0) | Storage Cells (0-3) |
+| s(6,0) | Artifacts (0-3) |
+
+The vent loader multiplies by the first two (see city-and-economy.md, "Vent
+rates"). The War maps' triggers test the others: for example, `j4play01`
+refills and re-rates its vents only while `s(3,0)==1` and `s(4,0)==1`.
+
+The port carries the options as `WarSessionOptions`, which
+`SinglePlayerWarLaunch.ApplyTo` puts on the scenario. Single Player War,
+network War and saves all launch this way. The commander rank picks the
+local commander. Rank 3, Computer+ and the per-player multiplier `+0x19B8`
+(`session[0x14C4 + p * 4]`) are separate and stay untraced.
 
 ## Verification against the installed corpus
 

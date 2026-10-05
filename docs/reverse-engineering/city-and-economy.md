@@ -86,8 +86,10 @@ the health column. The vent becomes a team-8 actor with:
 - reservoir (`+0x0C`) = `b` x stat (2,0) >> 8;
 - per-pulse rate (`+0x32`) = `a` x stat (1,0) >> 8;
 
-and the map's live-mine bit is set. Both session stats are 256, so the SCN
-values apply unchanged. The corpus rates are 0 (437 vents, idle until a
+and the map's live-mine bit is set. The two session stats are the War
+lobby's P7 Flow and P7 Quantity, in steps of 25% shifted left by 6, so 100%
+is 256 and the SCN values apply unchanged (see single-player-war-lobby.md).
+Outside a War they stay 256. The corpus rates are 0 (437 vents, idle until a
 script's `newrate`), 15, 20, 25, and a few others.
 
 The producer `0x413A26` pays the rate when the strict `remaining - rate > 0`

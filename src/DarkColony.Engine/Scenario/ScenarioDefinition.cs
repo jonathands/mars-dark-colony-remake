@@ -107,6 +107,13 @@ public sealed class ScenarioDefinition
         .FirstOrDefault();
     public IReadOnlyList<ScenarioPlacement> Placements { get; }
     public IReadOnlyList<ScenarioVent> Vents { get; }
+
+    /// <summary>The War lobby's options, for a War launch; null for a campaign or a test.</summary>
+    public WarSessionOptions? WarOptions { get; private init; }
+
+    /// <summary>The same scenario launched with a War lobby's options.</summary>
+    public ScenarioDefinition WithWarOptions(WarSessionOptions options) =>
+        new(Tileset, InternalName, DisplayName, DayNight, Teams, Placements, Vents) { WarOptions = options };
     public IReadOnlyList<ScenarioPlacement> OrdinaryPlacements => Placements.Where(placement => placement.Team != -1).ToArray();
     public IReadOnlyList<AutonomousSpawnGroup> AutonomousSpawnGroups => Placements
         .Where(placement => placement.Team == -1)
@@ -133,7 +140,7 @@ public sealed class ScenarioDefinition
             placement.Team == teamId
                 ? placement with { EntityId = SelectedWarRosterEntity(placement.EntityId, faction, rank) }
                 : placement).ToArray();
-        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, Teams, placements, Vents);
+        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, Teams, placements, Vents) { WarOptions = WarOptions };
     }
 
     /// <summary>
@@ -148,14 +155,14 @@ public sealed class ScenarioDefinition
             team.Enabled && team.TeamId != localTeamId && (team.AiProfile ?? 0) <= 0
                 ? team with { AiProfile = 3 }
                 : team).ToArray();
-        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, teams, Placements, Vents);
+        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, teams, Placements, Vents) { WarOptions = WarOptions };
     }
 
     /// <summary>The same scenario with every team passed through <paramref name="change"/>.</summary>
     public ScenarioDefinition WithTeams(Func<ScenarioTeam, ScenarioTeam> change)
     {
         ArgumentNullException.ThrowIfNull(change);
-        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, [.. Teams.Select(change)], Placements, Vents);
+        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, [.. Teams.Select(change)], Placements, Vents) { WarOptions = WarOptions };
     }
 
     /// <summary>
@@ -165,7 +172,7 @@ public sealed class ScenarioDefinition
     public ScenarioDefinition WithTeamAiProfile(int teamId, int profile)
     {
         var teams = Teams.Select(team => team.TeamId == teamId ? team with { AiProfile = profile } : team).ToArray();
-        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, teams, Placements, Vents);
+        return new ScenarioDefinition(Tileset, InternalName, DisplayName, DayNight, teams, Placements, Vents) { WarOptions = WarOptions };
     }
 
     private static int SelectedWarRosterEntity(int entityId, int faction, int rank) => entityId switch

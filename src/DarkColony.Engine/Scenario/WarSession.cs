@@ -119,3 +119,26 @@ public static class WarSession
         });
     }
 }
+
+/// <summary>
+/// The War lobby's options as the session start leaves them in players 1-6
+/// stat 0 (<c>0x40183B</c>), read by the vent loader and by the War maps'
+/// triggers. The lobby's state at <c>0x48A010 + 0xA670</c> is the same
+/// memory as the globals <c>0x494680</c>-<c>0x494694</c>.
+/// </summary>
+/// <param name="FlowStep">P7 Flow, 1-20 steps of 25% (4 is 100%).</param>
+/// <param name="QuantityStep">P7 Quantity, 1-20 steps of 25%.</param>
+public sealed record WarSessionOptions(int FlowStep, int QuantityStep, bool EruptingVents, bool RenewableVents, int StorageCells, int Artifacts)
+{
+    public static WarSessionOptions From(SinglePlayerWarSettings settings) => new(
+        settings.P7FlowPercent / 25, settings.P7QuantityPercent / 25, settings.EruptingVents, settings.RenewableVents,
+        settings.StorageCells, settings.Artifacts);
+
+    /// <summary>
+    /// Players 1-6 stat 0. A War (game type 2, <c>0x4014B9</c>) shifts flow and
+    /// quantity left by 6, so 100% is 256, the 8.8 one that the vent loader
+    /// multiplies by.
+    /// </summary>
+    public IReadOnlyList<int> SessionStatistics =>
+        [FlowStep << 6, QuantityStep << 6, EruptingVents ? 1 : 0, RenewableVents ? 1 : 0, StorageCells, Artifacts];
+}
