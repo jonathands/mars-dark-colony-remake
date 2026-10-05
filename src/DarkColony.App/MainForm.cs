@@ -252,6 +252,14 @@ public sealed partial class MainForm : Form
                 eventArgs.SuppressKeyPress = true;
                 return;
             }
+            // The port's Video panel: F10 on the main menu; it takes the keys while open.
+            if (HandleVideoPanelKey(eventArgs.KeyCode) ||
+                (eventArgs.KeyCode == Keys.F10 && _screen == MenuScreenId.Main && _video is null && OpenVideoPanelFromKey()))
+            {
+                eventArgs.Handled = true;
+                eventArgs.SuppressKeyPress = true;
+                return;
+            }
             if (_video is not null)
             {
                 EndVideo();
@@ -305,6 +313,7 @@ public sealed partial class MainForm : Form
             };
         _timer.Tick += (_, _) =>
         {
+            UpdateDisplayConfirmation();
             if (_video is not null)
             {
                 AdvanceVideo();
@@ -321,7 +330,7 @@ public sealed partial class MainForm : Form
                     StepNetworkGame();
                     return;
                 }
-                if (!_gameplayPaused && _optionsDraft is null)
+                if (!_gameplayPaused && _optionsDraft is null && !VideoPanelOpen)
                 {
                     CapturePreviousActorRenderPositions();
                     _world.Step();
@@ -474,6 +483,8 @@ public sealed partial class MainForm : Form
             DrawGameplayUnitHud(graphics);
             DrawGameplayPanelIdentityStrip(graphics);
             DrawGameOptions(graphics);
+            DrawOptionsVideoButton(graphics);
+            DrawVideoPanel(graphics);
             DrawGameplayCursor(graphics);
             // Keep the native gameplay viewport clear. The previous
             // developer-control panel covered the upper-left map area, which
@@ -506,7 +517,11 @@ public sealed partial class MainForm : Form
         {
             DrawEncyclopedia(graphics);
         }
-        if (_screen != MenuScreenId.Gameplay) DrawMenuCursor(graphics);
+        if (_screen != MenuScreenId.Gameplay)
+        {
+            DrawVideoPanel(graphics);
+            DrawMenuCursor(graphics);
+        }
         _activeCanvas = null;
     }
 

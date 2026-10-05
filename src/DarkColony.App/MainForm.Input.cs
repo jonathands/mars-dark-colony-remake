@@ -270,6 +270,11 @@ public sealed partial class MainForm
     {
         _surface.Focus();
         if (_video is not null) return;
+        if (VideoPanelOpen)
+        {
+            if (eventArgs.Button == MouseButtons.Left) HandleVideoPanelClick(eventArgs.Location);
+            return;
+        }
         if (_optionsDraft is not null)
         {
             if (eventArgs.Button == MouseButtons.Left) HandleGameOptionsClick(eventArgs.Location);
@@ -327,7 +332,7 @@ public sealed partial class MainForm
 
     private void SurfaceMouseUp(object? sender, MouseEventArgs eventArgs)
     {
-        if (_video is not null || _optionsDraft is not null) return;
+        if (_video is not null || _optionsDraft is not null || VideoPanelOpen) return;
         var wasMapDrag = _mapDragged;
         var wasMinimapPress = _minimapPressed;
         var wasSinglePlayerScrollDrag = _singlePlayerScrollDragging;

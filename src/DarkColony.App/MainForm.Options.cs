@@ -70,6 +70,12 @@ public sealed partial class MainForm
     private void HandleGameOptionsClick(Point point)
     {
         if (_optionsDraft is not { } draft) return;
+        // The port's VIDEO button (MainForm.VideoPanel.cs) replaces the popup.
+        if (OptionsVideoButton.Contains(point))
+        {
+            OpenVideoPanel();
+            return;
+        }
         var id = OptionsButtons.FirstOrDefault(button => button.Bounds.Contains(point)).Id;
         var next = id switch
         {

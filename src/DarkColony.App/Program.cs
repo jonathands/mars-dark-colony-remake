@@ -41,7 +41,11 @@ internal static class Program
                             arguments[outcomeIndex + 2].Equals("victory", StringComparison.OrdinalIgnoreCase);
         // Display settings: the port's own (docs/DISPLAY_MODES_PLAN.md). Flags
         // override the file for this run only.
-        var displaySettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DarkColonyPort", "display.json");
+        // --display-settings <file> uses another settings file (tests never touch the player's).
+        var displaySettingsIndex = Array.FindIndex(arguments, argument => argument.Equals("--display-settings", StringComparison.OrdinalIgnoreCase));
+        var displaySettingsPath = displaySettingsIndex >= 0 && displaySettingsIndex + 1 < arguments.Length
+            ? Path.GetFullPath(arguments[displaySettingsIndex + 1])
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DarkColonyPort", "display.json");
         var displaySettings = DarkColony.Presentation.DisplaySettings.Load(displaySettingsPath, out var displayProblem)
             .WithArguments(arguments, out var displayFlagProblems);
         if (displayProblem is not null) RuntimeLog.Info($"Display settings: {displayProblem}");

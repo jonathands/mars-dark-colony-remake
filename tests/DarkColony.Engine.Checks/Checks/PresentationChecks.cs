@@ -69,6 +69,45 @@ internal static class PresentationChecks
             }
         });
 
+        Check("the Video panel's arrows cycle each row and only a new exclusive mode asks to be kept", () =>
+        {
+            DisplayModeChoice[] modes = [new(800, 600, 60), new(1280, 720, 60), new(1920, 1080, 144)];
+            var settings = new DisplaySettings();
+            DisplaySettings Step(DisplaySettings value, DisplaySettingRow row, int direction = 1) => DisplaySettingsEditor.Step(value, row, direction, modes);
+            string Value(DisplaySettings value, DisplaySettingRow row) => DisplaySettingsEditor.Value(value, row);
+
+            Equal(("WINDOW", "AUTO", "INTEGER", "CLASSIC", "ON", "FULLSCREEN"),
+                (Value(settings, DisplaySettingRow.Mode), Value(settings, DisplaySettingRow.Size), Value(settings, DisplaySettingRow.Scaling),
+                 Value(settings, DisplaySettingRow.View), Value(settings, DisplaySettingRow.VSync), Value(settings, DisplaySettingRow.PointerLock)));
+            Equal(("FULLSCREEN", "EXCLUSIVE", "EXCLUSIVE"),
+                (Value(Step(settings, DisplaySettingRow.Mode), DisplaySettingRow.Mode),
+                 Value(Step(Step(settings, DisplaySettingRow.Mode), DisplaySettingRow.Mode), DisplaySettingRow.Mode),
+                 Value(Step(settings, DisplaySettingRow.Mode, -1), DisplaySettingRow.Mode)));
+            // Windowed sizes are the window scales; 8 wraps to automatic.
+            Equal(("1X", "AUTO"), (Value(Step(settings, DisplaySettingRow.Size), DisplaySettingRow.Size),
+                Value(Step(settings with { WindowScale = 8 }, DisplaySettingRow.Size), DisplaySettingRow.Size)));
+            // Borderless keeps the desktop's size; exclusive steps through the monitor's modes after "desktop".
+            var borderless = settings with { Mode = WindowMode.Borderless };
+            Equal((borderless, "DESKTOP"), (Step(borderless, DisplaySettingRow.Size), Value(borderless, DisplaySettingRow.Size)));
+            var exclusive = settings with { Mode = WindowMode.Exclusive };
+            Equal(("DESKTOP", "800X600", "1920X1080"), (Value(exclusive, DisplaySettingRow.Size),
+                Value(Step(exclusive, DisplaySettingRow.Size), DisplaySettingRow.Size), Value(Step(exclusive, DisplaySettingRow.Size, -1), DisplaySettingRow.Size)));
+            Equal(new DisplayModeChoice(1920, 1080, 144), Step(exclusive, DisplaySettingRow.Size, -1).ExclusiveMode ?? default);
+            Equal(("FIT", "AUTO", "800X600", "OFF", "ALWAYS", "NEVER"),
+                (Value(Step(settings, DisplaySettingRow.Scaling), DisplaySettingRow.Scaling),
+                 Value(Step(settings, DisplaySettingRow.View), DisplaySettingRow.View),
+                 Value(Step(Step(settings, DisplaySettingRow.View), DisplaySettingRow.View), DisplaySettingRow.View),
+                 Value(Step(settings, DisplaySettingRow.VSync), DisplaySettingRow.VSync),
+                 Value(Step(settings, DisplaySettingRow.PointerLock), DisplaySettingRow.PointerLock),
+                 Value(Step(settings, DisplaySettingRow.PointerLock, -1), DisplaySettingRow.PointerLock)));
+            Equal("1920X1080", Value(Step(settings, DisplaySettingRow.View, -1), DisplaySettingRow.View));
+
+            var chosen = Step(exclusive, DisplaySettingRow.Size);
+            Equal((true, true, false, false),
+                (DisplaySettingsEditor.NeedsConfirmation(settings, exclusive), DisplaySettingsEditor.NeedsConfirmation(exclusive, chosen),
+                 DisplaySettingsEditor.NeedsConfirmation(chosen, chosen with { VSync = false }), DisplaySettingsEditor.NeedsConfirmation(chosen, borderless)));
+        });
+
         Check("display settings parse their flags, reject bad values and survive a save", () =>
         {
             var settings = new DisplaySettings().WithArguments(

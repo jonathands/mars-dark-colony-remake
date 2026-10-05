@@ -195,7 +195,9 @@ See `docs/DISPLAY.md`.
   - a failed mode falls back to windowed;
   - live test in borderless fullscreen.
 
-**Phase 3: settings**
+**Phase 3: settings** — done (2026-10-04). `tools/Test-VideoPanel.ps1`
+drives the panel; `--display-settings <file>` keeps tests away from the
+player's file.
 - `DisplaySettings` with JSON persistence, command-line overrides and safe
   defaults for invalid values.
 - The Video panel, with the 15 s confirm/revert for exclusive modes.

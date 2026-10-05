@@ -76,6 +76,30 @@ applies in fullscreen only. `--confine-cursor on` extends it to windowed;
 objects and private memory at every step, then closes. It never saves
 settings.
 
+## Video panel
+
+The Video panel is the port's own. It is drawn with the OPTIONS popup's art
+(`popp.spr`, the `mfonto7` font), and it opens:
+
+- with **F10** on the main menu;
+- with the **VIDEO** button the port adds to the in-game OPTIONS popup.
+
+| Row | Values |
+| --- | --- |
+| MODE | WINDOW, FULLSCREEN (borderless), EXCLUSIVE |
+| SIZE | Window: AUTO, 1X-8X. Exclusive: DESKTOP, then the monitor's modes. Fullscreen: the desktop |
+| SCALING | INTEGER, FIT, STRETCH |
+| VIEW | CLASSIC, AUTO, 800X600 ... 1920X1080 (network games always play classic) |
+| VSYNC | ON, OFF |
+| POINTER LOCK | FULLSCREEN (default), ALWAYS, NEVER |
+
+The arrows step through each row. OK applies and saves; Cancel and Esc
+discard. A new exclusive display mode asks "KEEP THIS DISPLAY MODE?": OK
+keeps it, and Cancel, Esc or 15 seconds without an answer revert to the
+previous settings. While the panel is open in a single-player game, the world
+waits, as it does for OPTIONS. The row rules (labels, values, stepping, when
+to confirm) are `DisplaySettingsEditor` in the presentation library.
+
 ## Settings
 
 `%LOCALAPPDATA%\DarkColonyPort\display.json` holds the port's display
@@ -93,9 +117,11 @@ Command-line flags override the file for one run, without saving:
 | `--scale-mode integer\|fit\|stretch` | How the picture is fitted |
 | `--view classic\|auto\|WxH` | Gameplay view |
 | `--vsync on\|off` | Wait for the vertical blank |
-| `--confine-cursor on\|off` | Keep the pointer in the window during play |
+| `--confine-cursor on\|off` | Keep the pointer on the picture during play, in every mode (unset: fullscreen only) |
+| `--display-settings <file>` | Use another settings file (the tests use a throwaway one) |
 
-The log records the settings in effect (`Display:`). It also writes a
+The Video panel and Alt+Enter save the settings in effect, flags included.
+The log records those settings (`Display:`). It also writes a
 `Presentation:` line with the output, logical size and destination rectangle
 every time they change.
 
@@ -107,8 +133,17 @@ every time they change.
 - `tools/Send-PortInput.ps1 -LogPath <log>` maps logical coordinates through
   the latest `Presentation:` line before posting them. `Run-Port.ps1` passes
   its log.
-- `tools/Test-LiveConstruction.ps1` takes `-WindowScale N` and
-  `-ScaleMode integer|fit|stretch`.
+- `tools/Test-LiveConstruction.ps1` takes `-WindowScale N`,
+  `-ScaleMode integer|fit|stretch` and `-Fullscreen`.
+- `tools/Test-VideoPanel.ps1` drives the Video panel with posted input,
+  using a throwaway settings file:
+  - FIT and VSYNC OFF are applied and saved;
+  - an exclusive mode is left unanswered and reverts after 15 s;
+  - borderless fullscreen, with the panel reopened over the scaled picture.
+
+  `-NoExclusive` skips the step that switches the monitor's mode.
+- Alt+Enter cannot be posted: WinForms reads Alt from the real keyboard
+  state.
 
 ## Verified
 
