@@ -5,11 +5,14 @@ original installation at runtime, but original game assets must not be copied
 into this repository.
 
 Read `docs/PORT_CONTRACT.md` before changing architecture or adding a gameplay
-subsystem. It is the central statement of project shape and current priorities.
+subsystem. It is the central statement of project shape and rules.
+`docs/HOW_THE_PORT_WAS_MADE.md` explains the method, and `docs/README.md`
+indexes the rest.
 
 ## Evidence hierarchy
 
-1. Confirmed executable disassembly recorded in `../dc-port-26/docs/`.
+1. Confirmed executable disassembly, recorded in `docs/reverse-engineering/`
+   (earlier notes in `../dc-port-26/docs/`).
 2. Original data-file structure confirmed by parsers/tests in `../dc-port-26/tools/`.
 3. Controlled observations from the original Windows executable.
 4. Explicitly labelled approximations.
@@ -35,7 +38,13 @@ a web-preview approximation into engine behavior.
 - `src/DarkColony.Presentation`: platform-free presentation rules (display
   layout and settings, the anchored gameplay HUD), tested by the checks.
 - `tests/DarkColony.Engine.Checks`: dependency-free executable verification.
-- `docs/`: compilation-focused specifications and milestone notes.
+- `tools/`: PowerShell scripts for unattended runs, posted input and live tests.
+- `docs/`: specifications, test and tool guides, and one
+  `reverse-engineering/` note per recovered subsystem. List new documents in
+  `docs/README.md`; finished plans move to `docs/history/`.
+
+Keep the repository root to the solution and build files, the README,
+AGENTS.md and the launchers (`run-*.cmd`, `run-display/`).
 
 Do not introduce a third-party game framework until native asset rendering and
 simulation requirements demonstrate that one is necessary.

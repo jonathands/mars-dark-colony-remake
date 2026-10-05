@@ -1,10 +1,10 @@
 # Dark Colony port contract
 
 This is the central architectural reference for the compiled port. Read it
-before adding a subsystem. Detailed reverse-engineering evidence remains in
-`../dc-port-26/docs`; this file records the product shape, code boundaries, and
-current priorities that should remain stable while individual discoveries
-change.
+before adding a subsystem. The evidence for individual rules is in
+`docs/reverse-engineering/` (file-format research in `../dc-port-26/docs`);
+this file records the product shape, code boundaries, and rules that should
+remain stable while individual discoveries change.
 
 ## Product shape
 
@@ -29,22 +29,24 @@ These three statements are project-level design constraints supplied from
 original-game experience. File formats and exact timings still require the
 same evidence and validation as other reconstructed behavior.
 
-## Current priorities
+## Status
 
-Work in this order unless a prerequisite forces a small detour:
+The original priority order was followed and is complete:
 
-1. Deterministic engine and world-state boundaries.
-2. Direct3D renderer and native asset presentation.
-3. Terrain, occupancy, command queues, pathfinding, and movement playback.
-4. Selection and the minimum gameplay HUD needed to exercise movement.
-5. Combat, resource collection, pedestal delivery, buildings, and production.
-6. Mission scripting and neutral critters.
-7. Computer-player policy/AI.
-8. Networking, replay transport, and synchronization UI.
+1. the deterministic engine;
+2. the renderer;
+3. movement;
+4. the HUD;
+5. combat and economy;
+6. missions;
+7. the computer player;
+8. networking.
 
-AI and networking are deliberately deferred. Engine APIs may remain
-deterministic and command-driven so those systems can be added later, but they
-must not dictate the initial architecture or delay local movement validation.
+See `docs/HOW_THE_PORT_WAS_MADE.md`. New work is of two kinds:
+
+- fidelity fixes traced in `dc.exe` (`docs/GAMEPLAY_FIXES_PLAN.md`);
+- port enhancements, such as the display modes, that leave the simulation and
+  the goldens untouched.
 
 ## Project boundaries
 
@@ -52,23 +54,27 @@ must not dictate the initial architecture or delay local movement validation.
 
 Platform-independent, deterministic code:
 
-- `Assets`: original binary formats and decoded asset models;
-- `Data`: installation access and original text/binary catalogs;
-- `World`: coordinates, entities, teams, occupancy, and map state;
+- `Assets`: original binary formats (SPR, FIN, fonts) and animation catalogs;
+- `Data`: installation access, original text/binary catalogs, and tables read
+  from `dc.exe` through `PeImage`;
+- `Scenario`, `Terrain`: SCN/TRO/MTG scenarios, War sessions, MAP/BTS terrain;
+- `World`: coordinates, entities, occupancy, and footprints;
 - `Commands`: player/system intentions in deterministic tick order;
 - `Movement`: routing, local paths, facing, reservation, and interpolation;
-- `Combat`: targeting, projectile state, and damage;
-- `Economy`: the single resource, gatherers, costs, and storage;
-- `Construction`: pedestal delivery, footprints, placement, and production;
-- `Missions`: compiled `.tro` trigger scripts, their expression language,
-  and `.mtg` trip maps;
-- `Simulation`: the fixed-step scheduler and subsystem orchestration.
+- `Combat`, `Economy`, `Environment`: projectiles and damage, Petra-7 vents and
+  team economies, the day/night cycle;
+- `Missions`: compiled `.tro` trigger scripts and their expression language;
+- `Interface`: rules of original screens (options, teletype text, pictures);
+- `Audio`, `Video`: the CD image, its music tracks, and Cinepak AVIs;
+- `Network`: lockstep sessions and the network War lobby;
+- `Simulation`: the fixed-step scheduler, `ScenarioSimulation` and its
+  subsystems, the Krusty computer player, the state digest, and saved games.
 
 `ScenarioSimulation` owns the authoritative per-mission state, so its
 subsystem logic lives in partial files beside it:
-`Simulation/ScenarioSimulation.<Subsystem>.cs` for Combat, Specials,
-Transports, Economy, Construction, Movement, Autonomous, Acquisition, Yield,
-City, Production, and Missions. `Step` lists the
+`Simulation/ScenarioSimulation.<Subsystem>.cs` (Movement, Combat,
+Acquisition, Vision, Economy, City, Construction, Production, Delivery,
+Missions, Ai, War and others). `Step` lists the
 tick's phases in order. Put new behavior in the matching partial file, keep
 every field in `ScenarioSimulation.cs`, and keep stateless rules, data types,
 and readers in the subsystem folders above. Event records live in
@@ -95,19 +101,21 @@ See `docs/DISPLAY.md`. Nothing here may reach the simulation.
 
 Windows platform and presentation code:
 
-- `Rendering`: D3D11 device lifetime, the flip-model swap chain, GPU
-  resources, sprite commands, palette remaps, render ordering, the logical
-  frame target (640x480 or the gameplay view) and its placement on the
-  output (`DisplayLayout`), and display-mode switching;
+- `Rendering`: D3D11 device lifetime, the flip-model swap chain, atlas pages
+  and the sprite batch, palette remaps, the logical frame target (640x480 or
+  the gameplay view) and its placement on the output (`DisplayLayout`),
+  display-mode switching, and the game loop paced by the swap chain;
 - `Ui`: reconstructed screen definitions and interaction adapters;
-- `Audio`: playback backend and event-to-sound binding when implemented;
+- `Audio`: the waveOut stream for the CD music and the video soundtracks;
+- `Diagnostics`: the session log and the frame profiler (`--perf`);
 - host/input code that translates OS events into engine commands.
 
 `MainForm` is likewise split by responsibility: `MainForm.cs` (fields,
-screen switching, frame composition) plus `Menus`, `WarLobby`,
-`Encyclopedia`, `Assets`, `World`, `Feedback`, `Hud`, `Input`, `Commands`,
-`Display` (window modes, DPI, gameplay screen size, pointer), `VideoPanel`
-and `QuitConfirm` partial files.
+screen switching, frame composition) plus one partial file per area: `Menus`,
+`WarLobby`, `Network`, `Encyclopedia`, `Credits`, `Assets`, `World`,
+`Feedback`, `Hud`, `Input`, `Commands`, `Options`, `SaveGames`, `Music`,
+`Video`, `Display` (window modes, DPI, gameplay screen size, pointer),
+`VideoPanel` and `QuitConfirm`.
 
 Presentation can interpolate between completed simulation states but cannot
 mutate authoritative gameplay state.
@@ -151,7 +159,8 @@ mutate authoritative gameplay state.
 
 ## Rendering invariants
 
-- Compose the game into a 640x480 logical render target.
+- Compose each frame into a logical render target: 640x480, or the gameplay
+  view on the gameplay screen (`docs/DISPLAY.md`).
 - Use nearest-neighbor sampling unless a recovered effect explicitly requires
   another filter.
 - UI gadget coordinates place normalized FIN composites. World rendering uses
@@ -163,17 +172,3 @@ mutate authoritative gameplay state.
 - Backgrounds, terrain, FIN layers, bitmap glyphs, controls, and dynamic
   primitives are emitted as ordered GPU commands into the native target. A
   non-presented GDI scratch surface remains only for isolated fallback code.
-
-## Near-term acceptance sequence
-
-1. GPU sprite commands reproduce the visually captured menus and encyclopedia.
-2. MAP/BTS terrain renders into the same native target with exact row and
-   palette behavior.
-3. SCN entities resolve by entity ID and sort correctly in world depth.
-4. Static footprints and dynamic occupancy have a debug overlay.
-5. A deterministic command moves one unit through PTH-assisted local routing,
-   reservation, facing, and interpolation.
-6. Multiple units demonstrate native blockage repair without overlap.
-
-Only after these checks should combat/economy expand the playable slice. AI
-and networking remain later milestones.

@@ -2,7 +2,7 @@
 
 The standing brief for completing the port's goal sequence autonomously, including every
 pending item known when it was written (2026-10-04). Pass it to a fresh session, for
-example with `/goal implement docs/AUTONOMOUS_ROADMAP_PROMPT.md`.
+example with `/goal implement docs/history/AUTONOMOUS_ROADMAP_PROMPT.md`.
 
 ````text
 Você vai concluir, de forma autônoma e até o fim, o roteiro de objetivos do port .NET de
@@ -22,7 +22,7 @@ original.
     anim.dat.
 - Leia antes de começar:
   - AGENTS.md, README.md, docs/PORT_CONTRACT.md, docs/DETERMINISM.md,
-    docs/RECONSTRUCTION_CONTEXT.md;
+    docs/history/RECONSTRUCTION_CONTEXT.md;
   - docs/reverse-engineering/*.md, principalmente city-and-economy.md,
     production-flow.md, target-acquisition.md e mission-triggers.md, com suas tabelas de
     status;

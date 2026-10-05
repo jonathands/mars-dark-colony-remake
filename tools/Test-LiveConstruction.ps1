@@ -6,7 +6,7 @@ param(
     [string] $DataPath = (Join-Path $PSScriptRoot '..\..\Dark Colony'),
     [ValidateRange(20000, 1000000)] [int] $GrantP7 = 60000,
     [ValidateRange(10, 300)] [int] $TrainSeconds = 40,
-    # Display mode under test (docs/DISPLAY_MODES_PLAN.md): the window scale,
+    # Display mode under test (docs/DISPLAY.md): the window scale,
     # the scaling mode, and borderless fullscreen. Clicks are mapped through
     # the port's "Presentation:" log line, so the steps stay in game coordinates.
     [ValidateRange(1, 8)] [int] $WindowScale = 1,
@@ -60,7 +60,7 @@ $logDirectory = Join-Path $repo 'artifacts\logs'
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 $log = Join-Path $logDirectory "$name.log"
 $sendInput = Join-Path $PSScriptRoot 'Send-PortInput.ps1'
-$capture = Join-Path $repo 'capture-port-window.ps1'
+$capture = Join-Path $PSScriptRoot 'Capture-PortWindow.ps1'
 
 $start = [Diagnostics.ProcessStartInfo]::new($exe)
 $start.WorkingDirectory = $repo

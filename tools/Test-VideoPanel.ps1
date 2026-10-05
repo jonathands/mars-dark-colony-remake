@@ -41,7 +41,7 @@ $log = Join-Path $logDirectory 'video-panel.log'
 $settings = Join-Path $logDirectory 'video-panel-display.json'
 Remove-Item -ErrorAction SilentlyContinue $settings
 $sendInput = Join-Path $PSScriptRoot 'Send-PortInput.ps1'
-$capture = Join-Path $repo 'capture-port-window.ps1'
+$capture = Join-Path $PSScriptRoot 'Capture-PortWindow.ps1'
 
 $start = [Diagnostics.ProcessStartInfo]::new($exe)
 $start.WorkingDirectory = $repo

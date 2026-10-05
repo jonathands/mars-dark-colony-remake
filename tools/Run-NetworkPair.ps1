@@ -70,7 +70,7 @@ Start-Sleep -Seconds $Seconds
 
 foreach ($peer in @(@{ Role = 'host'; Process = $hostPeer }, @{ Role = 'client'; Process = $clientPeer })) {
     if (-not $peer.Process.HasExited) {
-        $shot = & (Join-Path $repo 'capture-port-window.ps1') -Name "$Name-$($peer.Role)" -ProcessId $peer.Process.Id
+        $shot = & (Join-Path $PSScriptRoot 'Capture-PortWindow.ps1') -Name "$Name-$($peer.Role)" -ProcessId $peer.Process.Id
         Write-Output "$($peer.Role) screenshot: $shot"
         $peer.Process.CloseMainWindow() | Out-Null
         if (-not $peer.Process.WaitForExit(5000)) { $peer.Process.Kill() }

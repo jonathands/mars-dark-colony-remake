@@ -1,302 +1,108 @@
 # Dark Colony .NET port
 
-This is the compiled reconstruction of Dark Colony. It is separate from the
-web-based research viewer in `../dc-port-26` and reads the original installed
-game data at runtime.
+A clean-room reimplementation of **Dark Colony**, the 1997 real-time
+strategy game published by Strategic Simulations, Inc., in C# on .NET 8 and
+Direct3D 11. Its rules come from reading the original `dc.exe`. The
+original's files stay on the player's disk: the port reads the installation
+at runtime, and nothing from it is in this repository.
 
-The central architecture, gameplay-shape, and implementation-priority contract
-is [`docs/PORT_CONTRACT.md`](docs/PORT_CONTRACT.md). New subsystems should follow
-that document before relying on milestone notes or viewer-era approximations.
+It plays the Human and Gray campaigns, the training missions, and Single and
+Multi Player War. The computer player, mission scripts, music, videos and the
+encyclopedia are ported too.
+
+How it was made: [docs/HOW_THE_PORT_WAS_MADE.md](docs/HOW_THE_PORT_WAS_MADE.md).
+
+## Requirements
+
+- Windows 10 or later, and the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+- An original installation (the folder with `dc.exe`, `gamestat`, `sprites`,
+  `scenario`). The port looks in `--data <folder>`, then `DARKCOLONY_DATA`,
+  then `..\Dark Colony` next to this repository.
+- Optional: the CD image (`DCUK.cue`/`.bin`) next to the installation, for
+  the soundtrack and the videos.
 
 ## Run
 
-For a one-click Debug build and run, double-click `run-debug.cmd` or execute:
-
-```powershell
-.\run-debug.cmd
-```
-
-The equivalent explicit command is:
-
-```powershell
-dotnet run --project src/DarkColony.App -- --data "..\Dark Colony"
-```
-
-For a repeatable Single Player War lobby check, add `--single-player-war`:
-
-```powershell
-dotnet run --project src/DarkColony.App -- --data "..\Dark Colony" --single-player-war
-```
-
-Or double-click [`run-war-lobby-debug.cmd`](run-war-lobby-debug.cmd).
-`run-debug.cmd` passes its arguments on to the port.
-
-If `--data` is omitted, the app checks `DARKCOLONY_DATA` and then the adjacent
-`../Dark Colony` directory. The original files are never copied into this port.
-
-### Display
-
-The port runs windowed or fullscreen, sharp at the monitor's native DPI, and
-can show a larger gameplay view. The original picture stays exact at window
-scale 1 with the classic view. See [docs/DISPLAY.md](docs/DISPLAY.md).
-
-| Control | Effect |
+| How | What it does |
 | --- | --- |
-| Alt+Enter | Windowed ↔ fullscreen |
-| OPTIONS or F10 (main menu), VIDEO (in-game OPTIONS) | The settings panel: mode, size, scaling, view, vsync, pointer lock, intro video, FPS, mouse |
-| `--windowed`, `--fullscreen`, `--exclusive [WxH[@Hz]]` | Window mode for this run |
-| `--window-scale N` | Window size in multiples of 640x480; 0 follows the DPI |
-| `--scale-mode integer\|fit\|stretch` | How the picture fits the output |
-| `--view classic\|auto\|WxH` | Gameplay view (network games stay classic) |
-| `--vsync on\|off`, `--confine-cursor on\|off` | Vsync and pointer lock |
-| `--intro-video on\|off`, `--show-fps on\|off` | Start-up intro and the FPS counter |
-| `--mouse original\|modern` | Left button orders (as the original) or right button orders |
-| `--display-settings <file>` | Settings file (default `%LOCALAPPDATA%\DarkColonyPort\display.json`) |
+| `run-debug.cmd [flags]` | Build and run in Debug |
+| `run-display\*.cmd` | The same, with a display preset (fullscreen 1080p, 2x window, ...) |
+| `run-war-lobby-debug.cmd` | Debug, straight to the Single Player War lobby |
+| `run-release.cmd` | Run the Release build (make it first, below) |
 
-The [`run-display`](run-display) folder holds one-click presets. Each one runs
-`run-debug.cmd` with its flags, passes extra arguments on (for example
-`run-display\fullscreen-auto.cmd --single-player-war`), and keeps its own
-settings file in `%LOCALAPPDATA%\DarkColonyPort\presets`. Picture sizes are
-for a 1920x1080 monitor:
-
-| Preset | Gameplay view | On the screen |
-| --- | --- | --- |
-| `windowed-2x` | 640x480 | 1280x960 window, 2x |
-| `fullscreen-classic` | 640x480 | 2x, with black bars |
-| `fullscreen-auto` | 960x540 | 2x |
-| `fullscreen-1280x720` | 1280x720 | 1.5x, sharp-bilinear |
-| `fullscreen-1600x900` | 1600x900 | 1.2x, sharp-bilinear |
-| `fullscreen-1920x1080` | 1920x1080 | 1x, native |
-| `exclusive-640x480` | 640x480 | The monitor switches to 640x480 |
-
-Menus stay 640x480 pictures, and network games always play the classic view.
-
-## Diagnostics
-
-Every session writes a plain-text log to
-`%LOCALAPPDATA%\DarkColony.Port\logs\latest.log`; the previous session is kept
-as `previous.log`. Use `--log <path>` or `DARKCOLONY_LOG` to write elsewhere.
-The log records unhandled exceptions with stack traces, data errors, screen
-changes, and every status-line message. With `--no-dialogs` (or
-`DARKCOLONY_NO_DIALOGS=1`) failures are logged and the process exits instead of
-showing a message box: exit code 1 is an unhandled exception, 2 a data error.
-
-For unattended checks from PowerShell 7:
+To make the Release build, a self-contained folder that runs without the SDK:
 
 ```powershell
-.\tools\Run-Port.ps1 -Name main-menu
-.\tools\Run-Port.ps1 -ExtraArguments '--single-player-war' -Actions 'click:574,463','wait:3000' -Name war
+dotnet publish src\DarkColony.App -c Release -r win-x64 --self-contained true -o artifacts\DarkColony-win-x64
 ```
 
-`Run-Port.ps1` starts the Debug build with `--no-dialogs`, captures the window
-into `screenshots/`, closes it, and prints the log from `artifacts/logs/`.
-It passes `--windowed --window-scale 1 --view classic --confine-cursor off`,
-so its coordinates are window coordinates; `-ExtraArguments` can override
-them. `Send-PortInput.ps1` posts clicks, drags, and keys in game coordinates
-without moving the real cursor or taking focus. With `-LogPath`, it maps them
-through the log's `Presentation:` line onto a scaled picture.
+## Playing
+
+The original controls are the default: the left button selects and gives
+orders, and the right button deselects. The MOUSE option switches orders to
+the right button.
+
+| Key | Action |
+| --- | --- |
+| Space | BUILD (sends the counted troops, buildings and research) |
+| S, M, A, W | Stop, Move, Move & Attack, Waypoint |
+| Enter | The selected unit's special |
+| F1-F10 | Select the on-screen units of one type (Shift toggles, Ctrl ground only, Alt air only) |
+| Arrows, screen edges, minimap | Scroll |
+| Esc, Q | Cancel, then "REALLY QUIT?" |
+| Alt+Enter | Window ↔ fullscreen |
+| F10 (main menu), VIDEO (in-game OPTIONS) | Video panel |
+
+## Beyond the original
+
+None of these change the simulation:
+
+- Display: window or fullscreen, native DPI, and larger gameplay views
+  (network games stay 640x480). See [docs/DISPLAY.md](docs/DISPLAY.md).
+- Saves and replays as command journals: [docs/SAVE_GAMES.md](docs/SAVE_GAMES.md).
+- Multi Player War over TCP/IP with lockstep: [docs/NETWORK_AND_REPLAY.md](docs/NETWORK_AND_REPLAY.md).
+- Diagnostics:
+  - F12 labels the actors.
+  - Ctrl+F12 (`--reveal-map`) lifts the fog.
+  - Shift+F12 shows the path regions.
+  - DEBUG GUIDES draws the P7 markers and paths.
+  - `--perf` logs frame timings ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
+- A session log in `%LOCALAPPDATA%\DarkColony.Port\logs\latest.log`.
 
 ## Verify
 
 ```powershell
-dotnet build DarkColony.Port.sln
-dotnet run --project tests/DarkColony.Engine.Checks
+dotnet build DarkColony.Port.sln                        # zero warnings
+dotnet run --project tests/DarkColony.Engine.Checks     # all checks, about 35 s
+dotnet run --project tests/DarkColony.Engine.Checks -- --tag fast   # no installation needed
 ```
 
-The checks include a whole-simulation determinism guard: scripted runs of
-installed scenarios are hashed every tick and compared with recorded goldens.
-`dotnet run --project tests/DarkColony.Engine.Checks -- --verify-goldens` runs
-only that comparison. See [`docs/DETERMINISM.md`](docs/DETERMINISM.md).
-`-- --catalog-sweep` builds, trains, researches and fights with every item of
-both races and prints a line per item; see
-[`docs/CATALOG_SWEEP.md`](docs/CATALOG_SWEEP.md).
+The checks include determinism goldens: scripted games hashed every update.
+See [docs/TESTING.md](docs/TESTING.md). `tools/Run-Port.ps1` runs the app
+unattended, posts input and captures the window.
 
-The checks run in parallel, in about 35 seconds on four cores. `-- --tag fast`
-runs only those that need no installation, in under a second. `--group`,
-`--filter`, `--list` and `--junit` select and report; see
-[`docs/TESTING.md`](docs/TESTING.md).
+## Layout
 
-The first milestone establishes a native 640×480 compiled menu host using the
-original external GIF backgrounds and recovered control coordinates. The
-opening `DCSS` sequence and `LARGEBUTTON`/`MEDBUTTON` controls are now composed
-from the original FIN and SPR layers at runtime. Campaign race portraits and
-the single-player commander portrait are likewise composed from their original
-`hcar`/`acar` and `acom` animation data. Menu labels use the original
-`mfonto5.spr` bitmap glyphs, declared offset 31, and shipped per-glyph metrics. Main-menu
-buttons navigate to campaign/training race selection, load game, single-player,
-encyclopedia, and network-option screens; unfinished actions report their next
-engine dependency instead of pretending to work. The exact 66 ms deterministic
-scheduler, installation boundary, and base weapon/armor matrix reader are also
-active. See `docs/RECONSTRUCTION_CONTEXT.md` for the next implementation stages.
+```text
+src/DarkColony.Engine         simulation and original-data readers (no UI, deterministic)
+src/DarkColony.Presentation   display layout, settings, HUD anchoring (platform-free)
+src/DarkColony.App            Windows host: Direct3D 11, input, audio, video, screens
+tests/DarkColony.Engine.Checks   the check runner (dependency-free)
+tools/                        PowerShell: unattended runs, posted input, live tests
+run-display/                  one-click display presets
+docs/                         design, testing, reverse-engineering notes (docs/README.md)
+```
 
-Presentation now runs through a Direct3D 11 device and double-buffered swap
-chain. Ordered GPU sprite, tile, bitmap-glyph, and primitive commands compose
-the fixed 640x480 target before a point-sampled presentation pass. The legacy
-GDI scratch surface is non-presented fallback infrastructure only; it is not a
-full-frame upload path. The encyclopedia reads the original `encyclo.txt` identity catalog,
-supports its three categories and list navigation, and previews confirmed FIN
-animations where their native identity is mapped.
+Rules for contributors (and coding agents) are in [AGENTS.md](AGENTS.md) and
+[docs/PORT_CONTRACT.md](docs/PORT_CONTRACT.md).
 
-The first in-game harness is available through **Single Player War** or a
-campaign start. The War setup is the recovered 640×480 `multie` screen over
-`tcpwait`, not `shumane`: it presents eight player rows, an alphabetical list
-of complete original `scenario/mplayer` SCN/MAP/PTH triplets, and the native
-Storage/Artifacts/Vents/P7/Rank controls. Press **READY** to enter the selected
-map. It renders a 516×458 native terrain viewport and composites the original
-gameplay HUD above it. The engine parses the complete SCN corpus, seeds
-ordinary placements as deterministic world entities, and applies
-executable-confirmed building footprints to static occupancy when structures
-are introduced. Special vent records and unresolved entity kinds remain
-separate so the port does not invent blockers. Gameplay supports direct unit
-clicks, box selection, orders, drag panning, keyboard navigation, and edge
-scrolling.
+## Known gaps
 
-War maps retain their original per-team roster data. The faction selected on
-the lobby's Human player row selects the matching enabled SCN team; a missing
-faction is rejected rather than remapped. The launcher carries validated lobby
-settings with that map/team selection. SCN starting P7 and team/race state feed
-the local deterministic simulation; the native scenario-start handoff for
-power-ups and rank remains unrecovered.
-The SCN team format labels fields *after* their values; the port decodes that
-layout so race, starting resource, AI profile, and colour are not shifted by
-one field. The New Game leader-name field accepts up to 17 letters, numbers,
-and spaces; that persistent value appears in the lobby's player-name field.
-
-Campaign starts now load `human01` or `alien01` and draw their ordinary SCN
-actors using positional `gamestat.txt` identity plus exact `<CODE>STAND…` FIN
-animation matches. World composites retain their FIN logical origins and sort
-by cell Z then X before the HUD is applied. Press **F3** during gameplay to
-toggle `entity ID · code · FIN` labels. Training starts retain the first
-training maps, whose SCNs contain only special vent records.
-
-Campaign launch first presents the recovered native `storye` narrative layout:
-its original `story` background, scroll arrows, and Back/Next geometry remain
-at the 640×480 source coordinates. The briefing comes from the mission's
-original `.txt` file; **Next** enters the map and **Back** returns to race
-selection. Trigger message and outcome texts are loaded but mission scripts
-are not yet executed.
-
-During gameplay, the arrow keys pan the camera in 16-pixel increments within
-the decoded MAP bounds; holding the pointer in the eight-pixel viewport border
-also scrolls at the fixed simulation cadence. Left-dragging terrain by more
-than eight pixels pans the map and captures the pointer until release. A short
-left-click on visible actor art selects the topmost depth-sorted local actor;
-dragging a box selects local actors within it. The cyan ground marker remains a
-presentation diagnostic while original selection masks are still unresolved.
-
-Right-clicking a map cell with an actor selected submits a deterministic
-next-tick `MoveIntent`; the route uses decoded PTH regions plus local
-passability, reservations, interpolation, occupancy updates, and blocked-path
-repair. Hold **Shift** while right-clicking to append a waypoint. Press **S**
-to stop the selected actors and discard their active and queued movement.
-
-Press **F4** during gameplay to overlay PTH diagnostics. Region-zero cells are
-shaded red and region boundaries are cyan. This deliberately says “region
-zero,” not “blocked”: only the file-order row reading and 256×256 next-region
-table are proven. Right-click diagnostics now report source/target regions and
-whether their coarse chain reached the target, hit zero, cycled, or exhausted
-its limit.
-
-The engine also implements the recovered autonomous spawn-cell search: expand
-around the SCN origin, scanning X then Z, until the movement-class-specific
-grid accepts a cell. Ground class zero requires a nonzero PTH region and empty
-ground occupancy; nonzero classes use alternate occupancy. This is not yet the
-local movement pathfinder.
-
-Right-click diagnostics now also draw a yellow local cell chain. The search
-uses eight neighbors, permits executable-confirmed diagonal corner-cutting,
-checks the appropriate occupancy grid, follows the coarse-region set for
-ground actors, and emits at most 32 packed steps. It remains diagnostic because
-the native priority costs and tie-breaking order are not fully recovered; no
-actor position is changed.
-
-The engine now contains the recovered per-step playback boundary as well. It
-uses the executable's 2,048-scale cardinal vectors and 1,448 diagonal vectors,
-integer speed/duration math, and authentic no-snap completion residue. A path
-step atomically transfers occupancy to its destination before visual
-interpolation. Contention produces an explicit blocked state; repair, yielding,
-and jittered replanning are not implemented yet. The UI does not own or mutate
-this authoritative movement state.
-
-Gameplay now renders positions from an engine-owned `ScenarioSimulation`.
-Right-click intents are consumed on deterministic ticks and mobile actors play
-their diagnostic packed path with native occupancy/interpolation behavior.
-Across all 101 missions the authoritative simulation seeds 4,608 actors. Ordinary SCN
-construction preserves the executable's overwrite behavior for deliberately
-stacked records (for example LUNA formations), while autonomous groups still
-search for distinct empty cells. MOVE-facing animation and blockage recovery
-remain incomplete.
-
-Moving actors now carry persistent 8-bit facing. Each tick turns along the
-shorter wrapped arc by the entity's gamestat turn speed, and rendering applies
-the recovered `((facing + 8) & 255) >> 4` 16-sector quantization. Active path
-playback selects exact `<CODE>MOVE<sector>` animations when shipped. Even-only
-families use a visibly labelled nearest-sector fallback pending recovery of the
-native doubled animation-selector/mirroring rule; press F3 to audit the chosen
-animation.
-
-## Current unit controls
-
-In a campaign mission, team-0 units are locally controllable:
-
-- **Left-click** a unit to select it.
-- **Shift+left-click** adds/removes a unit from the selection.
-- **Shift+drag** makes an additive selection box; ordinary left-drag remains map panning.
-- **Right-click** terrain to issue deterministic move orders; selected units receive distinct nearby formation cells.
-- **Shift+right-click** appends a waypoint instead of replacing the active order.
-- The recovered right-hand HUD controls provide **Stop**, **Move**, **Move &
-  Attack**, and persistent **Waypoint** mode. Waypoint mode makes each
-  right-click append; each actor has the native maximum of eight queued
-  destinations, and consecutive duplicates are ignored.
-- The top HUD tabs follow the recovered exclusive groups: **Build** maps the
-  faction troop/building catalog, **Research** maps upgrades, and **Options**
-  maps pause/menu and local alliance controls. Build switches back to unit
-  commands when a mobile unit is selected. Paid building drops, troop
-  production, research completion, P7 reservations, and faction-matched
-  footprint validation run through deterministic engine intents.
-- **Move & Attack** directly targets a hostile actor, or attack-moves toward
-  terrain while acquiring hostiles in weapon range. It turns the actor,
-  launches a simulation-owned projectile, applies original weapon-class/armor-class
-  matrix damage, plays recovered effects/sounds, and destroys actors at zero
-  HP. Projectile lifetime remains provisional.
-- Idle armed units acquire visible hostiles in weapon range on their own.
-  Human players' ground units also close on hostiles 4 cells out, or 9 after
-  being hit; computer units look 16 out. This follows the recovered idle
-  handler; see `docs/reverse-engineering/target-acquisition.md`.
-- Contextual fifth-slot commands are live where their rule is recovered:
-  Exploiter/Slug deploy to Petra-7 vents, Engineer/Sloom deploy faction mines,
-  Turret/Xenowort deploy into their armed static forms, and BEON/ZISP use
-  **Heal** against a damaged cooperative unit. Heals use the original class-7
-  `mbullet` formula, recovered firing animation, cursor, and sound; their
-  native cadence and exact target range are still untraced.
-- **Steal Money** converts Cyborg/Psy-raider into the recovered static
-  SARGSTL/PSYCSTL stance with its original deployment animation and sound.
-  Campaign-authored rules now intercept 50% of a nearby hostile miner's vent
-  income without requiring visibility. Exact native range and tie-breaking
-  between multiple stealing units remain explicit provisional policies.
-- A deployed Turret/Xenowort is a static combat unit: its selected HUD exposes
-  **Stop** (clear an explicit target) and **Attack** only. It can directly
-  target a hostile actor but cannot receive move, waypoint, or Build orders.
-- Selected-unit and structure panels show live HP, effective weapon, movement,
-  current day/night sight, and completed weapon/armor research level.
-- **S** cancels active and queued movement for the selected units. **M** selects
-  Move mode and **W** selects Waypoint mode, matching the source button
-  dictionary annotations.
-- **Esc** first cancels the active map-target mode while retaining selection;
-  the next press clears selection. A paid pending building drop is kept active
-  because no native refund/cancel rule has been recovered.
-- **Left-drag** or use the arrow keys to pan.
-- **F3** shows resolved entity/animation identity; **F4** shows PTH regions.
-
-Move orders chain through any number of 32-step packed segments. A temporarily
-blocked unit first rebuilds its local route around the current occupancy grid;
-if no route is available it waits four simulation ticks before retrying. The
-compact top-left gameplay readout shows the selected unit, live
-health/movement/sight fields, research level, and queued-waypoint count.
-
-Neutral SCN team `-1` rows are now treated as autonomous spawn groups rather
-than single placed sprites. The installed corpus contains 561 such groups and
-requests 1,767 nature actors, exclusively Salamander, Bat, Renat, Spider, and
-Grub entity IDs. Initial members receive internal team 9 and occupy distinct
-movement-class-specific cells near the group origin. Members issue deterministic
-eight-tick wander orders; native population-maintenance rules remain untraced.
+- Fog of war:
+  - enemy structures stay drawn on explored ground (the original's remembered
+    overlays are not decoded);
+  - the soft edge of unexplored ground is not reproduced.
+- FIN draw type 4 (glow layers such as GASY's `spon`) draws as an opaque blob.
+- The original's own save files are not read.
+- Smaller items are open in [docs/GAMEPLAY_FIXES_PLAN.md](docs/GAMEPLAY_FIXES_PLAN.md)
+  and in each reverse-engineering note's status table.

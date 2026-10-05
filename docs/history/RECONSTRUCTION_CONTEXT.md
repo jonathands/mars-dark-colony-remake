@@ -34,7 +34,7 @@ one harvester may own or prepare on a vent.
   and the sight radius blends them by the lighting level. Team visibility
   follows `dc.exe`: per-radius sight trees read from the executable, MAP
   opacity and shaded cells, mine detectors, and a rebuild every 16 updates
-  (see [`reverse-engineering/vision.md`](reverse-engineering/vision.md)). The
+  (see [`reverse-engineering/vision.md`](../reverse-engineering/vision.md)). The
   gameplay renderer uses it to black out unseen cells and suppress unseen
   hostile minimap markers. The original keeps explored-terrain memory in
   grid bit 31; the main view and the minimap leave unexplored cells black. The
@@ -59,14 +59,14 @@ one harvester may own or prepare on a vent.
   native passive income is per player: +3 P7 every 16 ticks while the city
   headquarters (slot 0) stands, and vent income needs the same headquarters.
   The port applies both whenever the SCN declares cities; see
-  [`reverse-engineering/city-and-economy.md`](reverse-engineering/city-and-economy.md).
+  [`reverse-engineering/city-and-economy.md`](../reverse-engineering/city-and-economy.md).
   The former global 900-tick half-day has been replaced by the recovered
   per-SCN clock.
 - Steal Money follows `dc.exe`: a 50-tick state-13 transition, a
   cross-shaped victim search (`0x417944`) that needs the victim's cell to be
   visible at deploy time, one thief per harvester (the first keeps it),
   automatic retraction without a victim, and a half/half split of each pulse.
-  See [`reverse-engineering/unit-special-commands.md`](reverse-engineering/unit-special-commands.md).
+  See [`reverse-engineering/unit-special-commands.md`](../reverse-engineering/unit-special-commands.md).
 - `intrface/maine` explicitly declares its read-only “days counter” as text
   control 234 at `(613,433)`. The compiled HUD renders the deterministic count
   of completed full day/night pairs at that native location; phase text remains
@@ -166,7 +166,7 @@ one harvester may own or prepare on a vent.
   50% interception contract above. Inspire is enabled from executable evidence:
   it finishes a 50-tick state-13 cast, scans same-team armed occupants, and
   installs the recovered randomized exact-aim countdown.
-  [`reverse-engineering/unit-special-commands.md`](reverse-engineering/unit-special-commands.md)
+  [`reverse-engineering/unit-special-commands.md`](../reverse-engineering/unit-special-commands.md)
   is the detailed per-command evidence and implementation ledger.
   When the asset-name debug overlay is enabled, each live actor now also shows
   its recovered contextual action label, making owner/form mapping directly
@@ -254,7 +254,7 @@ one harvester may own or prepare on a vent.
   emits a troop type/cost/count command without a building instance or timer.
   The current selection/spawn adapter therefore must not be mistaken for a
   recovered native production queue. See
-  [`reverse-engineering/production-flow.md`](reverse-engineering/production-flow.md)
+  [`reverse-engineering/production-flow.md`](../reverse-engineering/production-flow.md)
   for the address-level evidence and next tracing boundary.
 - Completed `depend.txt` weapon research now selects the matching levelled
   `gamestat.txt` weapon slot for every actor of its target entity and team.
@@ -481,7 +481,7 @@ one harvester may own or prepare on a vent.
   1), fights it with the normal target/pursuit path, then resumes the
   destination. Clicking a hostile remains a direct `AttackIntent`. Idle units
   now acquire targets on their own (idle command `0x4148B0`); see
-  [`reverse-engineering/target-acquisition.md`](reverse-engineering/target-acquisition.md).
+  [`reverse-engineering/target-acquisition.md`](../reverse-engineering/target-acquisition.md).
   Selected-unit details expose the live direct target, P7 deployment, move, or
   attack-move destination in that precedence order, while rejected/acquired
   attack-move events are reported through the gameplay status strip.
@@ -629,12 +629,12 @@ one harvester may own or prepare on a vent.
 - Mission scripts run (2026-10-04). The `.tro` triggers are compiled the
   way the executable does and run every eighth update. Trip triggers fire
   from the `.mtg` map when a unit steps on a marked cell. See
-  [`reverse-engineering/mission-triggers.md`](reverse-engineering/mission-triggers.md).
+  [`reverse-engineering/mission-triggers.md`](../reverse-engineering/mission-triggers.md).
 - Each player's city is built at load from `%AISlots` line 2 (the origin) and
   `%City`. The slot entity comes from the executable build table, and the
   position and footprint from the slot tables. Every built slot lies on MAP
   pedestal cells (attribute bit 9). See
-  [`reverse-engineering/city-and-economy.md`](reverse-engineering/city-and-economy.md).
+  [`reverse-engineering/city-and-economy.md`](../reverse-engineering/city-and-economy.md).
 - An impact reducing health to zero now destroys the actor in simulation: it
   cancels movement/attack state, releases both occupancy grids, clears every
   attacker's target reference, removes the actor from render/selection, and
@@ -654,7 +654,7 @@ one harvester may own or prepare on a vent.
 
 - Cross-team diplomacy initialization, particularly row/column 9.
 - Exact armor-upgrade and transient damage multipliers. See
-  [`reverse-engineering/combat-damage.md`](reverse-engineering/combat-damage.md)
+  [`reverse-engineering/combat-damage.md`](../reverse-engineering/combat-damage.md)
   for the bounded collision-helper trace and why armor technology is not yet
   applied to port damage.
 - Exact projectile display scale, scatter, burst, and FIN event timing.
@@ -664,7 +664,7 @@ one harvester may own or prepare on a vent.
 ## Implementation milestones
 
 The authoritative ordering and subsystem boundaries are in
-[`PORT_CONTRACT.md`](PORT_CONTRACT.md). This list tracks reconstruction detail;
+[`PORT_CONTRACT.md`](../PORT_CONTRACT.md). This list tracks reconstruction detail;
 it does not override the engine -> renderer -> movement priority or promote AI
 and networking ahead of the local playable slice.
 

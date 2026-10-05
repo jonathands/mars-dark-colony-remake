@@ -2,7 +2,7 @@
 
 The original only ran at 640x480. The port can also run larger, sharp at the
 monitor's native DPI, fullscreen, and with a larger gameplay view. Everything
-here is a port enhancement (plan: [DISPLAY_MODES_PLAN.md](DISPLAY_MODES_PLAN.md)).
+here is a port enhancement (plan: [history/DISPLAY_MODES_PLAN.md](history/DISPLAY_MODES_PLAN.md)).
 At window scale 1 with the classic view the port draws exactly the original
 640x480 picture. None of it touches the simulation.
 

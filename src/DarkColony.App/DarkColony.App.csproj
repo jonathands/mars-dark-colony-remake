@@ -4,7 +4,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- Native DPI: the window works in physical pixels on every monitor (docs/DISPLAY_MODES_PLAN.md). -->
+    <!-- Native DPI: the window works in physical pixels on every monitor (docs/DISPLAY.md). -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
   <ItemGroup>

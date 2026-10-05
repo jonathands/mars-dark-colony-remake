@@ -3,7 +3,7 @@
 Goal: run the port fullscreen at the monitor's native DPI, with selectable
 resolutions. Branch `feature/display-modes`, from `master` f969ac0. Written
 2026-10-04. The goal prompt at the end can be passed to a fresh session, for
-example with `/goal implement docs/DISPLAY_MODES_PLAN.md`.
+example with `/goal implement docs/history/DISPLAY_MODES_PLAN.md`.
 
 This is an enhancement beyond the original, which only ran at 640x480. The
 640x480 "classic" picture stays the default and stays exact. Nothing here may
@@ -249,7 +249,7 @@ which waits for the user.
 ## Goal prompt
 
 ````text
-Você vai implementar, de forma autônoma e até o fim, o plano docs/DISPLAY_MODES_PLAN.md
+Você vai implementar, de forma autônoma e até o fim, o plano docs/history/DISPLAY_MODES_PLAN.md
 do port .NET de Dark Colony: tela cheia com DPI nativo e resoluções selecionáveis.
 Responda ao usuário sempre em português. Não pare para pedir confirmação: as decisões
 do usuário já estão na seção "Decisions" do plano.
@@ -260,7 +260,7 @@ do usuário já estão na seção "Decisions" do plano.
 - Branch de trabalho: feature/display-modes (a partir do master f969ac0). Não faça merge
   na master sem pedido.
 - Instalação original: C:\Users\LY\Desktop\darkcolony\Dark Colony.
-- Leia antes: AGENTS.md, docs/PORT_CONTRACT.md, docs/TESTING.md, docs/DISPLAY_MODES_PLAN.md,
+- Leia antes: AGENTS.md, docs/PORT_CONTRACT.md, docs/TESTING.md, docs/history/DISPLAY_MODES_PLAN.md,
   docs/reverse-engineering/gameplay-hud.md e gameplay-input.md, e a memória em
   C:\Users\LY\.claude\projects\C--Users-LY-Desktop-darkcolony\memory\.
 

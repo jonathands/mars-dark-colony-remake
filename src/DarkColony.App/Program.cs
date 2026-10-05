@@ -40,7 +40,7 @@ internal static class Program
         int? outcomeAfter = outcomeIndex >= 0 && outcomeIndex + 1 < arguments.Length && int.TryParse(arguments[outcomeIndex + 1], out var seconds) ? seconds : null;
         var forcedVictory = outcomeIndex >= 0 && outcomeIndex + 2 < arguments.Length &&
                             arguments[outcomeIndex + 2].Equals("victory", StringComparison.OrdinalIgnoreCase);
-        // Display settings: the port's own (docs/DISPLAY_MODES_PLAN.md). Flags
+        // Display settings: the port's own (docs/DISPLAY.md). Flags
         // override the file for this run only.
         // --display-settings <file> uses another settings file (tests never touch the player's).
         var displaySettingsIndex = Array.FindIndex(arguments, argument => argument.Equals("--display-settings", StringComparison.OrdinalIgnoreCase));

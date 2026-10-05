@@ -8,7 +8,7 @@ using DarkColony.Presentation;
 namespace DarkColony.App;
 
 /// <summary>
-/// Display modes, a port enhancement (docs/DISPLAY_MODES_PLAN.md): the window
+/// Display modes, a port enhancement (docs/DISPLAY.md): the window
 /// size and DPI, the size of the logical picture, and the pointer over a
 /// scaled picture. The original only ran at 640x480; at window scale 1 with
 /// the classic view the port draws exactly that.

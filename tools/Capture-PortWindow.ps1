@@ -23,7 +23,7 @@ $dc = $graphics.GetHdc()
 $ok = [PortCapture]::PrintWindow($process.MainWindowHandle, $dc, 2)
 $graphics.ReleaseHdc($dc); $graphics.Dispose()
 
-$directory = Join-Path $PSScriptRoot 'screenshots'
+$directory = Join-Path (Split-Path -Parent $PSScriptRoot) 'screenshots'
 New-Item -ItemType Directory -Force -Path $directory | Out-Null
 $path = Join-Path $directory ("{0}-{1}.png" -f $Name, (Get-Date -Format 'HHmmss'))
 $bitmap.Save($path, [Drawing.Imaging.ImageFormat]::Png)

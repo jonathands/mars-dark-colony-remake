@@ -67,7 +67,7 @@ if (-not $process.HasExited) {
     $process.WaitForExit($Seconds * 1000) | Out-Null
 }
 if (-not $process.HasExited) {
-    $screenshot = & (Join-Path $repo 'capture-port-window.ps1') -Name $Name
+    $screenshot = & (Join-Path $PSScriptRoot 'Capture-PortWindow.ps1') -Name $Name
     if (-not $Keep) {
         $process.CloseMainWindow() | Out-Null
         if (-not $process.WaitForExit(5000)) { $process.Kill() }
