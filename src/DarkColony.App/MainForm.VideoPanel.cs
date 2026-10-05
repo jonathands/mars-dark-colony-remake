@@ -1,3 +1,4 @@
+using System.Globalization;
 using DarkColony.App.Diagnostics;
 using DarkColony.App.Rendering;
 using DarkColony.App.Ui;
@@ -7,21 +8,24 @@ using DarkColony.Presentation;
 namespace DarkColony.App;
 
 /// <summary>
-/// The port's Video panel (not in the original): display mode, size,
-/// scaling, gameplay view, vsync and pointer lock. It is drawn with the
-/// OPTIONS popup's art (<c>popp.spr</c>, <c>mfonto7</c>). F10 opens it on the
-/// main menu; the in-game OPTIONS popup has a VIDEO button. While it is open
-/// in a single-player game the world waits, as with OPTIONS.
+/// The port's settings panel (not in the original): display mode, size,
+/// scaling, gameplay view, vsync, pointer lock, the start-up intro and the
+/// FPS counter. It is drawn with the OPTIONS popup's art (<c>popp.spr</c>,
+/// <c>mfonto7</c>). The main menu's OPTIONS button in the top-right corner
+/// and F10 open it there; the in-game OPTIONS popup has a VIDEO button. While
+/// it is open in a single-player game the world waits, as with OPTIONS.
 /// </summary>
 public sealed partial class MainForm
 {
     private const int VideoPanelTop = 96;
-    private const int VideoPanelRowsTop = 150;
-    private const int VideoPanelRowStep = 30;
+    private const int VideoPanelRowsTop = 138;
+    private const int VideoPanelRowStep = 24;
     private static readonly Rectangle VideoPanelOk = new(320, 344, 32, 32);
     private static readonly Rectangle VideoPanelCancel = new(360, 344, 32, 32);
     // The in-game OPTIONS popup's port-only VIDEO button, left of OK/Cancel.
     private static readonly Rectangle OptionsVideoButton = new(152, 336, 112, 24);
+    // The main menu's port-only OPTIONS button, in the free top-right corner.
+    private static readonly Rectangle MainMenuOptionsButton = new(520, 8, 112, 24);
 
     private DisplaySettings? _videoDraft;
     private IReadOnlyList<DisplayModeChoice> _videoDisplayModes = [];
@@ -159,7 +163,7 @@ public sealed partial class MainForm
             return;
         }
         if (_videoDraft is not { } draft) return;
-        Centred("VIDEO", 208, 112, VideoPanelTop + 17);
+        Centred("OPTIONS", 208, 112, VideoPanelTop + 17);
         foreach (var row in Enum.GetValues<DisplaySettingRow>())
         {
             var y = VideoPanelRowsTop + (int)row * VideoPanelRowStep;
@@ -181,19 +185,64 @@ public sealed partial class MainForm
     /// <summary>The port's VIDEO button in the in-game OPTIONS popup.</summary>
     private void DrawOptionsVideoButton(Graphics graphics)
     {
-        if (_optionsDraft is null || _optionsArt is not { } art || art.Frames.Count <= 6) return;
+        if (_optionsDraft is not null) DrawPortButton(graphics, OptionsVideoButton, "VIDEO");
+    }
+
+    /// <summary>The main menu's OPTIONS button, which opens the settings panel.</summary>
+    private void DrawMainMenuOptionsButton(Graphics graphics)
+    {
+        if (_screen != MenuScreenId.Main || VideoPanelOpen || _installation is null) return;
+        try
+        {
+            _optionsArt ??= Sprite.Load(_installation.DataFile("intrface", "popp.spr"));
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException)
+        {
+            return;
+        }
+        DrawPortButton(graphics, MainMenuOptionsButton, "OPTIONS");
+    }
+
+    /// <summary>A port-only button: <c>popp.spr</c> frame 6 with a centred <c>mfonto7</c> label.</summary>
+    private void DrawPortButton(Graphics graphics, Rectangle bounds, string label)
+    {
+        if (_optionsArt is not { } art || art.Frames.Count <= 6) return;
         var palette = ScreenPalette("intrface");
         var image = art.Frames[6];
         var rgba = art.FrameRgba(6, palette: palette);
-        if (_activeCanvas is { } canvas) canvas.DrawForeground(new GpuImage(image.Width, image.Height, rgba, transient: true), OptionsVideoButton.X, OptionsVideoButton.Y);
+        if (_activeCanvas is { } canvas) canvas.DrawForeground(new GpuImage(image.Width, image.Height, rgba, transient: true), bounds.X, bounds.Y);
         else
         {
             using var bitmap = BitmapFromRgba(image.Width, image.Height, rgba);
-            graphics.DrawImageUnscaled(bitmap, OptionsVideoButton.X, OptionsVideoButton.Y);
+            graphics.DrawImageUnscaled(bitmap, bounds.X, bounds.Y);
         }
         var font = LoadFont("mfonto7");
         var cell = font.Sprite.Frames[0].Width + 1;
-        const string label = "VIDEO";
-        DrawCellText(graphics, label, OptionsVideoButton.X + (OptionsVideoButton.Width - label.Length * cell) / 2, OptionsVideoButton.Y + 7, font, colour: 4, palette: "intrface");
+        DrawCellText(graphics, label, bounds.X + (bounds.Width - label.Length * cell) / 2, bounds.Y + 7, font, colour: 4, palette: "intrface");
+    }
+
+    // The FPS counter (SHOW FPS): frames drawn over the last whole second.
+    private long _fpsSecondStart;
+    private int _fpsFrames;
+    private int _fps;
+
+    private void CountFrame()
+    {
+        _fpsFrames++;
+        var now = Environment.TickCount64;
+        if (now - _fpsSecondStart < 1000) return;
+        _fps = (int)(_fpsFrames * 1000L / Math.Max(1, now - _fpsSecondStart));
+        _fpsFrames = 0;
+        _fpsSecondStart = now;
+    }
+
+    private void DrawFpsCounter(Graphics graphics)
+    {
+        if (!_display.ShowFps || _installation is null) return;
+        var font = LoadFont("mfonto7");
+        var cell = font.Sprite.Frames[0].Width + 1;
+        var text = string.Create(CultureInfo.InvariantCulture, $"FPS {_fps}");
+        FillNative(graphics, new Rectangle(4, 4, text.Length * cell + 4, font.Sprite.Frames[0].Height + 4), Color.Black);
+        DrawCellText(graphics, text, 6, 6, font, colour: 4, palette: "intrface");
     }
 }

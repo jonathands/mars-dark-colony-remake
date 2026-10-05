@@ -43,12 +43,13 @@ scale 1 with the classic view. See [docs/DISPLAY.md](docs/DISPLAY.md).
 | Control | Effect |
 | --- | --- |
 | Alt+Enter | Windowed ↔ fullscreen |
-| F10 (main menu) or VIDEO (in-game OPTIONS) | The Video panel: mode, size, scaling, view, vsync, pointer lock |
+| OPTIONS or F10 (main menu), VIDEO (in-game OPTIONS) | The settings panel: mode, size, scaling, view, vsync, pointer lock, intro video, FPS |
 | `--windowed`, `--fullscreen`, `--exclusive [WxH[@Hz]]` | Window mode for this run |
 | `--window-scale N` | Window size in multiples of 640x480; 0 follows the DPI |
 | `--scale-mode integer\|fit\|stretch` | How the picture fits the output |
 | `--view classic\|auto\|WxH` | Gameplay view (network games stay classic) |
 | `--vsync on\|off`, `--confine-cursor on\|off` | Vsync and pointer lock |
+| `--intro-video on\|off`, `--show-fps on\|off` | Start-up intro and the FPS counter |
 | `--display-settings <file>` | Settings file (default `%LOCALAPPDATA%\DarkColonyPort\display.json`) |
 
 The [`run-display`](run-display) folder holds one-click presets. Each one runs

@@ -310,7 +310,7 @@ public sealed partial class MainForm : Form
             Shown += (_, _) =>
             {
                 if (ReplayPath is not null) StartReplay();
-                else PlayVideo("avi/intro.avi", () => ShowScreen(MenuScreenId.Main));
+                else if (_display.IntroVideo) PlayVideo("avi/intro.avi", () => ShowScreen(MenuScreenId.Main));
             };
         _timer.Tick += (_, _) =>
         {
@@ -467,6 +467,7 @@ public sealed partial class MainForm : Form
     private void RenderFrame(Graphics graphics, GameCanvas canvas)
     {
         _activeCanvas = canvas;
+        CountFrame();
         if (_video is { } video)
         {
             DrawVideo(canvas, video);
@@ -527,9 +528,11 @@ public sealed partial class MainForm : Form
         }
         if (_screen != MenuScreenId.Gameplay)
         {
+            DrawMainMenuOptionsButton(graphics);
             DrawVideoPanel(graphics);
             DrawMenuCursor(graphics);
         }
+        DrawFpsCounter(graphics);
         _activeCanvas = null;
     }
 

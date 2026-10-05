@@ -133,10 +133,11 @@ follows the window when it is resized.
 
 ## Video panel
 
-The Video panel is the port's own. It is drawn with the OPTIONS popup's art
-(`popp.spr`, the `mfonto7` font), and it opens:
+The Video panel is the port's own, titled OPTIONS. It is drawn with the
+OPTIONS popup's art (`popp.spr`, the `mfonto7` font), and it opens:
 
-- with **F10** on the main menu;
+- with the **OPTIONS** button the port adds to the main menu's top-right
+  corner, or **F10** there;
 - with the **VIDEO** button the port adds to the in-game OPTIONS popup.
 
 | Row | Values |
@@ -147,6 +148,8 @@ The Video panel is the port's own. It is drawn with the OPTIONS popup's art
 | VIEW | CLASSIC, AUTO, 800X600 ... 1920X1080 (network games always play classic) |
 | VSYNC | ON, OFF |
 | POINTER LOCK | FULLSCREEN (default), ALWAYS, NEVER |
+| INTRO VIDEO | ON (default), OFF: whether `avi/intro.avi` plays at start-up. PLAY INTRO still plays it |
+| SHOW FPS | OFF (default), ON: frames drawn per second, in the picture's top-left corner |
 
 The arrows step through each row. OK applies and saves; Cancel and Esc
 discard. A new exclusive display mode asks "KEEP THIS DISPLAY MODE?": OK
@@ -173,6 +176,8 @@ Command-line flags override the file for one run, without saving:
 | `--view classic\|auto\|WxH` | Gameplay view |
 | `--vsync on\|off` | Wait for the vertical blank |
 | `--confine-cursor on\|off` | Keep the pointer on the picture during play, in every mode (unset: fullscreen only) |
+| `--intro-video on\|off` | Play the intro at start-up |
+| `--show-fps on\|off` | Show the frame rate |
 | `--display-settings <file>` | Use another settings file (the tests use a throwaway one) |
 
 The Video panel and Alt+Enter save the settings in effect, flags included.

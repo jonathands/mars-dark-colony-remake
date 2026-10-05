@@ -349,6 +349,8 @@ public sealed partial class MainForm
         {
             QueueDiagnosticMove(eventArgs.Location);
         }
+        if (button is null && _screen == MenuScreenId.Main && eventArgs.Button == MouseButtons.Left && MainMenuOptionsButton.Contains(eventArgs.Location))
+            OpenVideoPanel();
         if (button is null && _screen == MenuScreenId.LoadGame && eventArgs.Button == MouseButtons.Left)
             SelectSaveAt(eventArgs.Location);
         if (button is null && _screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left)

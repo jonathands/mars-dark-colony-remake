@@ -157,6 +157,11 @@ internal static class PresentationChecks
                  Value(Step(settings, DisplaySettingRow.PointerLock), DisplaySettingRow.PointerLock),
                  Value(Step(settings, DisplaySettingRow.PointerLock, -1), DisplaySettingRow.PointerLock)));
             Equal("1920X1080", Value(Step(settings, DisplaySettingRow.View, -1), DisplaySettingRow.View));
+            // The intro plays and the FPS counter is hidden until a row turns them over.
+            Equal(("ON", "OFF", "OFF", "ON"),
+                (Value(settings, DisplaySettingRow.IntroVideo), Value(settings, DisplaySettingRow.ShowFps),
+                 Value(Step(settings, DisplaySettingRow.IntroVideo), DisplaySettingRow.IntroVideo),
+                 Value(Step(settings, DisplaySettingRow.ShowFps, -1), DisplaySettingRow.ShowFps)));
 
             var chosen = Step(exclusive, DisplaySettingRow.Size);
             Equal((true, true, false, false),
@@ -188,6 +193,8 @@ internal static class PresentationChecks
 
             var rejected = settings.WithArguments(["--window-scale", "12", "--view", "320x200", "--scale-mode", "blur", "--exclusive", "huge"], out problems);
             Equal((4, 3, "1280x720", ScaleMode.Fit, WindowMode.Borderless), (problems.Count, rejected.WindowScale, rejected.View, rejected.Scale, rejected.Mode));
+            var extras = settings.WithArguments(["--intro-video", "off", "--show-fps", "on", "--show-fps", "maybe"], out problems);
+            Equal((1, false, true), (problems.Count, extras.IntroVideo, extras.ShowFps));
 
             // auto divides the output by the largest whole scale that keeps 640x480.
             var auto = new DisplaySettings { View = "auto" };

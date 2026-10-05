@@ -97,6 +97,12 @@ public sealed record DisplaySettings
     /// </summary>
     public bool? ConfineCursor { get; init; }
 
+    /// <summary>Whether <c>avi/intro.avi</c> plays before the main menu at start-up (PLAY INTRO always plays it).</summary>
+    public bool IntroVideo { get; init; } = true;
+
+    /// <summary>Whether the frame rate is shown in the picture's top-left corner.</summary>
+    public bool ShowFps { get; init; }
+
     /// <summary>Whether the pointer is kept on the picture during play in <see cref="Mode"/>.</summary>
     [JsonIgnore]
     public bool ConfinesCursor => ConfineCursor ?? Mode != WindowMode.Windowed;
@@ -182,7 +188,8 @@ public sealed record DisplaySettings
     /// Applies command-line overrides: <c>--windowed</c>, <c>--fullscreen</c>
     /// (borderless), <c>--exclusive [WxH[@Hz]]</c>, <c>--window-scale N</c>,
     /// <c>--scale-mode integer|fit|stretch</c>, <c>--view classic|auto|WxH</c>,
-    /// <c>--vsync on|off</c> and <c>--confine-cursor on|off</c>. Unknown
+    /// <c>--vsync on|off</c>, <c>--confine-cursor on|off</c>,
+    /// <c>--intro-video on|off</c> and <c>--show-fps on|off</c>. Unknown
     /// values are reported and ignored.
     /// </summary>
     public DisplaySettings WithArguments(IReadOnlyList<string> arguments, out IReadOnlyList<string> problems)
@@ -227,6 +234,14 @@ public sealed record DisplaySettings
                 case "--confine-cursor":
                     if (Switch(value) is { } confine) settings = settings with { ConfineCursor = confine };
                     else found.Add($"--confine-cursor {value}: expected on or off.");
+                    break;
+                case "--intro-video":
+                    if (Switch(value) is { } intro) settings = settings with { IntroVideo = intro };
+                    else found.Add($"--intro-video {value}: expected on or off.");
+                    break;
+                case "--show-fps":
+                    if (Switch(value) is { } fps) settings = settings with { ShowFps = fps };
+                    else found.Add($"--show-fps {value}: expected on or off.");
                     break;
             }
         }

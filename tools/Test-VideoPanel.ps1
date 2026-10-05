@@ -69,8 +69,8 @@ function Expect([string] $pattern, [string] $what) {
     if (-not (Select-String -Path $log -Pattern $pattern -Quiet)) { $failures.Add("$what (log has no '$pattern')") }
 }
 function Saved { Get-Content -Raw $settings | ConvertFrom-Json }
-# Row arrows (MainForm.VideoPanel.cs): right arrow x 372, rows from y 150 every 30.
-function Right([int] $row) { "click:380,$(155 + 30 * $row)" }
+# Row arrows (MainForm.VideoPanel.cs): right arrow x 372, rows from y 138 every 24.
+function Right([int] $row) { "click:380,$(143 + 24 * $row)" }
 $ok = 'click:336,360'
 $cancel = 'click:376,360'
 

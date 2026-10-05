@@ -11,12 +11,13 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 3 | Upgrades cannot be bought | done: research needs no building |
 | 4 | A pylon is missing in the built base (reference: a screenshot of the original) | open |
 | 5 | Buildings are not instant: a ship lowers them (Angel1 for Humans, the Gray disc) | open |
-| 6 | An options menu, in a corner for now: resolution, intro video off, show FPS | open |
+| 6 | An options menu, in a corner for now: resolution, intro video off, show FPS | done: OPTIONS in the main menu's top-right corner |
 | 7 | The land mine never attacks | open |
 | 8 | The dropship button and action do not work | open |
 | 9 | A troop leaves its building with an animation (the marine from the barracks, the Gray from its hive) | open |
 | 10 | Some commands, attack-move among them, do not work | open |
 | 11 | A marine hit by a Gray beyond its own range does not respond | open |
+| 12 | Esc in a game should ask for confirmation | open |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

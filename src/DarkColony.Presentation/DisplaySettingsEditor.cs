@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace DarkColony.Presentation;
 
-/// <summary>The rows of the port's Video panel, top to bottom.</summary>
+/// <summary>The rows of the port's settings panel, top to bottom.</summary>
 public enum DisplaySettingRow
 {
     Mode,
@@ -11,6 +11,8 @@ public enum DisplaySettingRow
     View,
     VSync,
     PointerLock,
+    IntroVideo,
+    ShowFps,
 }
 
 /// <summary>
@@ -31,6 +33,8 @@ public static class DisplaySettingsEditor
         DisplaySettingRow.View => "VIEW",
         DisplaySettingRow.VSync => "VSYNC",
         DisplaySettingRow.PointerLock => "POINTER LOCK",
+        DisplaySettingRow.IntroVideo => "INTRO VIDEO",
+        DisplaySettingRow.ShowFps => "SHOW FPS",
         _ => throw new ArgumentOutOfRangeException(nameof(row), row, null),
     };
 
@@ -52,6 +56,8 @@ public static class DisplaySettingsEditor
         DisplaySettingRow.View => settings.View.ToUpperInvariant(),
         DisplaySettingRow.VSync => settings.VSync ? "ON" : "OFF",
         DisplaySettingRow.PointerLock => settings.ConfineCursor switch { null => "FULLSCREEN", true => "ALWAYS", false => "NEVER" },
+        DisplaySettingRow.IntroVideo => settings.IntroVideo ? "ON" : "OFF",
+        DisplaySettingRow.ShowFps => settings.ShowFps ? "ON" : "OFF",
         _ => throw new ArgumentOutOfRangeException(nameof(row), row, null),
     };
 
@@ -89,6 +95,10 @@ public static class DisplaySettingsEditor
             case DisplaySettingRow.PointerLock:
                 bool?[] locks = [null, true, false];
                 return settings with { ConfineCursor = Cycle(locks, IndexOf(locks, settings.ConfineCursor)) };
+            case DisplaySettingRow.IntroVideo:
+                return settings with { IntroVideo = !settings.IntroVideo };
+            case DisplaySettingRow.ShowFps:
+                return settings with { ShowFps = !settings.ShowFps };
             default:
                 throw new ArgumentOutOfRangeException(nameof(row), row, null);
         }
