@@ -216,6 +216,8 @@ public sealed partial class MainForm
             _grantedP7 = false;
             RestorePendingSave();
             _missionOutcomeReported = false;
+            _warDefeated = false;
+            _warPlayersInGame = -1;
             _bailOutcome = null;
             _missionStartedAtMilliseconds = Environment.TickCount64;
             _previousActorRenderPositions.Clear();

@@ -614,5 +614,47 @@ public sealed partial class MainForm : Form
         CaptureInspireFeedback();
         CaptureHarvesterFeedback();
         CaptureConstructionFeedback();
+        CheckWarEnd();
+    }
+
+    // Gameplay +0x13B: the local player is out of this War and watches (0x40A871).
+    private bool _warDefeated;
+    // The players still in the War, to say who leaves it.
+    private int _warPlayersInGame = -1;
+
+    /// <summary>
+    /// The War rules of the gameplay loop. Once the local player has nothing
+    /// left in the game (<c>0x40DE20</c>) it is told so (<c>maine</c> text 282)
+    /// and watches. Once every player still in the game is allied
+    /// (<c>0x40DEAC</c>) the game ends at once: a victory, or a defeat when the
+    /// local player was already out (stat (0,0) = 8, <c>0x40A91E</c>).
+    /// </summary>
+    private void CheckWarEnd()
+    {
+        if (_selectedScenario?.WarLaunch is null || _scenarioSimulation is not { } simulation || _missionOutcomeReported) return;
+        var inGame = Enumerable.Range(0, 8).Where(simulation.IsPlayerInGame).Aggregate(0, (mask, player) => mask | 1 << player);
+        if (_warPlayersInGame >= 0)
+            foreach (var player in Enumerable.Range(0, 8).Where(player => (_warPlayersInGame & 1 << player) != 0 && (inGame & 1 << player) == 0))
+            {
+                RuntimeLog.Info($"War: team {player + 1} is out of the game at tick {simulation.TickCount}.");
+                if (player != _localPlayerTeam) _status = $"Team {player + 1} is out of the game.";
+            }
+        _warPlayersInGame = inGame;
+        if (!_warDefeated && (inGame & 1 << _localPlayerTeam) == 0)
+        {
+            _warDefeated = true;
+            _status = _gameplayHudLayout.ControlText(282) ?? "You have been defeated.  You are now in observation mode.";
+        }
+        if (!simulation.IsWarOver()) return;
+        EndWar(victory: !_warDefeated);
+    }
+
+    /// <summary>Ends a War: the race's victory video (<c>0x40478E</c>), then the result.</summary>
+    private void EndWar(bool victory)
+    {
+        _missionOutcomeReported = true;
+        var outcome = new MissionOutcome(victory ? 0 : 1, 0, _scenarioSimulation?.TickCount ?? 0);
+        RuntimeLog.Info($"War over: {(victory ? "victory" : "defeat")} at tick {outcome.RequestedAtTick}.");
+        PlayMissionEndVideo(outcome, () => ShowMissionDebrief(outcome));
     }
 }

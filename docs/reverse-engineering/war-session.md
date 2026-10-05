@@ -36,6 +36,45 @@ and a computer row on `j4play01` land on teams 4 and 2.
 - **Session.** `+0x1524 + team` is 1 exactly for occupied positions.
 - **City slots.** For every other team, the loader (`0x41C155`) zeroes the level and health of every city slot. Those teams get no buildings.
 
+## End of the game
+
+War scenarios have no `bail` triggers. The end is a rule of the gameplay
+loop, for game types 1 and 2 (settings `+0x14A0`):
+
+- **In the game** (`0x40DE20`): a player is in the game while one of its
+  actors is alive.
+  - The 800-actor table at `world + 0x7D28` (stride `0xDC`) is walked, and
+    state byte `+0x2C` must be 1, not 0 (free) or 10 (dying).
+  - Team byte `+7` names the owner.
+  - City slot 5 (actor index below `0x78` with index % 15 == 5) does not
+    count, nor do entities 41 and 42 (deployed mobile towers) and 45 and 46
+    (mines).
+  - Units count as much as buildings. So do the idle placed units of an
+    empty position, which keep that position in the game until they are
+    destroyed.
+- **Out** (`0x40A832`): once the local player is no longer in the game,
+  gameplay `+0x13B` is set and the message strip shows `maine` text 282,
+  "You have been defeated. You are now in observation mode." The game goes
+  on.
+- **Over** (`0x40DEAC`): every player still in the game must be allied both
+  ways (`0x41E820`) with the first of them. A lone survivor ends the game,
+  and so does nobody. The loop then sets the quit flag `world + 0x471A8`.
+- **Result**: stat (0,0) becomes the local team, or 8 if `+0x13B` is set
+  (`0x40A91E`).
+  - Leaving through "REALLY QUIT?" sets `+0x13A` (`0x4329C6`) and also
+    writes 8 (`0x40A9FB`).
+  - The result screen (`0x404776`) plays `avi/hvad1.avi` or
+    `avi/avhd1.avi`, by race, when stat (0,0) is the local team. It then
+    shows `intrface/multiwn` with "Victory" or "Defeat" and per-player
+    "Kills"/"Losses".
+
+The port checks this after every update (`MainForm.CheckWarEnd`, with
+`ScenarioSimulation.IsPlayerInGame` and `IsWarOver`). The result reuses
+the mission debrief screen, which says "Victory" or "Defeat"; the
+`multiwn` layout and its kill and loss counts are not drawn yet. When a
+player leaves the game, the port also writes "Team N is out of the game."
+in the message strip, which the original does not do.
+
 ## Port
 
 `WarSession.Assign` and `WarSession.Apply` (Engine/Scenario) implement both

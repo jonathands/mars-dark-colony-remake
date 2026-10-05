@@ -48,7 +48,9 @@ public sealed partial class MainForm
         {
             _quitConfirmOpen = false;
             RuntimeLog.Info("Quit confirmed.");
-            ShowScreen(MenuScreenId.Main);
+            // 0x4329C6 sets +0x13A: leaving a War is a defeat (stat (0,0) = 8, 0x40A9FB).
+            if (_selectedScenario?.WarLaunch is not null && !_missionOutcomeReported && _scenarioSimulation is not null) EndWar(victory: false);
+            else ShowScreen(MenuScreenId.Main);
         }
         else if (QuitNoButton.Contains(point)) CloseQuitConfirm();
     }

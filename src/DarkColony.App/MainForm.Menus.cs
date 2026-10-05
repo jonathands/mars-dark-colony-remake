@@ -216,6 +216,8 @@ public sealed partial class MainForm
         var key = outcome.OutcomeText.ToString("000", System.Globalization.CultureInfo.InvariantCulture);
         _debriefText = _missionText?.Outcomes.TryGetValue(key, out var text) == true
             ? text
+            // A War's result screen (intrface/multiwn) says Victory or Defeat.
+            : _selectedScenario?.WarLaunch is not null ? outcome.Victory ? "Victory" : "Defeat"
             : outcome.Victory ? "Mission complete." : "Mission failed.";
         _briefingScrollLine = 0;
         _storyReturnsToGameplay = false;

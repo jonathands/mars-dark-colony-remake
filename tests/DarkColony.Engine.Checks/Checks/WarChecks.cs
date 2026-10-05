@@ -305,5 +305,44 @@ internal static class WarChecks
             var cityTeams = Enumerable.Range(0, 4).Where(team => Enumerable.Range(0, 15).Any(slot => simulation.CityBuilding(team, slot) is not null));
             Equal("1,3", string.Join(',', cityTeams));
         }, CheckTags.Data);
+
+        Check("a War ends once every player still in it is allied both ways with the first, units and empty positions included", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var rules = SimulationRules.Load(install);
+            var catalog = SinglePlayerWarCatalog.Load(install);
+            WarLobbyRow[] rows =
+            [
+                new(WarSeatKind.Human, 0, 0), new(WarSeatKind.Computer, 1),
+                new(WarSeatKind.None, 0), new(WarSeatKind.None, 1), new(WarSeatKind.None, 0),
+                new(WarSeatKind.None, 1), new(WarSeatKind.None, 0), new(WarSeatKind.None, 1),
+            ];
+            Equal(true, catalog.Scenarios.Single(map => map.Stem == "j4play01").TryCreateSession(rows, 0, SinglePlayerWarSettings.Default, rules.RandomTable, out var launch));
+            var file = install.DataFile("scenario", "mplayer", "j4play01.scn");
+            var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+            var simulation = ScenarioSimulation.Create(launch.ApplyTo(ScenarioDefinition.Load(file)),
+                PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height), rules, MissionScript.LoadForScenario(file), map);
+            // The human is team 3 and the computer team 1; 0 and 2 are empty positions.
+            Equal(false, simulation.IsWarOver());
+
+            // Everything of teams 0-2 dies but one placed actor of an empty position (0x40DE20).
+            var destroyed = new List<DestroyedActorEvent>();
+            var others = simulation.Actors.Where(actor => actor.Seed.Team is 0 or 1 or 2 && !actor.IsDestroyed).ToArray();
+            var holdout = others.FirstOrDefault(actor => actor.Seed.Team is 0 or 2)
+                ?? throw new InvalidOperationException("j4play01's empty positions place no actors.");
+            foreach (var actor in others.Where(actor => actor != holdout)) simulation.Kill(actor, 3, destroyed);
+            Equal((false, true, true, false), (simulation.IsPlayerInGame(1), simulation.IsPlayerInGame(holdout.Seed.Team), simulation.IsPlayerInGame(3), simulation.IsWarOver()));
+
+            // One-way alliance is not enough (0x41E820); both ways ends it.
+            simulation.SetAllianceBit(holdout.Seed.Team, 3, true);
+            Equal(false, simulation.IsWarOver());
+            simulation.SetAllianceBit(3, holdout.Seed.Team, true);
+            Equal(true, simulation.IsWarOver());
+            simulation.SetAllianceBit(3, holdout.Seed.Team, false);
+
+            // A lone survivor wins.
+            simulation.Kill(holdout, 3, destroyed);
+            Equal((false, true), (simulation.IsPlayerInGame(holdout.Seed.Team), simulation.IsWarOver()));
+        }, CheckTags.Data);
     }
 }
