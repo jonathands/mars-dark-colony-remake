@@ -17,7 +17,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 9 | A troop leaves its building with an animation (the marine from the barracks, the Gray from its hive) | open |
 | 10 | Some commands, attack-move among them, do not work | open |
 | 11 | A marine hit by a Gray beyond its own range does not respond | open |
-| 12 | Esc in a game should ask for confirmation | open |
+| 12 | Esc in a game should ask for confirmation | done: the original's lqce dialog, also for QUIT and Q |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

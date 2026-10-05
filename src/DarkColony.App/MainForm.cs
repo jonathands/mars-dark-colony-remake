@@ -332,7 +332,7 @@ public sealed partial class MainForm : Form
                     StepNetworkGame();
                     return;
                 }
-                if (!_gameplayPaused && _optionsDraft is null && !VideoPanelOpen)
+                if (!_gameplayPaused && _optionsDraft is null && !VideoPanelOpen && !_quitConfirmOpen)
                 {
                     CapturePreviousActorRenderPositions();
                     _world.Step();
@@ -493,6 +493,7 @@ public sealed partial class MainForm : Form
                 DrawGameOptions(graphics);
                 DrawOptionsVideoButton(graphics);
                 DrawVideoPanel(graphics);
+                DrawQuitConfirm(graphics);
             }
             DrawGameplayCursor(graphics);
             // Keep the native gameplay viewport clear. The previous

@@ -23,11 +23,13 @@ namespace DarkColony.App;
 public sealed partial class MainForm
 {
     protected override bool ProcessCmdKey(ref Message message, Keys keyData) =>
-        HandleNewGameKey(keyData & Keys.KeyCode) || HandleGameplayKey(keyData) || base.ProcessCmdKey(ref message, keyData);
+        HandleQuitConfirmKey(keyData & Keys.KeyCode) || HandleNewGameKey(keyData & Keys.KeyCode) || HandleGameplayKey(keyData) ||
+        base.ProcessCmdKey(ref message, keyData);
 
     private bool HandleGameplayKey(Keys keyData)
     {
-        if (_screen != MenuScreenId.Gameplay) return false;
+        // A popup takes its own keys (KeyDown for OPTIONS and the settings panel).
+        if (_screen != MenuScreenId.Gameplay || _optionsDraft is not null || VideoPanelOpen || _quitConfirmOpen) return false;
         var key = keyData & Keys.KeyCode;
         var shift = keyData.HasFlag(Keys.Shift);
         var control = keyData.HasFlag(Keys.Control);
@@ -63,6 +65,13 @@ public sealed partial class MainForm
             _diagnosticPathCells = [];
             _deathEffects.Clear();
             _status = "Selection cleared.";
+            return true;
+        }
+        // 0x40A444: Q asks "REALLY QUIT?" (lqce). Esc, once nothing is left to
+        // cancel, asks too instead of leaving the game at once.
+        if (key == Keys.Escape || key == Keys.Q && !shift && !control && !alt)
+        {
+            OpenQuitConfirm();
             return true;
         }
         // F1-F10 are native unit-type selections. Keep diagnostics in a
@@ -231,6 +240,9 @@ public sealed partial class MainForm
     {
         _surface.Focus();
         if (_video is not null) return;
+        // A popup takes the press; its release must not reach the world or
+        // menu below once the popup has closed.
+        _popupPress = VideoPanelOpen || _optionsDraft is not null || _quitConfirmOpen;
         if (VideoPanelOpen)
         {
             if (eventArgs.Button == MouseButtons.Left) HandleVideoPanelClick(Unshift(eventArgs.Location, PopupOffset));
@@ -239,6 +251,11 @@ public sealed partial class MainForm
         if (_optionsDraft is not null)
         {
             if (eventArgs.Button == MouseButtons.Left) HandleGameOptionsClick(Unshift(eventArgs.Location, PopupOffset));
+            return;
+        }
+        if (_quitConfirmOpen)
+        {
+            if (eventArgs.Button == MouseButtons.Left) HandleQuitConfirmClick(Unshift(eventArgs.Location, PopupOffset));
             return;
         }
         if (_screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left && (!InNetworkLobby || IsNetworkHost) &&
@@ -293,7 +310,9 @@ public sealed partial class MainForm
 
     private void SurfaceMouseUp(object? sender, MouseEventArgs eventArgs)
     {
-        if (_video is not null || _optionsDraft is not null || VideoPanelOpen) return;
+        var popupPress = _popupPress;
+        _popupPress = false;
+        if (_video is not null || _optionsDraft is not null || VideoPanelOpen || _quitConfirmOpen || popupPress) return;
         var wasMapDrag = _mapDragged;
         var wasMinimapPress = _minimapPressed;
         var wasSinglePlayerScrollDrag = _singlePlayerScrollDragging;
@@ -693,7 +712,7 @@ public sealed partial class MainForm
             }
             if (_gameplayHudLayout.Quit.Bounds.Contains(point))
             {
-                ShowScreen(MenuScreenId.Main);
+                OpenQuitConfirm();
                 return true;
             }
             if (_gameplayHudLayout.Pause.Bounds.Contains(point))

@@ -118,6 +118,25 @@ identity (with live statistics available through F12 diagnostics) as
 inspection-only, while every command adapter continues
 to consume only locally controllable actors.
 
+## Keys that open popups
+
+The gameplay key handler (`0x40A3F0` onwards) compares the key with
+characters, upper and lower case:
+
+| Key | Calls | Effect |
+| --- | --- | --- |
+| Q | `0x4329E8` | Quit confirmation (`intrface/lqce`, "REALLY QUIT?") |
+| O | `0x432D50` | The OPTIONS popup (`intrface/lopte`) |
+| J | `0x432918` | Unresolved; it is next to the objectives popup |
+| Space | `0x437F3C` | BUILD |
+
+The options tab's QUIT (control 62, `0x43368D`) opens the same quit
+confirmation. Esc does not appear in this handler.
+
+The port, at the user's request, also opens the quit confirmation with Esc
+once there is no command mode or selection left to cancel. YES (or Enter)
+returns to the main menu; NO (or Esc) closes it.
+
 ## Native viewport unit hotkeys
 
 Gameplay keyboard dispatcher `0x40a044` maps internal actions 8-17 to F1-F10.

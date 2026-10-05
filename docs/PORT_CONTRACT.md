@@ -106,8 +106,8 @@ Windows platform and presentation code:
 `MainForm` is likewise split by responsibility: `MainForm.cs` (fields,
 screen switching, frame composition) plus `Menus`, `WarLobby`,
 `Encyclopedia`, `Assets`, `World`, `Feedback`, `Hud`, `Input`, `Commands`,
-`Display` (window modes, DPI, gameplay screen size, pointer) and
-`VideoPanel` partial files.
+`Display` (window modes, DPI, gameplay screen size, pointer), `VideoPanel`
+and `QuitConfirm` partial files.
 
 Presentation can interpolate between completed simulation states but cannot
 mutate authoritative gameplay state.
