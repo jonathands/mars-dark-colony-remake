@@ -150,15 +150,24 @@ Robustness:
 
 ## Phases and done criteria
 
-**Phase 0: groundwork**
-- Branch (done) and this plan.
-- Inventory of every hard-coded 640/480/516/458 and native rectangle in the
-  app.
-- A `tests/DarkColony.App.Checks` project (net8.0-windows, the same
-  dependency-free runner, `InternalsVisibleTo`) for presentation math. The
-  engine checks cannot reference the WinForms app.
-- *Done when:* the app check project runs in the normal check command and
-  the inventory is in this file.
+**Phase 0: groundwork** — done (2026-10-04)
+- Branch and this plan.
+- Instead of a separate WinForms check project, the presentation rules live
+  in a new platform-free library, `src/DarkColony.Presentation` (net8.0, uses
+  only `System.Drawing` primitives). The app and the engine checks reference
+  it, so its checks (group `Presentation`) run in the normal check command.
+  First contents: `DisplayLayout` (integer / fit / stretch placement and the
+  output↔logical mapping) and `DisplaySettings` (flags, JSON).
+- Inventory of screen geometry in the app (2026-10-04, `master` f969ac0):
+
+  | What | Where |
+  | --- | --- |
+  | 640x480 client and target | `MainForm.cs` (`ClientSize`, `MinimumSize`/`MaximumSize`, background draw), `Direct3DSurface.NativeWidth/Height`, `MainForm.Video.cs` (`VideoScreenWidth`, black fill), `MainForm.Assets.cs` (two 640x480 bitmaps), `MainForm.Hud.cs` (HUD draw and black fills) |
+  | World view 516x458 | `MainForm.Commands.cs` (order guard), `MainForm.Input.cs` (selection/middle drag start, `SelectGameplayActor`, `FindGameplayActorAt`, box selection viewport), `MainForm.World.cs` (terrain cache cells, region overlay, vents, fog, placement, actor clip, cursor test, `ClampGameplayCamera`, minimap camera rectangle `516d/458d`) |
+  | Native view (4,6,512,448) | `MainForm.Hud.cs` `GameplayViewport`; minimap centring (260,230) in `MainForm.Input.cs` |
+  | Edge scroll 3-pixel edges | `MainForm.Input.cs` (`x > 637`, `y > 477`) |
+  | Right panel | `GameplayMinimapBounds` (519,6,96,84) in `MainForm.cs`; troop/building/research slot tables in `MainForm.cs`; `HandleGameplayHudClick` command area (518..638, 112..399); `AllianceSlots`; days counter (604,427) in `MainForm.Hud.cs`; every `maine` rectangle through `GameplayHudLayout` |
+  | Popups over gameplay | the OPTIONS popup (`MainForm.Options.cs`) uses its own 640x480 coordinates |
 
 **Phase 1: native DPI and scaled windowed presentation**
 - `DisplayLayout` (integer / fit with sharp-bilinear / stretch).

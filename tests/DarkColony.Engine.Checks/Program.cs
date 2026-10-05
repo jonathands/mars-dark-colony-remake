@@ -17,4 +17,5 @@ ComputerPlayerChecks.Register(suite);
 WarChecks.Register(suite);
 ReplayAndNetworkChecks.Register(suite);
 InterfaceChecks.Register(suite);
+PresentationChecks.Register(suite);
 return suite.Run(CheckOptions.Parse(args));

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Presentation rules with no platform types: how the logical game picture
+    is placed on the output, display settings, and where the gameplay HUD
+    sits at a given screen size. The app draws with them; the checks test them.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\DarkColony.Engine\DarkColony.Engine.csproj" />
+  </ItemGroup>
+</Project>

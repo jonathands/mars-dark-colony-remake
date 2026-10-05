@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DarkColony.Engine\DarkColony.Engine.csproj" />
+    <ProjectReference Include="..\..\src\DarkColony.Presentation\DarkColony.Presentation.csproj" />
   </ItemGroup>
 </Project>
