@@ -52,6 +52,19 @@ public sealed partial class ScenarioSimulation
                 ground.ReplaceClaims(instanceId, footprints.CitySlotCells(origin, slot).Where(cell => !ground.TryGetOwner(cell, out _)));
                 cities.Add(new CityBuildingSeed(team.TeamId, slot, instanceId, position, buildingHealth));
             }
+            // 0x41C1AA: a player with a city (both origin values nonzero) in
+            // the game gets slot 5 with health 1: the tower in the centre of
+            // the city (TOWR, 81). Its armour class 8 takes no damage from any
+            // weapon, and it does not keep the player in a War (0x40DE5C).
+            if (origin.X != 0 && origin.Z != 0 && team.InWarSession &&
+                footprints.TryResolveBuildingEntity(race, 0, UncountedCitySlot, out var towerId) && (uint)towerId < (uint)catalog.Entities.Count)
+            {
+                var instanceId = seeds.Count + 1;
+                var position = footprints.CitySlotPosition(origin, UncountedCitySlot);
+                seeds.Add(new WorldEntity(instanceId, towerId, team.TeamId, position.Cell, position, 1, 0));
+                ground.ReplaceClaims(instanceId, footprints.CitySlotCells(origin, UncountedCitySlot).Where(cell => !ground.TryGetOwner(cell, out _)));
+                cities.Add(new CityBuildingSeed(team.TeamId, UncountedCitySlot, instanceId, position, 1));
+            }
         }
         return cities;
     }

@@ -110,6 +110,7 @@ public static class WarSession
                 {
                     AiProfile = 0,
                     CitySlots = [.. team.CitySlots.Select(_ => new ScenarioCitySlot(0, 0))],
+                    InWarSession = false,
                 };
             return team with
             {

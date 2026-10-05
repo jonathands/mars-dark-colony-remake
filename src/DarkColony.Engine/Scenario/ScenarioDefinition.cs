@@ -38,6 +38,12 @@ public sealed record ScenarioTeam(
     /// </summary>
     public IReadOnlyList<ScenarioCitySlot> CitySlots { get; init; } = [];
 
+    /// <summary>
+    /// Whether the team takes part in the game: false only for an empty War
+    /// position (<c>+0x1524 + team</c> is 0, <c>0x41C155</c>), whose city is cleared.
+    /// </summary>
+    public bool InWarSession { get; init; } = true;
+
     /// <summary>The loader builds city slots only when the origin X (+0xBC4) is nonzero.</summary>
     public bool HasCity => CityOrigin is { X: not 0 };
 }

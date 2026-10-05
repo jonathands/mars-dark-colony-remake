@@ -77,6 +77,23 @@ after the placements, which keeps placement instance IDs stable. It claims
 only the footprint cells no placement took, and seeds critter groups after
 the cities.
 
+## The tower in the centre of the city
+
+The SCN loader reads the first `%City` line as (level, health) for slots 0-4.
+While it does so (`0x41C1AA`), it gives slot 5 health 1 and variant 0 to
+every player whose city origin has both values nonzero and who takes part in
+the game (any game that is not a War, or an occupied War position). The same
+loader then calls `0x444F14` for all 15 slots of all 8 players, and a slot
+with nonzero health gets its building.
+
+Slot 5 is `TOWR` (entity 81), the pylon in the middle of the city's pad,
+with `TOWRSTAND0` in `towr.fin`. Its armour class 8 has a zero damage-matrix
+column, so no weapon harms it despite its health of 1. The War end test skips
+it (`0x40DE5C`).
+
+The port seeds it after the team's slots 0-4. An empty War position has
+`ScenarioTeam.InWarSession` false and gets none.
+
 ## Vent rates
 
 An SCN vent record has five fields, `x z 40 a b`. The loader reads it with
