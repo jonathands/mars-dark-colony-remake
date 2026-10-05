@@ -23,6 +23,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 15 | The Barrage's long-range attack does not animate correctly | done: the shell ends in its boom template's NUKE or GASY explosion, leaves the barrel at its muzzle frame, and the fire animation plays on the native clock |
 | 16 | Is the Napalm attack working? | it fired and its research gate worked, but it hit once at the impact. Now it burns as in the original: 14 hits over ~211 updates, its empty cells blocked, the NAPALM animation looping (Disease alike) |
 | 17 | Selecting units makes the game hang, and the later game hangs | done: box selection and the cursor no longer read pixels through GDI+ or compose every actor again; the frame is one sprite batch from atlas pages, paced by the swap chain instead of a WinForms timer; the per-frame garbage is a tenth (`docs/PERFORMANCE.md`) |
+| 18 | Add an option to hide the debugging guides (P7 markers, path traces) | done: DEBUG GUIDES in the Video panel (`--guides on\|off`), off by default. It hides the P7 vent markers, the move path and target, the waypoints, the attacked-actor boxes and the drop label |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

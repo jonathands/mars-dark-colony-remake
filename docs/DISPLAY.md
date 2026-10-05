@@ -150,6 +150,7 @@ OPTIONS popup's art (`popp.spr`, the `mfonto7` font), and it opens:
 | POINTER LOCK | FULLSCREEN (default), ALWAYS, NEVER |
 | INTRO VIDEO | ON (default), OFF: whether `avi/intro.avi` plays at start-up. PLAY INTRO still plays it |
 | SHOW FPS | OFF (default), ON: frames drawn per second, in the picture's top-left corner |
+| DEBUG GUIDES | OFF (default), ON: the port's debugging guides over the world. They are the P7 vent markers, the last move order's path and target, the selected unit's waypoints, the red boxes around attacked actors, and the building drop label. The original has none of them. Selection rings and health bars stay |
 | MOUSE | ORIGINAL (default): the left button selects and orders, the right one deselects. MODERN: the right button orders |
 
 The arrows step through each row. OK applies and saves; Cancel and Esc
@@ -179,6 +180,7 @@ Command-line flags override the file for one run, without saving:
 | `--confine-cursor on\|off` | Keep the pointer on the picture during play, in every mode (unset: fullscreen only) |
 | `--intro-video on\|off` | Play the intro at start-up |
 | `--show-fps on\|off` | Show the frame rate |
+| `--guides on\|off` | Draw the debugging guides (DEBUG GUIDES) |
 | `--mouse original\|modern` | Which button orders units |
 | `--display-settings <file>` | Use another settings file (the tests use a throwaway one) |
 

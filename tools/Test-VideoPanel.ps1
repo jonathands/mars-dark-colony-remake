@@ -69,8 +69,8 @@ function Expect([string] $pattern, [string] $what) {
     if (-not (Select-String -Path $log -Pattern $pattern -Quiet)) { $failures.Add("$what (log has no '$pattern')") }
 }
 function Saved { Get-Content -Raw $settings | ConvertFrom-Json }
-# Row arrows (MainForm.VideoPanel.cs): right arrow x 372, rows from y 138 every 24.
-function Right([int] $row) { "click:380,$(143 + 24 * $row)" }
+# Row arrows (MainForm.VideoPanel.cs): right arrow x 372, rows from y 138 every 21.
+function Right([int] $row) { "click:380,$(143 + 21 * $row)" }
 $ok = 'click:336,384'
 $cancel = 'click:376,384'
 # The display-mode confirmation's own OK, higher up (MainForm.VideoPanel.cs).

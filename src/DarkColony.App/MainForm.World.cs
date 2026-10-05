@@ -292,9 +292,10 @@ public sealed partial class MainForm
         if (state is not null) graphics.Restore(state);
     }
 
+    /// <summary>The P7 vent markers: a debugging guide (<see cref="DisplaySettings.ShowGuides"/>).</summary>
     private void DrawGameplayVents(Graphics graphics)
     {
-        if (_scenarioSimulation is null) return;
+        if (_scenarioSimulation is null || !_display.ShowGuides) return;
         if (_activeCanvas is { } canvas)
         {
             foreach (var vent in _scenarioSimulation.PetraVents)
@@ -383,6 +384,7 @@ public sealed partial class MainForm
         }
         if (state is not null) graphics.Restore(state);
 
+        if (!_display.ShowGuides) return;
         var label = $"{BuildingLabel(item)} #{entityId}: {(valid ? "CLEAR DROP" : "BLOCKED")}";
         DrawGameplayHudText(graphics, label, new Rectangle(8, 404, 500, 14));
     }
@@ -611,7 +613,7 @@ public sealed partial class MainForm
                 // Status indicators are foreground UI. Draw them after the
                 // FIN composite and bind target geometry to the visible pixels,
                 // not to transparent canvas margins whose origins vary by frame.
-                if (targetedInstanceIds.Contains(entity.InstanceId))
+                if (_display.ShowGuides && targetedInstanceIds.Contains(entity.InstanceId))
                 {
                     var targetedBounds = new Rectangle(opaque.Left - 2, opaque.Top - 2, opaque.Width + 3, opaque.Height + 3);
                     var targetedColor = Color.FromArgb(220, 255, 80, 55);
@@ -686,8 +688,8 @@ public sealed partial class MainForm
                     DrawMenuText(graphics, label, new Rectangle(x + 5, y - 10, 160, 14), center: false, remap: Color.FromArgb(245, 241, 200));
                 }
             }
-            DrawSelectedWaypointQueue(graphics, canvas);
-            if (_diagnosticMoveTarget is { } target)
+            if (_display.ShowGuides) DrawSelectedWaypointQueue(graphics, canvas);
+            if (_display.ShowGuides && _diagnosticMoveTarget is { } target)
             {
                 if (_diagnosticPathCells.Count > 1)
                 {

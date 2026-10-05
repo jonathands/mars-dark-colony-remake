@@ -9,8 +9,8 @@ namespace DarkColony.App;
 
 /// <summary>
 /// The port's settings panel (not in the original): display mode, size,
-/// scaling, gameplay view, vsync, pointer lock, the start-up intro and the
-/// FPS counter. It is drawn with the OPTIONS popup's art (<c>popp.spr</c>,
+/// scaling, gameplay view, vsync, pointer lock, the start-up intro, the
+/// FPS counter, the debugging guides and the mouse buttons. It is drawn with the OPTIONS popup's art (<c>popp.spr</c>,
 /// <c>mfonto7</c>). The main menu's OPTIONS button in the top-right corner
 /// and F10 open it there; the in-game OPTIONS popup has a VIDEO button. While
 /// it is open in a single-player game the world waits, as with OPTIONS.
@@ -19,7 +19,8 @@ public sealed partial class MainForm
 {
     private const int VideoPanelTop = 96;
     private const int VideoPanelRowsTop = 138;
-    private const int VideoPanelRowStep = 24;
+    // Ten rows end above the "NETWORK GAMES PLAY CLASSIC" note at y 352.
+    private const int VideoPanelRowStep = 21;
     private static readonly Rectangle VideoPanelOk = new(320, 368, 32, 32);
     private static readonly Rectangle VideoPanelCancel = new(360, 368, 32, 32);
     // The display-mode confirmation draws its own OK and Cancel higher up.

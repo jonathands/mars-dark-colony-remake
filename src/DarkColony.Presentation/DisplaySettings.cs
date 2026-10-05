@@ -119,6 +119,14 @@ public sealed record DisplaySettings
     /// <summary>Whether the frame rate is shown in the picture's top-left corner.</summary>
     public bool ShowFps { get; init; }
 
+    /// <summary>
+    /// Whether the port's own debugging guides are drawn over the world: the
+    /// P7 vent markers, the last move order's path, the selected unit's
+    /// waypoints, the boxes around attacked actors and the building drop
+    /// label. The original draws none of them.
+    /// </summary>
+    public bool ShowGuides { get; init; }
+
     /// <summary>Whether the pointer is kept on the picture during play in <see cref="Mode"/>.</summary>
     [JsonIgnore]
     public bool ConfinesCursor => ConfineCursor ?? Mode != WindowMode.Windowed;
@@ -206,7 +214,7 @@ public sealed record DisplaySettings
     /// (borderless), <c>--exclusive [WxH[@Hz]]</c>, <c>--window-scale N</c>,
     /// <c>--scale-mode integer|fit|stretch</c>, <c>--view classic|auto|WxH</c>,
     /// <c>--vsync on|off</c>, <c>--confine-cursor on|off</c>, <c>--mouse original|modern</c>,
-    /// <c>--intro-video on|off</c> and <c>--show-fps on|off</c>. Unknown
+    /// <c>--intro-video on|off</c>, <c>--show-fps on|off</c> and <c>--guides on|off</c>. Unknown
     /// values are reported and ignored.
     /// </summary>
     public DisplaySettings WithArguments(IReadOnlyList<string> arguments, out IReadOnlyList<string> problems)
@@ -263,6 +271,10 @@ public sealed record DisplaySettings
                 case "--show-fps":
                     if (Switch(value) is { } fps) settings = settings with { ShowFps = fps };
                     else found.Add($"--show-fps {value}: expected on or off.");
+                    break;
+                case "--guides":
+                    if (Switch(value) is { } guides) settings = settings with { ShowGuides = guides };
+                    else found.Add($"--guides {value}: expected on or off.");
                     break;
             }
         }

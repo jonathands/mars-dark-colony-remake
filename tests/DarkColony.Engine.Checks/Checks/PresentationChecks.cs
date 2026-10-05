@@ -160,11 +160,16 @@ internal static class PresentationChecks
             Equal(("ORIGINAL", "MODERN", "ORIGINAL"), (Value(settings, DisplaySettingRow.Mouse),
                 Value(Step(settings, DisplaySettingRow.Mouse), DisplaySettingRow.Mouse),
                 Value(Step(Step(settings, DisplaySettingRow.Mouse, -1), DisplaySettingRow.Mouse), DisplaySettingRow.Mouse)));
-            // The intro plays and the FPS counter is hidden until a row turns them over.
+            // The intro plays, and the FPS counter and the debugging guides are
+            // hidden, until a row turns them over.
             Equal(("ON", "OFF", "OFF", "ON"),
                 (Value(settings, DisplaySettingRow.IntroVideo), Value(settings, DisplaySettingRow.ShowFps),
                  Value(Step(settings, DisplaySettingRow.IntroVideo), DisplaySettingRow.IntroVideo),
                  Value(Step(settings, DisplaySettingRow.ShowFps, -1), DisplaySettingRow.ShowFps)));
+            Equal(("DEBUG GUIDES", "OFF", "ON", "OFF"),
+                (DisplaySettingsEditor.Label(DisplaySettingRow.Guides), Value(settings, DisplaySettingRow.Guides),
+                 Value(Step(settings, DisplaySettingRow.Guides), DisplaySettingRow.Guides),
+                 Value(Step(Step(settings, DisplaySettingRow.Guides), DisplaySettingRow.Guides, -1), DisplaySettingRow.Guides)));
 
             var chosen = Step(exclusive, DisplaySettingRow.Size);
             Equal((true, true, false, false),
@@ -196,8 +201,10 @@ internal static class PresentationChecks
 
             var rejected = settings.WithArguments(["--window-scale", "12", "--view", "320x200", "--scale-mode", "blur", "--exclusive", "huge"], out problems);
             Equal((4, 3, "1280x720", ScaleMode.Fit, WindowMode.Borderless), (problems.Count, rejected.WindowScale, rejected.View, rejected.Scale, rejected.Mode));
-            var extras = settings.WithArguments(["--intro-video", "off", "--show-fps", "on", "--show-fps", "maybe", "--mouse", "modern", "--mouse", "left"], out problems);
-            Equal((2, false, true, MouseControls.Modern), (problems.Count, extras.IntroVideo, extras.ShowFps, extras.Mouse));
+            var extras = settings.WithArguments(["--intro-video", "off", "--show-fps", "on", "--show-fps", "maybe", "--mouse", "modern", "--mouse", "left",
+                "--guides", "on", "--guides", "loud"], out problems);
+            Equal((3, false, true, MouseControls.Modern, true), (problems.Count, extras.IntroVideo, extras.ShowFps, extras.Mouse, extras.ShowGuides));
+            Equal(false, new DisplaySettings().ShowGuides);
 
             // auto divides the output by the largest whole scale that keeps 640x480.
             var auto = new DisplaySettings { View = "auto" };
