@@ -819,10 +819,11 @@ public sealed partial class MainForm
     {
         if (_selectionDragStart is { } selectionStart && IsSelectionBoxGesture(selectionStart, _selectionDragCurrent, _selectionGestureStartedAtTick))
             return "DRAWBOX";
+        // 0x4337c8 picks the cursor from the same 3x3 edge table as the
+        // scroll timers (gameplay +0xb8), over the HUD too.
+        if (GameplayEdgeCursorAnimation(ScrollEdges(pointer)) is { } edge) return edge;
             if (pointer.X is >= 0 and < 516 && pointer.Y is >= 0 and < 458)
             {
-                var edge = GameplayEdgeCursorAnimation(pointer);
-                if (edge is not null) return edge;
                 if (_gameplayCommandMode is GameplayCommandMode.AttackTarget or GameplayCommandMode.GroundSpecialTarget) return "ATTACK";
                 if (_gameplayCommandMode is GameplayCommandMode.Waypoints or GameplayCommandMode.HarvestVent or GameplayCommandMode.PlaceBuilding)
                 return "MOVE";
@@ -831,12 +832,12 @@ public sealed partial class MainForm
         return "DEFAULT";
     }
 
-    private static string? GameplayEdgeCursorAnimation(Point pointer)
+    private static string? GameplayEdgeCursorAnimation((int X, int Y) edges)
     {
-        var up = pointer.Y <= 8;
-        var down = pointer.Y >= 449;
-        var left = pointer.X <= 8;
-        var right = pointer.X >= 507;
+        var up = edges.Y < 0;
+        var down = edges.Y > 0;
+        var left = edges.X < 0;
+        var right = edges.X > 0;
         if (up && left) return "PUSHUP&LEFT";
         if (up && right) return "PUSHUP&RIGHT";
         if (down && left) return "DOWN&LEFT";

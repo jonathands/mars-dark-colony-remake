@@ -169,7 +169,7 @@ Robustness:
   | Right panel | `GameplayMinimapBounds` (519,6,96,84) in `MainForm.cs`; troop/building/research slot tables in `MainForm.cs`; `HandleGameplayHudClick` command area (518..638, 112..399); `AllianceSlots`; days counter (604,427) in `MainForm.Hud.cs`; every `maine` rectangle through `GameplayHudLayout` |
   | Popups over gameplay | the OPTIONS popup (`MainForm.Options.cs`) uses its own 640x480 coordinates |
 
-**Phase 1: native DPI and scaled windowed presentation**
+**Phase 1: native DPI and scaled windowed presentation** — done (2026-10-04; see `docs/DISPLAY.md`, "Verified")
 - `DisplayLayout` (integer / fit with sharp-bilinear / stretch).
 - PerMonitorV2, flip-model swap chain with `ResizeBuffers`.
 - Logical mouse mapping in `Direct3DSurface`; resizable window with scale

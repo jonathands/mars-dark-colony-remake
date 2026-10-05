@@ -2,44 +2,58 @@ using System.Drawing.Imaging;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using DarkColony.App.Diagnostics;
+using DarkColony.Presentation;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Vortice.Mathematics;
 using static Vortice.Direct3D11.D3D11;
+using Size = System.Drawing.Size;
 
 namespace DarkColony.App.Rendering;
 
 /// <summary>
-/// D3D11 presentation surface for the fixed 640x480 game framebuffer.
-/// Presented layers are emitted as ordered GPU commands. The callback retains
-/// a scratch <see cref="Graphics"/> only for isolated fallback code; its
-/// contents are never uploaded or presented as a full-frame texture.
+/// D3D11 presentation surface. Every frame is drawn at the logical size
+/// (640x480, or a larger gameplay view) into an offscreen target, which one
+/// quad then places on the back buffer by <see cref="DisplayLayout"/>: point
+/// sampled when the scale is a whole number, sharp-bilinear otherwise. The
+/// back buffer always matches the client area in physical pixels, so Windows
+/// never stretches the window. Mouse events are raised in logical
+/// coordinates. The callback's scratch <see cref="Graphics"/> serves only
+/// isolated fallback code; it is never presented.
 /// </summary>
 public sealed class Direct3DSurface : Control
 {
-    private const int NativeWidth = 640;
-    private const int NativeHeight = 480;
     private readonly Action<Graphics, GameCanvas> _renderFrame;
     private readonly GameCanvas _canvas = new();
-    private readonly Bitmap _legacyScratch = new(NativeWidth, NativeHeight, PixelFormat.Format32bppArgb);
-    private IDXGISwapChain? _swapChain;
+    private Bitmap? _legacyScratch;
     private ID3D11Device? _device;
     private ID3D11DeviceContext? _context;
+    private IDXGIFactory2? _factory;
+    private IDXGISwapChain1? _swapChain;
+    private SwapChainFlags _swapChainFlags;
+    private bool _tearingSupported;
     private ID3D11Texture2D? _backBuffer;
     private ID3D11RenderTargetView? _backBufferView;
+    private Size _backBufferSize;
     private ID3D11Texture2D? _nativeTarget;
     private ID3D11RenderTargetView? _nativeTargetView;
     private ID3D11ShaderResourceView? _nativeTargetResource;
+    private Size _nativeTargetSize;
     private ID3D11Buffer? _quadVertices;
+    private ID3D11Buffer? _scalingConstants;
     private ID3D11VertexShader? _vertexShader;
     private ID3D11PixelShader? _pixelShader;
+    private ID3D11PixelShader? _sharpPixelShader;
     private ID3D11InputLayout? _inputLayout;
     private ID3D11SamplerState? _pointSampler;
+    private ID3D11SamplerState? _linearSampler;
     private ID3D11BlendState? _alphaBlend;
     private readonly Dictionary<GpuImage, GpuTexture> _gpuImages = [];
     private readonly List<GpuTexture> _transientGpuImages = [];
+    private Size _logicalSize = DisplaySettings.ClassicSize;
+    private ScaleMode _scaleMode = ScaleMode.Integer;
 
     public Direct3DSurface(Action<Graphics, GameCanvas> renderFrame)
     {
@@ -47,14 +61,58 @@ public sealed class Direct3DSurface : Control
         SetStyle(ControlStyles.Opaque | ControlStyles.UserPaint | ControlStyles.Selectable, true);
         TabStop = true;
         Cursor = Cursors.Hand;
+        PictureLayout = DisplayLayout.Compute(_logicalSize, new Size(640, 480), _scaleMode);
     }
+
+    /// <summary>Where the logical picture lands on the client area, and the pointer mapping.</summary>
+    public DisplayLayout PictureLayout { get; private set; }
+
+    /// <summary>Raised when <see cref="PictureLayout"/> changes.</summary>
+    public event EventHandler? PictureLayoutChanged;
+
+    /// <summary>The size the frame is drawn at: 640x480, or the gameplay view.</summary>
+    public Size LogicalSize
+    {
+        get => _logicalSize;
+        set
+        {
+            if (value.Width <= 0 || value.Height <= 0) throw new ArgumentOutOfRangeException(nameof(value), value, "The logical size must not be empty.");
+            if (value == _logicalSize) return;
+            _logicalSize = value;
+            UpdateLayout();
+        }
+    }
+
+    public ScaleMode ScaleMode
+    {
+        get => _scaleMode;
+        set
+        {
+            if (value == _scaleMode) return;
+            _scaleMode = value;
+            UpdateLayout();
+        }
+    }
+
+    /// <summary>Waits for the vertical blank when presenting. Off presents at once, tearing where allowed.</summary>
+    public bool VSync { get; set; } = true;
+
+    /// <summary>The swap chain is in exclusive fullscreen.</summary>
+    public bool IsExclusiveFullscreen { get; private set; }
 
     public void RenderAndPresent()
     {
         if (!IsHandleCreated || ClientSize.Width == 0 || ClientSize.Height == 0) return;
         EnsureDevice();
+        EnsureBackBuffer();
+        EnsureNativeTarget();
 
         _canvas.Reset();
+        if (_legacyScratch is null || _legacyScratch.Size != _logicalSize)
+        {
+            _legacyScratch?.Dispose();
+            _legacyScratch = new Bitmap(_logicalSize.Width, _logicalSize.Height, PixelFormat.Format32bppArgb);
+        }
         using (var graphics = Graphics.FromImage(_legacyScratch))
         {
             graphics.Clear(System.Drawing.Color.Transparent);
@@ -63,11 +121,27 @@ public sealed class Direct3DSurface : Control
 
         try
         {
-            _context!.ClearRenderTargetView(_nativeTargetView!, new Color4(0f, 0f, 0f, 1f));
+            var context = _context!;
+            context.ClearRenderTargetView(_nativeTargetView!, new Color4(0f, 0f, 0f, 1f));
             DrawCommands(_canvas.Commands);
             DrawCommands(_canvas.ForegroundCommands);
-            DrawTexture(_nativeTargetResource!, _backBufferView!, new Rectangle(0, 0, NativeWidth, NativeHeight), alphaBlend: false);
-            _swapChain!.Present(1, PresentFlags.None);
+            context.ClearRenderTargetView(_backBufferView!, new Color4(0f, 0f, 0f, 1f));
+            var layout = PictureLayout;
+            if (!layout.Destination.IsEmpty)
+            {
+                if (layout.PixelExact) DrawTexture(_nativeTargetResource!, _backBufferView!, layout.Destination, alphaBlend: false);
+                else DrawSharpBilinear(layout);
+            }
+            var tearing = !VSync && _tearingSupported && !IsExclusiveFullscreen;
+            var result = _swapChain!.Present(VSync ? 1u : 0u, tearing ? PresentFlags.AllowTearing : PresentFlags.None);
+            if (result.Code == Vortice.DXGI.ResultCode.DeviceRemoved.Code || result.Code == Vortice.DXGI.ResultCode.DeviceReset.Code)
+            {
+                // The device is gone (driver update, GPU reset). Every texture
+                // is rebuilt from its GpuImage on the next frame.
+                RuntimeLog.Info($"D3D11 device lost ({result.Code:X8}, removed reason {_device?.DeviceRemovedReason.Code:X8}); recreating it.");
+                ReleaseDevice();
+            }
+            else result.CheckError();
         }
         finally
         {
@@ -104,7 +178,7 @@ public sealed class Direct3DSurface : Control
         if (disposing)
         {
             ReleaseDevice();
-            _legacyScratch.Dispose();
+            _legacyScratch?.Dispose();
         }
 
         base.Dispose(disposing);
@@ -116,51 +190,78 @@ public sealed class Direct3DSurface : Control
     {
     }
 
+    protected override void OnSizeChanged(EventArgs eventArgs)
+    {
+        base.OnSizeChanged(eventArgs);
+        UpdateLayout();
+        Invalidate();
+    }
+
+    // Mouse events reach the app in logical coordinates. A point on a bar
+    // maps to the nearest picture edge.
+    protected override void OnMouseMove(MouseEventArgs eventArgs) => base.OnMouseMove(ToLogical(eventArgs));
+
+    protected override void OnMouseDown(MouseEventArgs eventArgs) => base.OnMouseDown(ToLogical(eventArgs));
+
+    protected override void OnMouseUp(MouseEventArgs eventArgs) => base.OnMouseUp(ToLogical(eventArgs));
+
+    protected override void OnMouseClick(MouseEventArgs eventArgs) => base.OnMouseClick(ToLogical(eventArgs));
+
+    protected override void OnMouseDoubleClick(MouseEventArgs eventArgs) => base.OnMouseDoubleClick(ToLogical(eventArgs));
+
+    protected override void OnMouseWheel(MouseEventArgs eventArgs) => base.OnMouseWheel(ToLogical(eventArgs));
+
+    private MouseEventArgs ToLogical(MouseEventArgs eventArgs)
+    {
+        var point = PictureLayout.ToLogical(eventArgs.Location);
+        return new MouseEventArgs(eventArgs.Button, eventArgs.Clicks, point.X, point.Y, eventArgs.Delta);
+    }
+
+    /// <summary>The screen rectangle the picture covers, for confining the pointer.</summary>
+    public Rectangle PictureScreenBounds() => RectangleToScreen(PictureLayout.Destination);
+
+    private void UpdateLayout()
+    {
+        var layout = DisplayLayout.Compute(_logicalSize, ClientSize, _scaleMode);
+        if (layout == PictureLayout) return;
+        PictureLayout = layout;
+        PictureLayoutChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     private void EnsureDevice()
     {
         if (_device is not null) return;
 
-        var description = new SwapChainDescription
-        {
-            BufferCount = 2,
-            BufferDescription = new ModeDescription(NativeWidth, NativeHeight, Format.B8G8R8A8_UNorm),
-            BufferUsage = Usage.RenderTargetOutput,
-            OutputWindow = Handle,
-            SampleDescription = new SampleDescription(1, 0),
-            Windowed = true,
-            SwapEffect = SwapEffect.Discard,
-        };
         var featureLevels = new[] { FeatureLevel.Level_11_0, FeatureLevel.Level_10_1, FeatureLevel.Level_10_0 };
-        D3D11CreateDeviceAndSwapChain(
-            null,
-            DriverType.Hardware,
-            DeviceCreationFlags.BgraSupport,
-            featureLevels,
-            description,
-            out _swapChain,
-            out _device,
-            out _,
-            out _context).CheckError();
-
-        var swapChain = _swapChain ?? throw new InvalidOperationException("D3D11 did not return a swap chain.");
+        D3D11CreateDevice(IntPtr.Zero, DriverType.Hardware, DeviceCreationFlags.BgraSupport, featureLevels, out _device, out _context).CheckError();
         var device = _device ?? throw new InvalidOperationException("D3D11 did not return a device.");
-        RuntimeLog.Info($"D3D11 device created: feature level {device.FeatureLevel}, {NativeWidth}x{NativeHeight} native target.");
-        _backBuffer = swapChain.GetBuffer<ID3D11Texture2D>(0);
-        _backBufferView = device.CreateRenderTargetView(_backBuffer);
+        using (var dxgiDevice = device.QueryInterface<IDXGIDevice>())
+        using (var adapter = dxgiDevice.GetAdapter())
+            _factory = adapter.GetParent<IDXGIFactory2>();
+        using (var factory5 = _factory.QueryInterfaceOrNull<IDXGIFactory5>())
+            _tearingSupported = factory5?.PresentAllowTearing == true;
+        _swapChainFlags = SwapChainFlags.AllowModeSwitch | (_tearingSupported ? SwapChainFlags.AllowTearing : SwapChainFlags.None);
 
-        _nativeTarget = device.CreateTexture2D(new Texture2DDescription
+        // Flip model: the back buffer is the client area in physical pixels
+        // and is resized with it (EnsureBackBuffer).
+        _backBufferSize = new Size(Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height));
+        _swapChain = _factory.CreateSwapChainForHwnd(device, Handle, new SwapChainDescription1
         {
-            Width = NativeWidth,
-            Height = NativeHeight,
-            MipLevels = 1,
-            ArraySize = 1,
+            Width = (uint)_backBufferSize.Width,
+            Height = (uint)_backBufferSize.Height,
             Format = Format.B8G8R8A8_UNorm,
             SampleDescription = new SampleDescription(1, 0),
-            Usage = ResourceUsage.Default,
-            BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
-        });
-        _nativeTargetView = device.CreateRenderTargetView(_nativeTarget);
-        _nativeTargetResource = device.CreateShaderResourceView(_nativeTarget);
+            BufferUsage = Usage.RenderTargetOutput,
+            BufferCount = 2,
+            Scaling = Scaling.Stretch,
+            SwapEffect = SwapEffect.FlipDiscard,
+            AlphaMode = AlphaMode.Ignore,
+            Flags = _swapChainFlags,
+        }, new SwapChainFullscreenDescription { Windowed = true }, null);
+        // The app toggles fullscreen itself (Alt+Enter goes through its settings).
+        _factory.MakeWindowAssociation(Handle, WindowAssociationFlags.IgnoreAltEnter).CheckError();
+        RuntimeLog.Info($"D3D11 device created: feature level {device.FeatureLevel}, flip-model swap chain {_backBufferSize.Width}x{_backBufferSize.Height}, tearing {(_tearingSupported ? "supported" : "unsupported")}.");
+        CreateBackBufferView();
 
         ReadOnlySpan<QuadVertex> vertices =
         [
@@ -172,6 +273,7 @@ public sealed class Direct3DSurface : Control
             new(new Vector3(-1, -1, 0), new Vector2(0, 1)),
         ];
         _quadVertices = device.CreateBuffer(vertices, BindFlags.VertexBuffer);
+        _scalingConstants = device.CreateBuffer(new BufferDescription((uint)Marshal.SizeOf<ScalingConstants>(), BindFlags.ConstantBuffer));
 
         var shaderPath = Path.Combine(AppContext.BaseDirectory, "Shaders", "Sprite.hlsl");
         var shaderFlags = ShaderFlags.EnableStrictness;
@@ -182,11 +284,59 @@ public sealed class Direct3DSurface : Control
 #endif
         var vertexBytecode = Compiler.CompileFromFile(shaderPath, "VSMain", "vs_4_0", shaderFlags);
         var pixelBytecode = Compiler.CompileFromFile(shaderPath, "PSMain", "ps_4_0", shaderFlags);
+        var sharpBytecode = Compiler.CompileFromFile(shaderPath, "PSSharpBilinear", "ps_4_0", shaderFlags);
         _vertexShader = device.CreateVertexShader(vertexBytecode.Span);
         _pixelShader = device.CreatePixelShader(pixelBytecode.Span);
+        _sharpPixelShader = device.CreatePixelShader(sharpBytecode.Span);
         _inputLayout = device.CreateInputLayout(QuadVertex.InputElements, vertexBytecode.Span);
         _pointSampler = device.CreateSamplerState(SamplerDescription.PointClamp);
+        _linearSampler = device.CreateSamplerState(SamplerDescription.LinearClamp);
         _alphaBlend = device.CreateBlendState(BlendDescription.NonPremultiplied);
+    }
+
+    /// <summary>Resizes the flip-model buffers to the client area.</summary>
+    private void EnsureBackBuffer()
+    {
+        var size = new Size(Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height));
+        if (size == _backBufferSize) return;
+        _backBufferView?.Dispose();
+        _backBuffer?.Dispose();
+        _backBufferView = null;
+        _backBuffer = null;
+        _context!.ClearState();
+        _context.Flush();
+        _swapChain!.ResizeBuffers(2, (uint)size.Width, (uint)size.Height, Format.Unknown, _swapChainFlags).CheckError();
+        _backBufferSize = size;
+        CreateBackBufferView();
+    }
+
+    private void CreateBackBufferView()
+    {
+        _backBuffer = _swapChain!.GetBuffer<ID3D11Texture2D>(0);
+        _backBufferView = _device!.CreateRenderTargetView(_backBuffer);
+    }
+
+    /// <summary>(Re)creates the offscreen target at the logical size.</summary>
+    private void EnsureNativeTarget()
+    {
+        if (_nativeTarget is not null && _nativeTargetSize == _logicalSize) return;
+        _nativeTargetResource?.Dispose();
+        _nativeTargetView?.Dispose();
+        _nativeTarget?.Dispose();
+        _nativeTarget = _device!.CreateTexture2D(new Texture2DDescription
+        {
+            Width = (uint)_logicalSize.Width,
+            Height = (uint)_logicalSize.Height,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = Format.B8G8R8A8_UNorm,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
+        });
+        _nativeTargetView = _device.CreateRenderTargetView(_nativeTarget);
+        _nativeTargetResource = _device.CreateShaderResourceView(_nativeTarget);
+        _nativeTargetSize = _logicalSize;
     }
 
     private void DrawCommands(IReadOnlyList<SpriteCommand> commands)
@@ -249,18 +399,44 @@ public sealed class Direct3DSurface : Control
     private unsafe void DrawTexture(ID3D11ShaderResourceView source, ID3D11RenderTargetView destination, Rectangle destinationBounds, bool alphaBlend)
     {
         var context = _context ?? throw new InvalidOperationException("D3D11 context is unavailable.");
-        context.OMSetRenderTargets(destination);
-        context.RSSetViewport(new Viewport(destinationBounds.X, destinationBounds.Y, destinationBounds.Width, destinationBounds.Height));
-        context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-        context.IASetInputLayout(_inputLayout);
-        context.IASetVertexBuffer(0, _quadVertices!, QuadVertex.SizeInBytes);
-        context.VSSetShader(_vertexShader);
+        PrepareQuad(context, destination, destinationBounds);
         context.PSSetShader(_pixelShader);
         context.PSSetShaderResource(0, source);
         context.PSSetSampler(0, _pointSampler);
         context.OMSetBlendState(alphaBlend ? _alphaBlend : null, null, uint.MaxValue);
         context.Draw(6, 0);
         context.PSSetShaderResource(0, default!);
+    }
+
+    /// <summary>
+    /// Places the frame at a non-whole scale: each logical pixel is enlarged
+    /// by the whole prescale, and only the seams between pixels are blended,
+    /// so pixels stay even and edges stay sharp.
+    /// </summary>
+    private unsafe void DrawSharpBilinear(DisplayLayout layout)
+    {
+        var context = _context!;
+        context.UpdateSubresource(new ScalingConstants(
+            new Vector2(layout.Logical.Width, layout.Logical.Height),
+            new Vector2(layout.Prescale.Width, layout.Prescale.Height)), _scalingConstants!);
+        PrepareQuad(context, _backBufferView!, layout.Destination);
+        context.PSSetShader(_sharpPixelShader);
+        context.PSSetConstantBuffer(0, _scalingConstants);
+        context.PSSetShaderResource(0, _nativeTargetResource!);
+        context.PSSetSampler(0, _linearSampler);
+        context.OMSetBlendState(null, null, uint.MaxValue);
+        context.Draw(6, 0);
+        context.PSSetShaderResource(0, default!);
+    }
+
+    private void PrepareQuad(ID3D11DeviceContext context, ID3D11RenderTargetView destination, Rectangle bounds)
+    {
+        context.OMSetRenderTargets(destination);
+        context.RSSetViewport(new Viewport(bounds.X, bounds.Y, bounds.Width, bounds.Height));
+        context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        context.IASetInputLayout(_inputLayout);
+        context.IASetVertexBuffer(0, _quadVertices!, QuadVertex.SizeInBytes);
+        context.VSSetShader(_vertexShader);
     }
 
     private void ReleaseDevice()
@@ -278,37 +454,53 @@ public sealed class Direct3DSurface : Control
             image.Texture.Dispose();
         }
         _transientGpuImages.Clear();
+        if (IsExclusiveFullscreen) _swapChain?.SetFullscreenState(false, null);
+        IsExclusiveFullscreen = false;
         _alphaBlend?.Dispose();
+        _linearSampler?.Dispose();
         _pointSampler?.Dispose();
         _inputLayout?.Dispose();
+        _sharpPixelShader?.Dispose();
         _pixelShader?.Dispose();
         _vertexShader?.Dispose();
+        _scalingConstants?.Dispose();
         _quadVertices?.Dispose();
         _nativeTargetResource?.Dispose();
         _nativeTargetView?.Dispose();
         _nativeTarget?.Dispose();
         _backBufferView?.Dispose();
         _backBuffer?.Dispose();
+        _swapChain?.Dispose();
+        _factory?.Dispose();
         _context?.Dispose();
         _device?.Dispose();
-        _swapChain?.Dispose();
         _backBuffer = null;
+        _backBufferView = null;
+        _backBufferSize = Size.Empty;
         _context = null;
         _device = null;
         _swapChain = null;
+        _factory = null;
         _pointSampler = null;
+        _linearSampler = null;
         _alphaBlend = null;
         _inputLayout = null;
         _pixelShader = null;
+        _sharpPixelShader = null;
         _vertexShader = null;
         _quadVertices = null;
+        _scalingConstants = null;
         _nativeTargetResource = null;
         _nativeTargetView = null;
         _nativeTarget = null;
-        _backBufferView = null;
+        _nativeTargetSize = Size.Empty;
     }
 
     private sealed record GpuTexture(ID3D11Texture2D Texture, ID3D11ShaderResourceView View);
+
+    /// <summary>The sharp-bilinear shader's constants: the source size and the whole prescale.</summary>
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    private readonly record struct ScalingConstants(Vector2 SourceSize, Vector2 Prescale);
 
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
     private readonly record struct QuadVertex(Vector3 Position, Vector2 TextureCoordinate)

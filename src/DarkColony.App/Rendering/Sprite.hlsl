@@ -11,7 +11,14 @@ struct PSInput
 };
 
 Texture2D<float4> SpriteTexture : register(t0);
-SamplerState PointSampler : register(s0);
+SamplerState SpriteSampler : register(s0);
+
+// Sharp-bilinear placement of the finished frame (DisplayLayout).
+cbuffer Scaling : register(b0)
+{
+    float2 SourceSize;
+    float2 Prescale;
+};
 
 PSInput VSMain(VSInput input)
 {
@@ -23,5 +30,18 @@ PSInput VSMain(VSInput input)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    return SpriteTexture.Sample(PointSampler, input.Texcoord);
+    return SpriteTexture.Sample(SpriteSampler, input.Texcoord);
+}
+
+// Enlarges every source pixel by the whole Prescale with point sampling and
+// lets the linear sampler blend only the strip where two enlarged pixels
+// meet, so a non-whole scale keeps even, sharp pixels.
+float4 PSSharpBilinear(PSInput input) : SV_TARGET
+{
+    float2 texel = input.Texcoord * SourceSize;
+    float2 texelFloored = floor(texel);
+    float2 centreDistance = frac(texel) - 0.5f;
+    float2 regionRange = 0.5f - 0.5f / Prescale;
+    float2 offset = (centreDistance - clamp(centreDistance, -regionRange, regionRange)) * Prescale + 0.5f;
+    return SpriteTexture.Sample(SpriteSampler, (texelFloored + offset) / SourceSize);
 }

@@ -39,8 +39,17 @@ internal static class Program
         int? outcomeAfter = outcomeIndex >= 0 && outcomeIndex + 1 < arguments.Length && int.TryParse(arguments[outcomeIndex + 1], out var seconds) ? seconds : null;
         var forcedVictory = outcomeIndex >= 0 && outcomeIndex + 2 < arguments.Length &&
                             arguments[outcomeIndex + 2].Equals("victory", StringComparison.OrdinalIgnoreCase);
+        // Display settings: the port's own (docs/DISPLAY_MODES_PLAN.md). Flags
+        // override the file for this run only.
+        var displaySettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DarkColonyPort", "display.json");
+        var displaySettings = DarkColony.Presentation.DisplaySettings.Load(displaySettingsPath, out var displayProblem)
+            .WithArguments(arguments, out var displayFlagProblems);
+        if (displayProblem is not null) RuntimeLog.Info($"Display settings: {displayProblem}");
+        foreach (var problem in displayFlagProblems) RuntimeLog.Info($"Display flag ignored: {problem}");
         Application.Run(new MainForm(installation, initialScreen)
         {
+            DisplaySettings = displaySettings,
+            DisplaySettingsPath = displaySettingsPath,
             RevealMap = revealMap,
             ForcedOutcomeAfterSeconds = outcomeAfter,
             ForcedVictory = forcedVictory,

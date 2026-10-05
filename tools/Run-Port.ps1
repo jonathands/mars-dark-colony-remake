@@ -43,7 +43,10 @@ $start.WorkingDirectory = $repo
 $start.UseShellExecute = $false
 # Unattended runs skip the CD soundtrack and the videos unless -Media asks for them.
 $mediaArguments = if ($Media) { @() } else { @('--no-music', '--no-video') }
-foreach ($argument in @('--data', (Resolve-Path $DataPath).Path, '--no-dialogs', '--log', $logPath) + $mediaArguments + $ExtraArguments) {
+# A 640x480 window with the classic view, whatever display.json says, so
+# -Actions coordinates are window coordinates. -ExtraArguments come later and win.
+$displayArguments = @('--windowed', '--window-scale', '1', '--view', 'classic')
+foreach ($argument in @('--data', (Resolve-Path $DataPath).Path, '--no-dialogs', '--log', $logPath) + $mediaArguments + $displayArguments + $ExtraArguments) {
     $start.ArgumentList.Add($argument)
 }
 $process = [Diagnostics.Process]::Start($start)
@@ -58,7 +61,7 @@ $screenshot = $null
 if (-not $process.HasExited) {
     if ($Actions.Count -gt 0) {
         Start-Sleep -Seconds 2
-        & (Join-Path $PSScriptRoot 'Send-PortInput.ps1') -ProcessId $process.Id -Actions $Actions
+        & (Join-Path $PSScriptRoot 'Send-PortInput.ps1') -ProcessId $process.Id -Actions $Actions -LogPath $logPath
     }
     $process.WaitForExit($Seconds * 1000) | Out-Null
 }

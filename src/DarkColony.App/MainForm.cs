@@ -213,11 +213,11 @@ public sealed partial class MainForm : Form
         _status = InspectInstallation(installation);
 
         Text = "Dark Colony";
+        // The window starts at the classic 640x480; OnLoad applies the
+        // display settings (MainForm.Display.cs).
         ClientSize = new Size(640, 480);
-        MinimumSize = Size;
-        MaximumSize = Size;
-        FormBorderStyle = FormBorderStyle.FixedSingle;
-        MaximizeBox = false;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MinimumSize = SizeFromClientSize(new Size(320, 240));
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.Black;
         KeyPreview = true;
@@ -226,12 +226,18 @@ public sealed partial class MainForm : Form
         _surface.MouseMove += SurfaceMouseMove;
         _surface.MouseLeave += (_, _) =>
         {
+            _pointerInsideSurface = false;
+            _menuPointer = null;
             _gameplayPointer = null;
             _singlePlayerScrollDragging = false;
             SetGameplayCursorVisibility(visible: true);
             SetHover(null);
         };
-        _surface.MouseEnter += (_, _) => SetGameplayCursorVisibility(visible: _screen != MenuScreenId.Gameplay);
+        _surface.MouseEnter += (_, _) =>
+        {
+            _pointerInsideSurface = true;
+            SetGameplayCursorVisibility(visible: _screen != MenuScreenId.Gameplay);
+        };
         _surface.MouseDown += SurfaceMouseDown;
         _surface.MouseUp += SurfaceMouseUp;
         Controls.Add(_surface);
@@ -490,6 +496,7 @@ public sealed partial class MainForm : Form
         {
             DrawEncyclopedia(graphics);
         }
+        if (_screen != MenuScreenId.Gameplay) DrawMenuCursor(graphics);
         _activeCanvas = null;
     }
 

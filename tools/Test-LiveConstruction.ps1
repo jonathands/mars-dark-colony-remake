@@ -5,7 +5,13 @@ param(
     [ValidateSet('Debug', 'Release')] [string] $Configuration = 'Debug',
     [string] $DataPath = (Join-Path $PSScriptRoot '..\..\Dark Colony'),
     [ValidateRange(20000, 1000000)] [int] $GrantP7 = 60000,
-    [ValidateRange(10, 300)] [int] $TrainSeconds = 40
+    [ValidateRange(10, 300)] [int] $TrainSeconds = 40,
+    # Display mode under test (docs/DISPLAY_MODES_PLAN.md): the window scale,
+    # the scaling mode, and borderless fullscreen. Clicks are mapped through
+    # the port's "Presentation:" log line, so the steps stay in game coordinates.
+    [ValidateRange(1, 8)] [int] $WindowScale = 1,
+    [ValidateSet('integer', 'fit', 'stretch')] [string] $ScaleMode = 'integer',
+    [switch] $Fullscreen
 )
 
 <#+
@@ -43,7 +49,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $exe = Join-Path $repo "src\DarkColony.App\bin\$Configuration\net8.0-windows\DarkColony.App.exe"
 if (-not (Test-Path $exe)) { throw "Build the port first: $exe is missing." }
-$name = "live-$($Race.ToLowerInvariant())"
+$name = "live-$($Race.ToLowerInvariant())" + $(if ($Fullscreen) { '-fullscreen' } elseif ($WindowScale -ne 1 -or $ScaleMode -ne 'integer') { "-x$WindowScale-$ScaleMode" } else { '' })
 $logDirectory = Join-Path $repo 'artifacts\logs'
 New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 $log = Join-Path $logDirectory "$name.log"
@@ -53,8 +59,9 @@ $capture = Join-Path $repo 'capture-port-window.ps1'
 $start = [Diagnostics.ProcessStartInfo]::new($exe)
 $start.WorkingDirectory = $repo
 $start.UseShellExecute = $false
+$display = @($(if ($Fullscreen) { '--fullscreen' } else { '--windowed' }), '--window-scale', "$WindowScale", '--scale-mode', $ScaleMode, '--view', 'classic')
 foreach ($argument in @('--data', (Resolve-Path $DataPath).Path, '--no-dialogs', '--no-music', '--no-video',
-        '--single-player-war', '--grant-p7', "$GrantP7", '--log', $log)) {
+        '--single-player-war', '--grant-p7', "$GrantP7", '--log', $log) + $display) {
     $start.ArgumentList.Add($argument)
 }
 $process = [Diagnostics.Process]::Start($start)
@@ -66,7 +73,7 @@ while (-not $process.HasExited -and $process.MainWindowHandle -eq 0 -and (Get-Da
 Start-Sleep -Milliseconds 1500
 
 $shots = [Collections.Generic.List[string]]::new()
-function Send([string[]] $actions) { & $sendInput -ProcessId $process.Id -Actions $actions }
+function Send([string[]] $actions) { & $sendInput -ProcessId $process.Id -Actions $actions -LogPath $log }
 function Shot([string] $step) {
     Start-Sleep -Milliseconds 300
     $path = & $capture -Name "$name-$step" -ProcessId $process.Id

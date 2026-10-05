@@ -223,6 +223,11 @@ public sealed partial class MainForm
         {
             _gameplayPointer = eventArgs.Location;
         }
+        else
+        {
+            _menuPointer = eventArgs.Location;
+            if (UsesSoftwareMenuCursor) _surface.Invalidate();
+        }
         if (_screen == MenuScreenId.Gameplay && _minimapDragging && eventArgs.Button.HasFlag(MouseButtons.Right))
         {
             SetGameplayCameraFromMinimap(eventArgs.Location);
@@ -446,6 +451,8 @@ public sealed partial class MainForm
 
     private void SetGameplayCursorVisibility(bool visible)
     {
+        // A scaled menu draws the game's cursor instead (MainForm.Display.cs).
+        if (visible && _pointerInsideSurface && _screen != MenuScreenId.Gameplay && UsesSoftwareMenuCursor) visible = false;
         if (visible && _gameplayCursorHidden)
         {
             Cursor.Show();
@@ -463,14 +470,23 @@ public sealed partial class MainForm
     // by 3 at 0x432e63, so x < 3, x > 637, y < 3 or y > 477. The HUD does not
     // stop it. The loop at 0x40aa25 scrolls an edge only after the pointer
     // has stayed there more than 100 ms (timeGetTime). The 16-pixel step per
-    // update is the port's.
+    // update is the port's. In a larger gameplay view the edges are the
+    // view's picture edges.
     private readonly long?[] _edgeScrollSince = new long?[4];
+
+    /// <summary>The scroll edges under a point: -1, 0 or 1 on each axis.</summary>
+    private (int X, int Y) ScrollEdges(Point point)
+    {
+        var size = _surface.LogicalSize;
+        return (point.X < 3 ? -1 : point.X > size.Width - 3 ? 1 : 0, point.Y < 3 ? -1 : point.Y > size.Height - 3 ? 1 : 0);
+    }
 
     private void UpdateGameplayEdgeScroll()
     {
         var pointer = _screen == MenuScreenId.Gameplay && _mapDragStart is null && _selectionDragStart is null ? _gameplayPointer : null;
         var now = Environment.TickCount64;
-        bool[] edges = pointer is { } point ? [point.X < 3, point.X > 637, point.Y < 3, point.Y > 477] : [false, false, false, false];
+        var (edgeX, edgeY) = pointer is { } point ? ScrollEdges(point) : (0, 0);
+        bool[] edges = [edgeX < 0, edgeX > 0, edgeY < 0, edgeY > 0];
         int x = 0, y = 0;
         for (var edge = 0; edge < edges.Length; edge++)
         {
