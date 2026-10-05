@@ -41,8 +41,9 @@ internal enum GameplayHudTab
 public sealed partial class MainForm : Form
 {
     private sealed record DeathEffect(int EntityId, FixedPointPosition Position, ulong StartedAtTick);
-    private sealed record ImpactEffect(int WeaponId, FixedPointPosition Position, ulong StartedAtTick);
-    private sealed record CombatPresentation(EntityAnimationCandidate Candidate, ulong StartedAtTick);
+    private sealed record ImpactEffect(int WeaponId, int ExplosionVariant, FixedPointPosition Position, ulong StartedAtTick);
+    /// <param name="NativeClock">Plays once on the executable's animation clock rather than one frame per update.</param>
+    private sealed record CombatPresentation(EntityAnimationCandidate Candidate, ulong StartedAtTick, bool NativeClock = false);
     private sealed record GameplayActorVisual(
         SimulatedActor Actor,
         int RenderEntityId,
@@ -160,7 +161,7 @@ public sealed partial class MainForm : Form
     private readonly List<DeathEffect> _deathEffects = [];
     private readonly List<ImpactEffect> _impactEffects = [];
     private readonly Dictionary<int, ulong> _firingActorStartedAt = [];
-    private readonly Dictionary<int, byte> _firingActorVariantRoll = [];
+    private readonly Dictionary<int, int> _firingActorVariantRoll = [];
     private readonly Dictionary<int, ulong> _hitActorStartedAt = [];
     private readonly Dictionary<int, ulong> _formDeploymentStartedAt = [];
     private readonly Dictionary<int, ulong> _formRetractionStartedAt = [];

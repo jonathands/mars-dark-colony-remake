@@ -97,19 +97,86 @@ and draws in this order:
 3. For each projectile, the constructor `0x441710` stores one more draw at
    projectile `+0x1F` (`0x4417B4`).
 
-The projectile list comes from `0x4263D8`: every frame of the fire animation
-for the shooter's direction whose hotspot 7 names a loaded animation adds a
-launch point (hotspot x * 8, -y * 8) and a delay (the sum of the frame delays
-before it). Without such a frame, one projectile leaves the actor's center at
-once. A FIN logical frame is 164 bytes: layer count, delay, then eight
-hotspots of a 16-byte name and x, y words; the name `NONAME` means none
-(`0x4254D4`). The shipped animations have at most one muzzle frame per
-animation (ATRIL FIREA, BARR FIREA, SCYT FIREB, TURR FIRE, and XENO
-XDEPLOYFIRE/XDEPLOYSTAND), so no shot fires more than one projectile. The port
-draws in the native order but does not model those muzzle offsets and delays.
+The projectile list comes from `0x4263D8`:
+
+- Every frame of the fire animation for the shooter's direction whose hotspot
+  7 names a loaded animation adds a launch point and a delay.
+- The launch point is (hotspot x * 8, -y * 8) from the shooter. The shot is
+  aimed from there.
+- The delay is the sum of the ticks of the frames before that frame (each
+  frame record's word `+2`).
+- Without such a frame, one projectile leaves the actor's center at once.
+
+A FIN logical frame is 164 bytes: layer count, delay, then eight hotspots of
+a 16-byte name and x, y words. The name `NONAME` means none (`0x4254D4`).
+
+The constructor stores the delay times four at projectile `+0x12`
+(`0x44184D`) and starts the projectile in state 0. Each substep of a state-0
+projectile only counts that word down. At zero it turns to state 1 and flies
+in the same substep (`0x44244D`). It does not age while it waits. The
+drawing loop skips a projectile whose `+0x12` is not zero (`0x439DCB`), so
+the shot appears only when it leaves.
+
+The shipped animations have at most one muzzle frame per animation (ATRIL
+FIREA, BARR FIREA, SCYT FIREB, TURR FIRE, and XENO XDEPLOYFIRE/XDEPLOYSTAND),
+so no shot fires more than one projectile. Some directions have none: BARR
+FIREA12 fires from the center at once. Two examples:
+
+- BARR FIREA0's muzzle is frame 1 at (0, -19): 152 units north of the
+  shooter, after frame 0's 2 ticks.
+- ATRIL FIREA0's is frame 4 at (0, -4), after delays 20, 20, 13, 13: 3 + 3 +
+  2 + 2 = 10 ticks.
+
+`NativeFireMuzzles` builds this table from the fire animations
+`EntityAnimationCatalog.PreferredFire` selects, and `FireWeapon` launches
+from it.
+
+The fire animation itself goes on the shooter's channel in mode 1
+(`0x42630C` at `0x412E50`). It plays once on the ordinary animation clock,
+`(d + 3) * 15 / 100` ticks per frame. `0x42630C` does not restart a channel
+that already plays the same family in the same mode. The app follows both
+rules; it used to show one frame per update.
 
 The regression check verifies that an ordinary area shot draws table entry one
 for its presentation roll.
+
+## Explosions
+
+The weapon loader gives each weapon up to four explosion animations (weapon
+`+0x30`) and their count (`+0x40`):
+
+1. `<sprite>EXPLODE`, else `<sprite>EXPL`, when its frame-0 animation is
+   loaded (`0x43B88D`), with count 1.
+2. A nonzero boom template whose effect list is not empty replaces them
+   (`0x43B8F8`). `boomstat.txt` names each effect as an animation of that
+   exact name (`0x43B4A0` resolves it with an empty suffix and fills all 32
+   directions with it). The loop reads at most four.
+
+For example:
+
+- the Barrage (10-12) and the Atril (24-26) get NUKE or GASY (templates 1
+  and 9);
+- SPAK's weapon 37 gets SMAY (template 5), not SPAKEXPLODE;
+- the mine (38) gets NUKE (template 2).
+
+At impact, when the count is not zero, the projectile draws its explosion
+with `rand % count` from the shared stream (`0x411DB4`):
+
+- **Direct hit** (template pattern size 1, `0x44287F`): after the damage
+  (`0x441930`), the projectile moves onto the actor it struck (its x, z and
+  height) and draws.
+- **Area impact** (`0x441BEC`): projectile mode 4 draws at `0x441C9C`. Modes
+  5-10 (transport flights) return without one. Every other mode draws at
+  `0x441FC5`, before the area damage.
+
+The projectile then plays that animation once (`0x42630C` mode 1, state 2).
+The dispatcher removes it when the animation stops (`0x4429A4`, state 4).
+
+The port draws the same value (`ScenarioSimulation.NextExplosionVariant`) and
+reports it as `ProjectileImpactEvent.ExplosionVariant`. A direct hit's event
+position is the struck actor's. `WeaponExplosionCatalog` holds the names.
+The app resolves them in `anim.dat` order: NUKE is in nuke.fin, which the
+game loads, and in effects.fin, which it does not.
 
 ## Dying state
 

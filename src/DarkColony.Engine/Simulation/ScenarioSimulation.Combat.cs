@@ -313,29 +313,46 @@ public sealed partial class ScenarioSimulation
     /// order: the fire animation variant (<c>0x412E13</c>), then per projectile
     /// the area aim (<c>0x412ED6</c>) and the projectile constructor's byte
     /// (<c>0x4417B4</c>, stored at projectile <c>+0x1F</c>). One projectile
-    /// leaves per frame of the fire animation whose hotspot 7 names an
-    /// animation, else one from the actor's center; the shipped animations
-    /// have at most one such frame. Not modeled: that frame's muzzle offset
-    /// and launch delay (ATRIL, BARR, SCYT FIREB, TURR, and the deployed XENO).
+    /// leaves per muzzle of the fire animation the shooter now plays
+    /// (<see cref="NativeFireMuzzles"/>): offset from the shooter, aimed from
+    /// there, and waiting the ticks of the frames before its muzzle frame.
+    /// Without a muzzle, one leaves the shooter's centre at once.
     /// </summary>
-    private void SpawnProjectile(SimulatedActor attacker, SimulatedActor target, WeaponDefinition weapon, ICollection<WeaponFireEvent> fired)
+    private void SpawnProjectile(SimulatedActor attacker, SimulatedActor target, WeaponDefinition weapon, ICollection<WeaponFireEvent> fired) =>
+        FireWeapon(attacker, target.Movement.VisualPosition, target.Seed.InstanceId, groundTarget: null, weapon, fired);
+
+    /// <summary>The ground-special shot goes through the same common fire as <see cref="SpawnProjectile"/>.</summary>
+    private void SpawnGroundProjectile(SimulatedActor attacker, CellCoordinate target, WeaponDefinition weapon, ICollection<WeaponFireEvent> fired) =>
+        FireWeapon(attacker, FixedPointPosition.AtCellCenter(target), -1, target, weapon, fired);
+
+    private void FireWeapon(SimulatedActor attacker, FixedPointPosition aim, int targetInstanceId, CellCoordinate? groundTarget,
+        WeaponDefinition weapon, ICollection<WeaponFireEvent> fired)
     {
-        var presentation = NextFirePresentationRoll();
-        var source = attacker.Movement.VisualPosition;
-        var destination = ApplyNativeAimOffset(attacker, target.Movement.VisualPosition, weapon);
-        var dx = (long)destination.XRaw - source.XRaw;
-        var dz = (long)destination.ZRaw - source.ZRaw;
-        var distance = Math.Max(1L, (long)Math.Sqrt(dx * dx + dz * dz));
-        var speed = Math.Max(1, weapon.ProjectileSpeed);
-        var velocityX = (int)(dx * speed / distance);
-        var velocityZ = (int)(dz * speed / distance);
-        var ticks = CalculateTrajectoryUpdates(dx, dz, velocityX, velocityZ);
-        CellCoordinate? timedImpactCell = weapon.HasAreaEffect ? destination.Cell : null;
-        _ = NextNativeRandom();
-        projectiles.Add(new ProjectileState(nextProjectileInstanceId++, attacker.Seed.InstanceId, target.Seed.InstanceId,
-            weapon.Id, Math.Max(0, weapon.Damage), source, velocityX, velocityZ, ticks, weapon.ProjectileLifetimeTicks,
-            timedImpactCell: timedImpactCell, projectileMode: weapon.ProjectileMode));
-        AddPlayerStatistic(attacker.Seed.Team, 8, 1);
+        // Native 0x412e13 consumes the game's shared 256-entry random stream,
+        // then applies modulo entity.fireVariantCount. This must share its
+        // cursor with scatter and blocked-route jitter: separate PRNGs make a
+        // correct input sequence diverge as soon as any of those paths runs.
+        var presentation = (int)NextNativeRandom();
+        var muzzles = fireMuzzles?.Muzzles(EffectiveDefinition(attacker).Id, attacker.Facing.RenderSector16, presentation) ?? [];
+        if (muzzles.Count == 0) muzzles = [default];
+        foreach (var muzzle in muzzles)
+        {
+            var source = attacker.Movement.VisualPosition.AddRaw(muzzle.XRaw, muzzle.ZRaw);
+            var destination = ApplyNativeAimOffset(attacker, aim, weapon);
+            var dx = (long)destination.XRaw - source.XRaw;
+            var dz = (long)destination.ZRaw - source.ZRaw;
+            var distance = Math.Max(1L, (long)Math.Sqrt(dx * dx + dz * dz));
+            var speed = Math.Max(1, weapon.ProjectileSpeed);
+            var velocityX = (int)(dx * speed / distance);
+            var velocityZ = (int)(dz * speed / distance);
+            var ticks = CalculateTrajectoryUpdates(dx, dz, velocityX, velocityZ);
+            CellCoordinate? timedImpactCell = groundTarget is not null || weapon.HasAreaEffect ? destination.Cell : null;
+            _ = NextNativeRandom();
+            projectiles.Add(new ProjectileState(nextProjectileInstanceId++, attacker.Seed.InstanceId, targetInstanceId,
+                weapon.Id, Math.Max(0, weapon.Damage), source, velocityX, velocityZ, ticks, weapon.ProjectileLifetimeTicks,
+                groundTarget, timedImpactCell, weapon.ProjectileMode, launchDelayTicks: muzzle.DelayTicks));
+            AddPlayerStatistic(attacker.Seed.Team, 8, 1);
+        }
         // dc.exe 0x413181 reads the weapon's burst limit (+0x20), increments
         // actor byte +0x34, and substitutes reload (+0x24) only after the
         // final burst shot. Normal shots use the rate field (+0x08). Keep this
@@ -345,35 +362,16 @@ public sealed partial class ScenarioSimulation
         fired.Add(new WeaponFireEvent(attacker.Seed.InstanceId, weapon.Id, presentation));
     }
 
-    /// <summary>The ground-special shot goes through the same common fire as <see cref="SpawnProjectile"/>.</summary>
-    private void SpawnGroundProjectile(SimulatedActor attacker, CellCoordinate target, WeaponDefinition weapon, ICollection<WeaponFireEvent> fired)
+    /// <summary>
+    /// An impact that ends in an explosion picks one of the weapon's
+    /// explosions with a draw from the shared stream: <c>0x4428C6</c> after a
+    /// direct hit's damage, <c>0x441FCE</c> before an area impact's (and
+    /// <c>0x441C9C</c> for projectile mode 4). -1 when the weapon has none.
+    /// </summary>
+    private int NextExplosionVariant(int weaponId)
     {
-        var presentation = NextFirePresentationRoll();
-        var source = attacker.Movement.VisualPosition;
-        var destination = ApplyNativeAimOffset(attacker, FixedPointPosition.AtCellCenter(target), weapon);
-        var dx = (long)destination.XRaw - source.XRaw;
-        var dz = (long)destination.ZRaw - source.ZRaw;
-        var distance = Math.Max(1L, (long)Math.Sqrt(dx * dx + dz * dz));
-        var speed = Math.Max(1, weapon.ProjectileSpeed);
-        var velocityX = (int)(dx * speed / distance);
-        var velocityZ = (int)(dz * speed / distance);
-        var ticks = CalculateTrajectoryUpdates(dx, dz, velocityX, velocityZ);
-        _ = NextNativeRandom();
-        projectiles.Add(new ProjectileState(nextProjectileInstanceId++, attacker.Seed.InstanceId, -1,
-            weapon.Id, Math.Max(0, weapon.Damage), source, velocityX, velocityZ, ticks, weapon.ProjectileLifetimeTicks,
-            target, destination.Cell, weapon.ProjectileMode));
-        AddPlayerStatistic(attacker.Seed.Team, 8, 1);
-        ApplyWeaponCooldown(attacker, weapon);
-        fired.Add(new WeaponFireEvent(attacker.Seed.InstanceId, weapon.Id, presentation));
-    }
-
-    private byte NextFirePresentationRoll()
-    {
-        // Native 0x412e13 consumes the game's shared 256-entry random stream,
-        // then applies modulo entity.fireVariantCount. This must share its
-        // cursor with scatter and blocked-route jitter: separate PRNGs make a
-        // correct input sequence diverge as soon as any of those paths runs.
-        return (byte)NextNativeRandom();
+        var count = weaponExplosions?.Count(weaponId) ?? 0;
+        return count == 0 ? -1 : (int)(NextNativeRandom() % (uint)count);
     }
 
     private FixedPointPosition ApplyNativeAimOffset(
@@ -485,6 +483,7 @@ public sealed partial class ScenarioSimulation
             var resolved = false;
             for (var substep = 0; substep < NativeProjectileSubstepsPerTick && !resolved; substep++)
             {
+                if (projectile.WaitForLaunch()) continue;
                 projectile.Step();
 
                 // dc.exe 0x442494 advances the projectile before probing current
@@ -501,11 +500,15 @@ public sealed partial class ScenarioSimulation
                 if (collision is not null)
                 {
                     projectiles.RemoveAt(index);
-                    if (weaponClass >= 0) impacts.Add(new ProjectileImpactEvent(projectile.SourceActorInstanceId, collision.Seed.InstanceId, projectile.WeaponId, weaponClass, projectile.Position));
                     if (weapon is { HasAreaEffect: true } && areaEffects?.TryGet(weapon.AreaEffectTemplateId, out var collisionEffect) == true)
                         ApplyAreaDamage(projectile, weapon, projectile.Position.Cell, collisionEffect, destroyed);
                     else ApplyDamage(collision, ResolveProjectileDamage(projectile, collision), destroyed,
                         actorsById.TryGetValue(projectile.SourceActorInstanceId, out var shooter) ? shooter.Seed.Team : null);
+                    // 0x44287F: after the damage the projectile moves onto the
+                    // actor it struck and draws its explosion.
+                    var explosion = NextExplosionVariant(projectile.WeaponId);
+                    if (weaponClass >= 0) impacts.Add(new ProjectileImpactEvent(projectile.SourceActorInstanceId, collision.Seed.InstanceId, projectile.WeaponId, weaponClass,
+                        collision.Movement.VisualPosition, explosion));
                     resolved = true;
                     continue;
                 }
@@ -519,7 +522,10 @@ public sealed partial class ScenarioSimulation
                     projectiles.RemoveAt(index);
                     var impactPosition = FixedPointPosition.AtCellCenter(timedImpactCell);
                     var impactTargetId = projectile.GroundTargetCell is null ? projectile.TargetActorInstanceId : -1;
-                    if (weaponClass >= 0) impacts.Add(new ProjectileImpactEvent(projectile.SourceActorInstanceId, impactTargetId, projectile.WeaponId, weaponClass, impactPosition));
+                    // 0x441BEC: a transport flight (modes 5-10) ends without an
+                    // explosion; any other area impact draws one before its damage.
+                    var explosion = weapon?.ProjectileMode is >= 5 and <= 10 ? -1 : NextExplosionVariant(projectile.WeaponId);
+                    if (weaponClass >= 0) impacts.Add(new ProjectileImpactEvent(projectile.SourceActorInstanceId, impactTargetId, projectile.WeaponId, weaponClass, impactPosition, explosion));
                     if (weapon is not null && ResolveBattlefieldTransportImpact(projectile, weapon, timedImpactCell, battlefieldTransports))
                     {
                         resolved = true;

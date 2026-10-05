@@ -19,16 +19,47 @@ public sealed record DrawLayer(string SpriteName, ushort SpriteFrame, short X, s
     /// and 1 occur (11,871 of 56,605 layers in 72 files).
     /// </summary>
     public bool Mirrored => Values.Length > 3 && Values[3] != 0;
+
+    /// <summary>
+    /// The third trailing word: how the world blitter draws the layer. The
+    /// sprite queue keeps it at entry <c>+0x17</c> (<c>0x4360B4</c>), and the
+    /// blitter (<c>0x4546EA</c>, table <c>0x454664</c>) picks a routine by it (0-5).
+    /// </summary>
+    public int DrawType => Values.Length > 2 ? Values[2] : 0;
+
+    /// <summary>
+    /// Draw type 3: a light, not a sprite. The main pass skips it
+    /// (<c>0x454741</c>, and table entry 3). A pre-pass (<c>0x4621A0</c>) writes
+    /// its opaque pixels as <c>(source + destination) &amp; mask</c> into a
+    /// per-tile buffer, only at GAME DETAIL medium or high (<c>0x4E686C</c>).
+    /// These are the explosions' and napalm's <c>spot</c> and <c>smsp</c>
+    /// ellipses, and the <c>blaz</c> flash of Gray and marine fire.
+    /// </summary>
+    public bool IsLight => DrawType == 3;
 }
 
 /// <summary>A FIN logical frame: its delay word (frame ticks are <c>(d + 3) * 15 / 100</c>, d 0 meaning 15; see <see cref="NativeAnimationTiming"/>) and its layers.</summary>
-public sealed record LogicalFrame(ushort Delay, IReadOnlyList<DrawLayer> Layers);
+public sealed record LogicalFrame(ushort Delay, IReadOnlyList<DrawLayer> Layers)
+{
+    /// <summary>
+    /// The frame header's eight hotspots, each a 16-byte name and x, y words;
+    /// null where the name is empty or <c>NONAME</c>. Slot 7 marks a fire
+    /// animation's muzzle (<see cref="NativeFireMuzzles"/>).
+    /// </summary>
+    public IReadOnlyList<FinHotspot?> Hotspots { get; init; } = [];
+}
+
+/// <summary>A named FIN frame hotspot, in pixels from the frame's origin.</summary>
+public sealed record FinHotspot(string Name, short X, short Y);
 
 public sealed record CompositeFrame(int X, int Y, int Width, int Height, byte[] Rgba);
 
 public sealed class AnimationDefinition
 {
     public const ushort StandardMarker = 29;
+
+    /// <summary>Hotspots in a logical frame header (164 bytes: count, delay, then eight 20-byte hotspots).</summary>
+    public const int HotspotCount = 8;
 
     private AnimationDefinition(
         IReadOnlyList<string> spriteNames,
@@ -71,12 +102,21 @@ public sealed class AnimationDefinition
         var logicalEnd = checked(animationsEnd + logicalFrameCount * 164);
         if (logicalEnd > data.Length) throw new InvalidDataException("FIN logical-frame table exceeds the file.");
         var headers = new (ushort Count, ushort Delay)[logicalFrameCount];
+        var hotspots = new FinHotspot?[logicalFrameCount][];
         var totalLayers = 0;
         for (var index = 0; index < logicalFrameCount; index++)
         {
             var offset = animationsEnd + index * 164;
             headers[index] = (U16(data, offset), U16(data, offset + 2));
             totalLayers = checked(totalLayers + headers[index].Count);
+            hotspots[index] = new FinHotspot?[HotspotCount];
+            for (var slot = 0; slot < HotspotCount; slot++)
+            {
+                var hotspot = offset + 4 + slot * 20;
+                var name = Name(data.Slice(hotspot, 16));
+                if (name.Length != 0 && !name.Equals("NONAME", StringComparison.Ordinal))
+                    hotspots[index][slot] = new FinHotspot(name, I16(data, hotspot + 16), I16(data, hotspot + 18));
+            }
         }
 
         var expected = checked(logicalEnd + totalLayers * 22);
@@ -99,7 +139,7 @@ public sealed class AnimationDefinition
         for (var index = 0; index < logicalFrameCount; index++)
         {
             var layers = allLayers.Skip(layerOffset).Take(headers[index].Count).ToArray();
-            logicalFrames[index] = new LogicalFrame(headers[index].Delay, layers);
+            logicalFrames[index] = new LogicalFrame(headers[index].Delay, layers) { Hotspots = hotspots[index] };
             layerOffset += headers[index].Count;
         }
 
@@ -117,8 +157,10 @@ public sealed class AnimationDefinition
     /// (<c>0x454751</c> culls a queued sprite to <c>[y - height, y]</c>, and
     /// <c>0x4399AD</c> queues each layer at the actor's position plus its
     /// FIN offsets); the frame's own Y is only its place on the artist's
-    /// canvas. Otherwise the frame's Y is added to the layer's, which is how
-    /// the interface art is laid out.
+    /// canvas. The world blit also leaves out light layers
+    /// (<see cref="DrawLayer.IsLight"/>), since the port draws no light map.
+    /// Otherwise the frame's Y is added to the layer's, which is how the
+    /// interface art is laid out.
     /// </summary>
     /// <param name="includeLayer">Composes only the layers it accepts (all when null).</param>
     public CompositeFrame Compose(int frameIndex, Func<string, Sprite> spriteLoader, bool bottomAnchored = false,
@@ -126,8 +168,8 @@ public sealed class AnimationDefinition
     {
         ArgumentNullException.ThrowIfNull(spriteLoader);
         var logical = LogicalFrames[frameIndex];
-        var layers = includeLayer is null ? logical.Layers : [.. logical.Layers.Where(includeLayer)];
-        if (layers.Count == 0) return new CompositeFrame(0, 0, 1, 1, new byte[4]);
+        var layers = logical.Layers.Where(layer => (includeLayer is null || includeLayer(layer)) && !(bottomAnchored && layer.IsLight)).ToArray();
+        if (layers.Length == 0) return new CompositeFrame(0, 0, 1, 1, new byte[4]);
         var sources = layers.Select(layer =>
         {
             var sprite = spriteLoader(layer.SpriteName);

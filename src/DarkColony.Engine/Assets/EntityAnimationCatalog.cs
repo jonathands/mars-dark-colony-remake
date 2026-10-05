@@ -206,8 +206,18 @@ public sealed class EntityAnimationCatalog
     public DirectionalAnimationSelection? PreferredFire(int entityId, int sector, int variantRoll)
     {
         if (sector is < 0 or > 15) throw new ArgumentOutOfRangeException(nameof(sector));
+        var (variants, orderedKeys) = FireVariants(entityId);
+        if (orderedKeys.Count == 0) return null;
+        var key = orderedKeys[Math.Abs(variantRoll % orderedKeys.Count)];
+        return PreferredDirectional(variants[key], sector);
+    }
+
+    /// <summary>The entity's fire families (runtime <c>+0xE4</c>), which a presentation draw is taken modulo.</summary>
+    public int FireVariantCount(int entityId) => FireVariants(entityId).OrderedKeys.Count;
+
+    private (Dictionary<string, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> Variants, List<string> OrderedKeys) FireVariants(int entityId)
+    {
         var source = fireCandidates.GetValueOrDefault(entityId, []);
-        if (source.Count == 0) return null;
         var variants = source
             .GroupBy(item => FireVariant(item.Candidate.AnimationName))
             .ToDictionary(group => group.Key, group => (IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>)group.ToArray());
@@ -221,8 +231,7 @@ public sealed class EntityAnimationCatalog
         orderedKeys.AddRange(variants.Keys.Where(key => !orderedKeys.Contains(key, StringComparer.OrdinalIgnoreCase) &&
                 !(key.Length == 0 && orderedKeys.Contains("A")))
             .OrderBy(key => key, StringComparer.OrdinalIgnoreCase));
-        var key = orderedKeys[Math.Abs(variantRoll % orderedKeys.Count)];
-        return PreferredDirectional(variants[key], sector);
+        return (variants, orderedKeys);
     }
 
     public DirectionalAnimationSelection? PreferredHit(int entityId, int sector)

@@ -74,15 +74,34 @@ public sealed partial class MainForm
         if (_scenarioSimulation is null) return;
         foreach (var fired in _scenarioSimulation.LastWeaponFires)
         {
+            if (FireFamilyStillPlaying(fired)) continue;
             _firingActorStartedAt[fired.SourceActorInstanceId] = _world.TickCount;
             _firingActorVariantRoll[fired.SourceActorInstanceId] = fired.PresentationVariantRoll;
         }
         foreach (var impact in _scenarioSimulation.LastProjectileImpacts)
         {
-            _impactEffects.Add(new ImpactEffect(impact.WeaponId, impact.Position, _world.TickCount));
+            _impactEffects.Add(new ImpactEffect(impact.WeaponId, impact.ExplosionVariant, impact.Position, _world.TickCount));
             if (impact.TargetActorInstanceId >= 0)
                 _hitActorStartedAt[impact.TargetActorInstanceId] = _world.TickCount;
         }
+    }
+
+    /// <summary>
+    /// <c>0x42630C</c> leaves a one-shot animation running when the same
+    /// family is put on the channel again, so a shot fired while the
+    /// shooter's fire animation still plays does not restart it.
+    /// </summary>
+    private bool FireFamilyStillPlaying(WeaponFireEvent fired)
+    {
+        var id = fired.SourceActorInstanceId;
+        if (_entityAnimations is null || _scenarioSimulation?.Actor(id) is not { } actor ||
+            !_firingActorStartedAt.TryGetValue(id, out var startedAt) || !_firingActorVariantRoll.TryGetValue(id, out var roll)) return false;
+        var entityId = actor.DeployedEntityId ?? actor.Seed.EntityId;
+        var count = _entityAnimations.FireVariantCount(entityId);
+        if (count == 0 || Math.Abs(roll % count) != Math.Abs(fired.PresentationVariantRoll % count) ||
+            _entityAnimations.PreferredFire(entityId, actor.Facing.RenderSector16, roll) is not { } selection) return false;
+        return NativeFrame(Path.GetFileName(selection.Candidate.FinPath), selection.Candidate.FirstFrame, selection.Candidate.LastFrame,
+            _world.TickCount - startedAt, NativeAnimationMode.Once) >= 0;
     }
 
     private void CaptureBattlefieldTransportFeedback()

@@ -27,7 +27,8 @@ public sealed class ProjectileState
         CellCoordinate? timedImpactCell = null,
         int projectileMode = 0,
         int heightRaw = 0,
-        int verticalVelocityRaw = 0)
+        int verticalVelocityRaw = 0,
+        int launchDelayTicks = 0)
     {
         InstanceId = instanceId;
         SourceActorInstanceId = sourceActorInstanceId;
@@ -45,6 +46,8 @@ public sealed class ProjectileState
         ProjectileMode = projectileMode;
         HeightRaw = heightRaw;
         VerticalVelocityRaw = verticalVelocityRaw;
+        // 0x44184D: the constructor stores the delay times four in +0x12.
+        LaunchDelaySubsteps = launchDelayTicks * 4;
     }
 
     public int InstanceId { get; }
@@ -84,7 +87,25 @@ public sealed class ProjectileState
     /// </summary>
     public int AnimationTicks { get; private set; }
     public int RemainingTicks { get; private set; }
+    /// <summary>
+    /// Projectile record word <c>+0x12</c>: the substeps it still waits at
+    /// its muzzle (state 0) before it flies. A waiting projectile neither
+    /// moves, ages, hits nor is drawn (<c>0x439DCB</c>).
+    /// </summary>
+    public int LaunchDelaySubsteps { get; private set; }
     public bool ReachedAimedPosition => RemainingTicks <= 0;
+
+    /// <summary>
+    /// State 0 of the substep (<c>0x44244D</c>): while the counter is not
+    /// zero it only counts down; at zero the projectile flies in the same
+    /// substep. Returns whether this substep was spent waiting.
+    /// </summary>
+    public bool WaitForLaunch()
+    {
+        if (LaunchDelaySubsteps == 0) return false;
+        LaunchDelaySubsteps--;
+        return true;
+    }
     public bool ExceededMaximumLifetime => ElapsedTicks > MaximumLifetimeTicks;
 
     public void Step()

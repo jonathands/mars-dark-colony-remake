@@ -26,32 +26,21 @@ public sealed class TroopBuildTimings
     /// Reads the FIN files in <c>anim.dat</c> order, which is the order the game
     /// loads them; the first animation with a matching name wins.
     /// </summary>
-    public static TroopBuildTimings Load(EntityCatalog entities, GameInstallation installation)
+    public static TroopBuildTimings Load(EntityCatalog entities, GameInstallation installation) =>
+        From(entities, LoadedAnimations.Load(installation));
+
+    /// <summary>Production ticks from the animations the game loads.</summary>
+    public static TroopBuildTimings From(EntityCatalog entities, LoadedAnimations animations)
     {
         ArgumentNullException.ThrowIfNull(entities);
-        ArgumentNullException.ThrowIfNull(installation);
-        var frames = new Dictionary<string, IReadOnlyList<ushort>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var line in File.ReadAllLines(installation.DataFile("anim.dat")))
-        {
-            var fileName = line.Trim();
-            if (fileName.Length == 0) continue;
-            var path = installation.DataFile("animate", fileName);
-            if (!File.Exists(path)) continue;
-            var definition = AnimationDefinition.Load(path);
-            foreach (var animation in definition.Animations)
-            {
-                if (frames.ContainsKey(animation.Name) || animation.LastFrame < animation.FirstFrame) continue;
-                frames[animation.Name] = Enumerable.Range(animation.FirstFrame, animation.LastFrame - animation.FirstFrame + 1)
-                    .Select(frame => definition.LogicalFrames[frame].Delay)
-                    .ToArray();
-            }
-        }
-
+        ArgumentNullException.ThrowIfNull(animations);
         var ticks = new Dictionary<int, int>();
         foreach (var entity in entities.Entities)
         {
-            var delays = frames.GetValueOrDefault(entity.Code + "BUILDSTAND0") ?? frames.GetValueOrDefault(entity.Code + "BUILD0");
-            if (delays is not null) ticks[entity.Id] = PlayOnceTicks(delays);
+            var found = animations.Find(entity.Code + "BUILDSTAND0") ?? animations.Find(entity.Code + "BUILD0");
+            if (found is not { } build || animations.Definition(build.Path) is not { } definition) continue;
+            ticks[entity.Id] = PlayOnceTicks([.. Enumerable.Range(build.Animation.FirstFrame, build.Animation.LastFrame - build.Animation.FirstFrame + 1)
+                .Select(frame => definition.LogicalFrames[frame].Delay)]);
         }
         return new TroopBuildTimings(ticks);
     }

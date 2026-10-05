@@ -74,6 +74,22 @@ internal static class AssetsChecks
             Equal(1, entities[50].AbilityChargeRecovery);
         }, CheckTags.Data);
 
+        Check("world sprites leave out light layers (FIN draw type 3), which the original only writes to its light map", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            Sprite Load(string name) => Sprite.Load(install.DataFile("sprites", $"{name}.spr"));
+            // NUKE's frames: the nuke, spon and smae smoke (type 5) over the spot ellipse (type 3).
+            var nuke = AnimationDefinition.Load(install.DataFile("animate", "nuke.fin"));
+            var frame = nuke.LogicalFrames[5];
+            Equal(new[] { ("nuke", 5), ("spon", 5), ("spot", 3), ("smae", 5) }, frame.Layers.Select(layer => (layer.SpriteName, layer.DrawType)).ToArray());
+            // Alone, the spot composes as interface art but leaves a world frame empty.
+            var spotArt = nuke.Compose(5, Load, includeLayer: layer => layer.IsLight);
+            var spotWorld = nuke.Compose(5, Load, bottomAnchored: true, includeLayer: layer => layer.IsLight);
+            Equal(true, spotArt.Width > 100 && spotArt.Rgba.Any(value => value != 0));
+            Equal((1, 1, false), (spotWorld.Width, spotWorld.Height, spotWorld.Rgba.Any(value => value != 0)));
+            Equal(true, nuke.Compose(5, Load, bottomAnchored: true).Width > 1);
+        }, CheckTags.Data);
+
         Check("mirrored FIN layers draw flipped at their X - 1, opposite their source direction", () =>
         {
             var install = GameInstallation.Open(dataPath);

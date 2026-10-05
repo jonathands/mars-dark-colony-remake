@@ -99,6 +99,8 @@ public sealed partial class ScenarioSimulation
     // Player troop queues, ordered by (team, queue).
     private readonly SortedDictionary<(int Team, int Queue), CityProductionQueue> productionQueues = [];
     private TroopBuildTimings? buildTimings;
+    private NativeFireMuzzles? fireMuzzles;
+    private WeaponExplosionCatalog? weaponExplosions;
     // Sum of the SCN critter groups' desired populations (0x43FE6C).
     private int critterReserve;
     // Mission runtime (trigger.c): compiled script, trigger table, statistics.
@@ -213,7 +215,9 @@ public sealed partial class ScenarioSimulation
             randomTable: rules.RandomTable,
             targetRings: rules.TargetRings,
             buildTimings: rules.BuildTimings,
-            krustyTables: rules.KrustyTables);
+            krustyTables: rules.KrustyTables,
+            fireMuzzles: rules.FireMuzzles,
+            weaponExplosions: rules.Explosions);
     }
 
     public static ScenarioSimulation Create(
@@ -234,7 +238,9 @@ public sealed partial class ScenarioSimulation
         MissionScript? missionScript = null,
         TerrainMap? terrain = null,
         NativeVisionTrees? visionTrees = null,
-        NativeKrustyTables? krustyTables = null)
+        NativeKrustyTables? krustyTables = null,
+        NativeFireMuzzles? fireMuzzles = null,
+        WeaponExplosionCatalog? weaponExplosions = null)
     {
         var teamRaces = scenario.Teams.Where(team => team.Race is not null).ToDictionary(team => team.TeamId, team => team.Race!.Value);
         var seeds = new List<WorldEntity>();
@@ -329,6 +335,8 @@ public sealed partial class ScenarioSimulation
         simulation.citiesDeclared = scenario.Teams.Any(team => team.CityOrigin is not null);
         foreach (var city in cityBuildings) simulation.cityBuildings[(city.Team, city.Slot)] = city.InstanceId;
         simulation.buildTimings = buildTimings;
+        simulation.fireMuzzles = fireMuzzles;
+        simulation.weaponExplosions = weaponExplosions;
         simulation.critterReserve = scenario.AutonomousSpawnGroups.Sum(group => group.DesiredPopulation);
         // Session start 0x40123C/0x401848: players 1-6 stat 0 hold the lobby
         // options: P7 flow and quantity (the vent rate and money multipliers,

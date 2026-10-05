@@ -21,9 +21,22 @@ public sealed record DestroyedActorEvent(int EntityInstanceId, int EntityId, Fix
 /// choice among the entity's native FIRE/FIREA/B/C pointer array; exact
 /// synchronization with dc.exe's shared global random table remains open.
 /// </summary>
-public sealed record WeaponFireEvent(int SourceActorInstanceId, int WeaponId, byte PresentationVariantRoll);
+/// <param name="PresentationVariantRoll">
+/// The shared-stream value common fire draws first (<c>0x412E13</c>); the
+/// shooter's fire family is this value modulo its family count.
+/// </param>
+public sealed record WeaponFireEvent(int SourceActorInstanceId, int WeaponId, int PresentationVariantRoll);
 /// <summary>Resolved impact identity, retaining the firing actor for owner-keyed sound feedback.</summary>
-public sealed record ProjectileImpactEvent(int SourceActorInstanceId, int TargetActorInstanceId, int WeaponId, int WeaponClass, FixedPointPosition Position);
+/// <param name="Position">
+/// Where the projectile ends: on the actor a direct hit struck (<c>0x4428A0</c>
+/// moves it there), or at the cell an area shot was aimed at.
+/// </param>
+/// <param name="ExplosionVariant">
+/// Which of the weapon's explosions (<see cref="Assets.WeaponExplosionCatalog"/>)
+/// the impact plays, drawn from the shared stream; -1 for none.
+/// </param>
+public sealed record ProjectileImpactEvent(int SourceActorInstanceId, int TargetActorInstanceId, int WeaponId, int WeaponClass, FixedPointPosition Position,
+    int ExplosionVariant = -1);
 public enum HealOutcome { Healed, SourceMissing, SourceDestroyed, SourceNotHealer, InsufficientCharge, NoEligibleTargets, MatrixUnavailable }
 public sealed record HealEvent(int SourceActorInstanceId, int TargetActorInstanceId, int Amount, HealOutcome Outcome);
 public enum InspireOutcome { Preparing, Applied, SourceMissing, SourceDestroyed, SourceNotCommander, NoEligibleTargets }

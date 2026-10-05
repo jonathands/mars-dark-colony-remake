@@ -400,6 +400,89 @@ internal static class CombatChecks
                 .All(weapon => effects.Templates.ContainsKey(weapon.AreaEffectTemplateId)));
         }, CheckTags.Data);
 
+        Check("weapons end in the explosions dc.exe's loader gives them: EXPLODE, else EXPL, replaced by a boom template's effects", () =>
+        {
+            var explosions = SimulationRules.Load(GameInstallation.Open(dataPath)).Explosions!;
+            // 10-12 Barrage and 24-26 Atril: Arty templates 1 and 9. 30 SPAK and 5
+            // SMOK their own EXPLODE. 37 SPAK: template 5's SMAY replaces it. 38
+            // the mine: template 2. 1 the marine's: nothing.
+            Equal(new[] { "NUKE", "GASY" }, explosions.Names(10).ToArray());
+            Equal(new[] { "NUKE", "GASY" }, explosions.Names(24).ToArray());
+            Equal(new[] { "SPAKEXPLODE0" }, explosions.Names(30).ToArray());
+            Equal(new[] { "SMOKEXPLODE0" }, explosions.Names(5).ToArray());
+            Equal(new[] { "SMAY" }, explosions.Names(37).ToArray());
+            Equal(new[] { "NUKE" }, explosions.Names(38).ToArray());
+            Equal(0, explosions.Count(1));
+        }, CheckTags.Data);
+
+        Check("FIN frames keep their hotspots, and hotspot 7 of a fire animation is where its projectile leaves", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var barr = AnimationDefinition.Load(install.DataFile("animate", "barr.fin"));
+            var fire = barr.Animations.Single(animation => animation.Name == "BARRFIREA0");
+            Equal(new FinHotspot("BARRDIE10", 0, -19), barr.LogicalFrames[fire.FirstFrame + 1].Hotspots[NativeFireMuzzles.MuzzleHotspot]!);
+            Equal(true, barr.LogicalFrames[fire.FirstFrame].Hotspots.All(hotspot => hotspot is null));
+
+            // 0x4263D8: (x * 8, -y * 8) from the shooter, after the ticks of the
+            // frames before. BARRFIREA0's frames have delay 0 (2 ticks each);
+            // ATRILFIREA0's muzzle is frame 4, after delays 20, 20, 13, 13 (3+3+2+2).
+            var rules = SimulationRules.Load(install);
+            var animations = EntityAnimationCatalog.Build(rules.Entities, install.DataFile("animate"), EntityAnimationCatalog.LoadOrder(install.DataFile("anim.dat")));
+            FireMuzzle MuzzleOf(string code, string animationName)
+            {
+                var entity = rules.Entities.Entities.First(definition => definition.Code == code);
+                var sector = Enumerable.Range(0, 16).First(sector => animations.PreferredFire(entity.Id, sector, 0)!.Candidate.AnimationName == animationName);
+                return rules.FireMuzzles!.Muzzles(entity.Id, sector, 0).Single();
+            }
+            Equal(new FireMuzzle(0, 152, 2), MuzzleOf("BARR", "BARRFIREA0"));
+            Equal(new FireMuzzle(0, 32, 10), MuzzleOf("ATRIL", "ATRILFIREA0"));
+            // BARRFIREA12 has no muzzle frame: that shot leaves the centre at once.
+            var barrage = rules.Entities.Entities.First(definition => definition.Code == "BARR");
+            var plain = Enumerable.Range(0, 16).First(sector => animations.PreferredFire(barrage.Id, sector, 0)!.Candidate.AnimationName == "BARRFIREA12");
+            Equal(0, rules.FireMuzzles!.Muzzles(barrage.Id, plain, 0).Count);
+        }, CheckTags.Data);
+
+        Check("a Barrage shell leaves its muzzle after the fire frames before it, and its impact draws one of two explosions", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var rules = SimulationRules.Load(install);
+            var barrage = rules.Entities.Entities.First(definition => definition.Code == "BARR");
+            const string header = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n";
+            var bytes = new byte[PathRegionMap.RouteTableSize + 32 * 32];
+            bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+            var path = PathRegionMap.Parse(bytes, 32, 32);
+            ScenarioSimulation Create(bool explosions) => ScenarioSimulation.Create(
+                ScenarioDefinition.Parse(header + $"10 5 {barrage.Id} 0 -1 0\n10 13 0 1 -1 0\n"), rules.Entities, path,
+                weaponCatalog: rules.Weapons, damageMatrix: rules.DamageMatrix, areaEffects: rules.AreaEffects, randomTable: rules.RandomTable,
+                fireMuzzles: rules.FireMuzzles, weaponExplosions: explosions ? rules.Explosions : null);
+            var simulation = Create(explosions: true);
+            var reference = Create(explosions: false);
+            void Send(params WorldCommand[] commands)
+            {
+                var scheduled = commands.Select((command, index) => new ScheduledWorldCommand(simulation.TickCount, (ulong)index, command)).ToArray();
+                simulation.Step(scheduled);
+                reference.Step(scheduled);
+            }
+            Send(new AttackIntent(1, 2));
+            for (var tick = 0; tick < 64 && simulation.Projectiles.Count == 0; tick++) Send();
+            var shooter = simulation.Actor(1)!;
+            var fired = simulation.LastWeaponFires.Single();
+            var muzzle = rules.FireMuzzles!.Muzzles(barrage.Id, shooter.Facing.RenderSector16, fired.PresentationVariantRoll).Single();
+            var shell = simulation.Projectiles.Single();
+            var start = shooter.Movement.VisualPosition.AddRaw(muzzle.XRaw, muzzle.ZRaw);
+            Equal(start, shell.Position);
+            Equal(true, shell.LaunchDelaySubsteps > 0);
+            // A waiting shell stays at the muzzle and does not age.
+            while (shell.LaunchDelaySubsteps > 0) { Equal((start, 0), (shell.Position, shell.ElapsedTicks)); Send(); }
+
+            // The two runs draw alike until the impact, which draws once more for the explosion.
+            Equal(reference.NativeRandomCursor, simulation.NativeRandomCursor);
+            for (var tick = 0; tick < 64 && simulation.LastProjectileImpacts.Count == 0; tick++) Send();
+            var impact = simulation.LastProjectileImpacts.Single();
+            Equal((true, -1), (impact.ExplosionVariant is 0 or 1, reference.LastProjectileImpacts.Single().ExplosionVariant));
+            Equal((reference.NativeRandomCursor + 1) & 0xff, simulation.NativeRandomCursor);
+        }, CheckTags.Data);
+
         Check("original weapon catalog loads", () =>
         {
             var install = GameInstallation.Open(dataPath);
@@ -414,11 +497,18 @@ internal static class CombatChecks
             Equal(0, humanWeapon.ProjectileMode);
             Equal(1, weapons.Weapons[10].AreaEffectTemplateId);
             Equal(1, weapons.Weapons[10].ProjectileMode);
-            var effects = WeaponEffectCatalog.Build(weapons, install.DataFile("animate"));
+            var explosions = SimulationRules.Load(install).Explosions!;
+            var effects = WeaponEffectCatalog.Build(weapons, install.DataFile("animate"), explosionNames: explosions,
+                loadOrder: EntityAnimationCatalog.LoadOrder(install.DataFile("anim.dat")));
             var barragerWeapon = weapons.Weapons.Values.First(weapon => weapon.Sprite.Equals("BARR", StringComparison.OrdinalIgnoreCase));
             Equal(true, effects.Bullet(barragerWeapon.Id) is not null);
             var spakWeapon = weapons.Weapons.Values.First(weapon => weapon.Sprite.Equals("SPAK", StringComparison.OrdinalIgnoreCase));
-            Equal("SPAKEXPLODE0", effects.Impact(spakWeapon.Id)!.AnimationName);
+            Equal("SPAKEXPLODE0", effects.Explosion(spakWeapon.Id, 0)!.AnimationName);
+            // The Barrage's shell ends in the Arty template's NUKE or GASY, from
+            // the files the game loads (effects.fin also has a NUKE; it is not loaded).
+            Equal(("nuke.fin", "NUKE"), (Path.GetFileName(effects.Explosion(10, 0)!.FinPath).ToLowerInvariant(), effects.Explosion(10, 0)!.AnimationName));
+            Equal("GASY", effects.Explosion(10, 1)!.AnimationName);
+            Equal(true, effects.Explosion(10, 2) is null && effects.Explosion(1, 0) is null);
             var napalm = weapons.Weapons[50];
             Equal("BARR", napalm.Sprite);
             Equal(6, napalm.WeaponClass);
@@ -499,7 +589,7 @@ internal static class CombatChecks
             // Common fire draws the presentation variant first (0x412E13, table
             // index one), then the area aim (index two), then the projectile
             // constructor's byte (0x4417B4, index three), all from one stream.
-            Equal((byte)0x7e, ordinary.LastWeaponFires.Single().PresentationVariantRoll);
+            Equal(0x7e, ordinary.LastWeaponFires.Single().PresentationVariantRoll & 0xff);
 
             var inspiredScenario = ScenarioDefinition.Parse(header +
                 $"10 10 69 0 -1 0\n10 5 {areaSource.Id} 0 -1 0\n15 5 0 1 -1 0\n");

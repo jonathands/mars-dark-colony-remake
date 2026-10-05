@@ -173,6 +173,9 @@ public sealed partial class ScenarioSimulation
 
     private int NextMovementJitter() => (int)(NextNativeRandom() % 3) - 1;
 
+    /// <summary>The shared stream's cursor (<c>0x479204</c>), for the checks.</summary>
+    internal int NativeRandomCursor => nativeRandomIndex;
+
     private uint NextNativeRandom()
     {
         nativeRandomIndex = (nativeRandomIndex + 1) & 0xff;

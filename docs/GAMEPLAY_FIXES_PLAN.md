@@ -20,7 +20,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 12 | Esc in a game should ask for confirmation | done: the original's lqce dialog, also for QUIT and Q |
 | 13 | A Single Player War is never won after destroying everything | done: the native War end (0x40DEAC); units and empty positions' placed units count |
 | 14 | P7 multipliers in Single Player War (and probably multiplayer) do not work as intended | done: all six lobby options reach players 1-6 stat 0 (0x40183B) |
-| 15 | The Barrage's long-range attack does not animate correctly | open |
+| 15 | The Barrage's long-range attack does not animate correctly | done: the shell ends in its boom template's NUKE or GASY explosion, leaves the barrel at its muzzle frame, and the fire animation plays on the native clock |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)
@@ -55,3 +55,38 @@ fixed from executable evidence where there is some, and the evidence goes in
   P7 plays no part, so an item the player cannot afford stays visible.
 - `maine` draws the count at the gadget's `offset` (3,3 for buildings and
   research, 38,3 for troops) in font 0, on the `erase` colour.
+
+## 15: the Barrage's shot (`dc.exe`)
+
+The port had four faults; see `docs/reverse-engineering/combat-damage.md`.
+
+- **No explosion.** Weapons 10-12 (sprite BARR) have no BARREXPLODE. Their
+  boom template 1 names NUKE and GASY, and the weapon loader (`0x43B8F8`)
+  makes those the weapon's explosions. Each impact picks one with a draw
+  from the shared stream. The port looked only for `<sprite>EXPLODE`, so the
+  shell landed without an explosion. It also never made that draw, so after
+  any impact of a weapon with explosions its random stream drifted from the
+  original's.
+- **The shell left the tank's centre at once.** It leaves from BARR FIREA's
+  muzzle hotspot (slot 7, frame 1), after frame 0's 2 ticks, and is not drawn
+  while it waits. The Atril waits 10 ticks.
+- **The fire animation ran twice as fast.** It plays on the ordinary clock
+  (2 ticks per frame for delay 0), not one frame per update.
+- **A grey ellipse under every explosion.** The NUKE and GASY `spot` layer
+  has FIN draw type 3, a light. The original never draws it as a sprite: it
+  only writes the layer to a light buffer at GAME DETAIL medium or high. The
+  port drew it opaque. World sprites now leave type-3 layers out; that also
+  covers the `blaz` flash of Gray and marine fire. See `fin-layers.md`.
+
+Still different: GASY's `spon` layer (draw type 4) shows as a white blob. The
+original draws type 4 through a remap table that is not verified yet.
+
+The goldens changed for three reasons:
+
+- the fire event keeps the whole presentation draw (the variant is that
+  value modulo the shooter's family count; SCYT has three families, so the
+  low byte gave the wrong one);
+- projectiles show their launch delay;
+- the extra draw shifts the stream after an explosion (human15, alien06,
+  atrain6).
+

@@ -444,11 +444,14 @@ public sealed partial class MainForm
         if (candidate is null) return false;
         var span = candidate.LastFrame - candidate.FirstFrame + 1;
         var fileName = Path.GetFileName(candidate.FinPath);
-        // Stands and walks run on the native clock; combat presentations keep
-        // their one-frame-per-update timing from the firing model.
+        // Stands, walks and fire animations run on the native clock; hit and
+        // deployment presentations keep the port's one frame per update.
         var frame = combatPresentation is null
             ? (ushort)NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, _world.TickCount - _screenStartedAtTick)
-            : (ushort)(candidate.FirstFrame + (_world.TickCount - combatPresentation.StartedAtTick) % (ulong)span);
+            : combatPresentation.NativeClock
+                ? (ushort)Math.Max(candidate.FirstFrame, NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame,
+                    _world.TickCount - combatPresentation.StartedAtTick, NativeAnimationMode.Once))
+                : (ushort)(candidate.FirstFrame + (_world.TickCount - combatPresentation.StartedAtTick) % (ulong)span);
         var bitmap = WorldAnimationBitmap(fileName, frame);
         if (bitmap is null) return false;
         var key = $"{fileName}:{frame}:world";
@@ -557,7 +560,8 @@ public sealed partial class MainForm
             _entityAnimations ??= EntityAnimationCatalog.Build(_entityCatalog, _installation.DataFile("animate"),
                 EntityAnimationCatalog.LoadOrder(_installation.DataFile("anim.dat")));
             _weaponEffects ??= _weaponCatalog is null ? null : WeaponEffectCatalog.Build(_weaponCatalog, _installation.DataFile("animate"),
-                name => File.Exists(_installation.DataFile("sprites", $"{name}.spr")) || File.Exists(_installation.DataFile("intrface", $"{name}.spr")));
+                name => File.Exists(_installation.DataFile("sprites", $"{name}.spr")) || File.Exists(_installation.DataFile("intrface", $"{name}.spr")),
+                _simulationRules?.Explosions, EntityAnimationCatalog.LoadOrder(_installation.DataFile("anim.dat")));
             var state = graphics.Save();
             graphics.SetClip(new Rectangle(Point.Empty, GameplayWorldArea));
             var targetedInstanceIds = _scenarioSimulation.Actors
@@ -636,6 +640,8 @@ public sealed partial class MainForm
             DrawGameplayDeathEffects(graphics, canvas);
             foreach (var projectile in _scenarioSimulation.Projectiles)
             {
+                // 0x439DCB: a projectile still waiting at its muzzle is not drawn.
+                if (projectile.LaunchDelaySubsteps > 0) continue;
                 var x = projectile.Position.XRaw / 8 - _cameraX;
                 var y = WorldPixelY(projectile.Position.ZRaw) - projectile.HeightRaw / 8 - _cameraY;
                 var candidate = _weaponEffects?.Bullet(projectile.WeaponId);
@@ -754,21 +760,21 @@ public sealed partial class MainForm
         for (var index = _impactEffects.Count - 1; index >= 0; index--)
         {
             var effect = _impactEffects[index];
-            var candidate = _weaponEffects.Impact(effect.WeaponId);
+            var candidate = _weaponEffects.Explosion(effect.WeaponId, effect.ExplosionVariant);
             if (candidate is null)
             {
                 _impactEffects.RemoveAt(index);
                 continue;
             }
-            var span = candidate.LastFrame - candidate.FirstFrame + 1;
-            var age = _world.TickCount - effect.StartedAtTick;
-            if (age >= (ulong)span)
+            // The projectile plays its explosion once (0x42630C mode 1) and is
+            // removed when it ends (0x4429A4).
+            var fileName = Path.GetFileName(candidate.FinPath);
+            var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, _world.TickCount - effect.StartedAtTick, NativeAnimationMode.Once);
+            if (frame < 0)
             {
                 _impactEffects.RemoveAt(index);
                 continue;
             }
-            var frame = candidate.FirstFrame + (ushort)age;
-            var fileName = Path.GetFileName(candidate.FinPath);
             var bitmap = WorldAnimationBitmap(fileName, frame);
             if (bitmap is null) continue;
             var origin = WorldAnimationOrigin(fileName, frame);
@@ -840,8 +846,11 @@ public sealed partial class MainForm
         // when both occur in one tick.
         if (TryPresentation(_hitActorStartedAt, _entityAnimations.PreferredHit(renderEntityId, actor.Facing.RenderSector16), entity.InstanceId, out var hit))
             return hit;
+        // Common fire puts the family on the shooter's channel in mode 1
+        // (0x412E50): it plays once on the ordinary animation clock.
         var variantRoll = _firingActorVariantRoll.GetValueOrDefault(entity.InstanceId);
-        return TryPresentation(_firingActorStartedAt, _entityAnimations.PreferredFire(renderEntityId, actor.Facing.RenderSector16, variantRoll), entity.InstanceId, out var fire)
+        return TryPresentation(_firingActorStartedAt, _entityAnimations.PreferredFire(renderEntityId, actor.Facing.RenderSector16, variantRoll), entity.InstanceId, out var fire,
+                nativeClock: true)
             ? fire : null;
     }
 
@@ -861,7 +870,8 @@ public sealed partial class MainForm
         IDictionary<int, ulong> starts,
         DirectionalAnimationSelection? selection,
         int entityInstanceId,
-        out CombatPresentation presentation)
+        out CombatPresentation presentation,
+        bool nativeClock = false)
     {
         presentation = null!;
         if (!starts.TryGetValue(entityInstanceId, out var startedAtTick)) return false;
@@ -870,13 +880,17 @@ public sealed partial class MainForm
             starts.Remove(entityInstanceId);
             return false;
         }
-        var span = selection.Candidate.LastFrame - selection.Candidate.FirstFrame + 1;
-        if (_world.TickCount - startedAtTick >= (ulong)span)
+        var candidate = selection.Candidate;
+        var span = candidate.LastFrame - candidate.FirstFrame + 1;
+        var over = nativeClock
+            ? NativeFrame(Path.GetFileName(candidate.FinPath), candidate.FirstFrame, candidate.LastFrame, _world.TickCount - startedAtTick, NativeAnimationMode.Once) < 0
+            : _world.TickCount - startedAtTick >= (ulong)span;
+        if (over)
         {
             starts.Remove(entityInstanceId);
             return false;
         }
-        presentation = new CombatPresentation(selection.Candidate, startedAtTick);
+        presentation = new CombatPresentation(candidate, startedAtTick, nativeClock);
         return true;
     }
 
