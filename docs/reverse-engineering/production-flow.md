@@ -249,10 +249,14 @@ Examples are `SCNCPODBUILD0` in `drop.fin` and `MINDHIVBUILD0` in
 the 50 updates of command 22, and the build animation its play-once ticks
 (`TroopBuildTimings`).
 
-As in the original, a building killed during its delivery loses command 19
-with the rest of its stack (`0x416308`). Its player then stays busy and its
-slot rising, so that player gets no further deliveries and cannot buy that
-slot again. Only the command's end clears the two flags.
+A building killed during its delivery loses command 19 with the rest of its
+stack (`0x416308`). In the original only the command's end clears the two
+flags, so that player stays busy and that slot rising: no further
+deliveries, and the slot cannot be bought again. The port departs from this
+on purpose (decided in play testing). The killed delivery clears the
+player's flag if it held it, and the slot's flag unless the ship was already
+leaving. The player's next delivery then runs, and the slot is offered
+again.
 
 The app draws each phase:
 

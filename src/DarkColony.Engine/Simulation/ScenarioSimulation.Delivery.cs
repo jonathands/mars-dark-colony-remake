@@ -70,8 +70,11 @@ public sealed partial class ScenarioSimulation
     /// <summary>
     /// Command 19 for every delivering building, in actor order. A building
     /// killed during its delivery loses the command with the rest of its stack
-    /// (<c>0x416308</c>): as in the original, its player stays busy and its
-    /// slot rising, since only the command's end clears them.
+    /// (<c>0x416308</c>). In the original its player then stays busy and its
+    /// slot rising for the rest of the game, since only the command's end
+    /// clears them. The port departs from that on purpose (decided in play
+    /// testing): the killed delivery releases what it held, so the player's
+    /// next delivery runs and the slot can be bought again.
     /// </summary>
     private void UpdateBuildingDeliveries()
     {
@@ -79,6 +82,11 @@ public sealed partial class ScenarioSimulation
         {
             if (!actorsById.TryGetValue(instanceId, out var building) || building.IsDestroyed)
             {
+                // Only the running delivery holds the player's flag, and the
+                // slot rises until the build animation ends; once the ship is
+                // leaving, the slot may already hold a new purchase.
+                if (state.Phase != BuildingDeliveryPhase.Waiting) deliveringTeams.Remove(state.Team);
+                if (state.Phase != BuildingDeliveryPhase.Leaving) risingSlots.Remove((state.Team, state.Slot));
                 deliveries.Remove(instanceId);
                 continue;
             }

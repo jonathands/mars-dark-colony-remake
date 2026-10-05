@@ -10,7 +10,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 2 | Buildings can be bought more than once | not a bug (the user confirmed); the count still allows one |
 | 3 | Upgrades cannot be bought | done: research needs no building |
 | 4 | A pylon is missing in the built base (reference: a screenshot of the original) | done: city slot 5, TOWR (81), seeded with health 1 for every player with a city (0x41C1AA) |
-| 5 | Buildings are not instant: a ship lowers them (Angel1 for Humans, the Gray disc) | done: command 19 delivery, one per player, the slot rising until the build animation ends |
+| 5 | Buildings are not instant: a ship lowers them (Angel1 for Humans, the Gray disc) | done: command 19 delivery, one per player, the slot rising until the build animation ends. Unlike the original, a building killed during its delivery frees its player and slot |
 | 6 | An options menu, in a corner for now: resolution, intro video off, show FPS | done: OPTIONS in the main menu's top-right corner |
 | 7 | The land mine never attacks | done: the ring scan admits the eight neighbours by cell, not by a jitter-sensitive 8.8 distance |
 | 8 | The dropship button and action do not work | done by item 10: the engine worked; a left click on the map cancelled the target mode. Lieutenants (69, 73) have no Drop Ship or Saucer, as in the original |

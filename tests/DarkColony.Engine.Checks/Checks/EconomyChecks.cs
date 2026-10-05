@@ -454,6 +454,42 @@ internal static class EconomyChecks
                 Equal(command, System.Text.Json.JsonSerializer.Deserialize<WorldCommand>(System.Text.Json.JsonSerializer.Serialize(command))!);
         }, CheckTags.Data);
 
+        Check("a building killed during its delivery frees its player's next delivery and its slot", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var rules = SimulationRules.Load(install);
+            var (simulation, _) = DeterminismHarness.Load(install, rules, "mplayer/j4play01");
+            simulation.EconomyForTeam(0)!.AddP7(100_000);
+            void Send(params WorldCommand[] commands) =>
+                simulation.Step(commands.Select((command, index) => new ScheduledWorldCommand(simulation.TickCount, (ulong)index, command)).ToArray());
+            BuildingDeliveryPhase? Phase(int instanceId) => simulation.Delivery(instanceId)?.Phase;
+            // Item 1 is the barracks (slot 1), item 2 the slot-3 building. A
+            // delivery starts only after the third update (0x418868).
+            Send();
+            Send();
+            Send(new CatalogCountIntent(0, 1), new CatalogCountIntent(0, 2));
+            Send(new BuildIntent(0));
+            var barracks = simulation.CityBuilding(0, 1)!;
+            var laboratory = simulation.CityBuilding(0, 3)!.Seed.InstanceId;
+            Equal(((BuildingDeliveryPhase?)BuildingDeliveryPhase.Arriving, (BuildingDeliveryPhase?)BuildingDeliveryPhase.Waiting), (Phase(barracks.Seed.InstanceId), Phase(laboratory)));
+
+            // The original would keep player 0 busy and slot 1 rising for good.
+            simulation.Kill(barracks, null, new List<DestroyedActorEvent>());
+            Send();
+            Equal((false, false, (BuildingDeliveryPhase?)BuildingDeliveryPhase.Arriving), (simulation.Delivery(barracks.Seed.InstanceId) is not null, simulation.IsSlotRising(0, 1), Phase(laboratory)));
+            Equal(CatalogItemState.Offered, simulation.CatalogState(0, 1));
+
+            // Bought again, the new barracks waits for the laboratory's delivery.
+            Send(new CatalogCountIntent(0, 1));
+            Send(new BuildIntent(0));
+            Equal(BuildingDropOutcome.Placed, simulation.LastBuildingPlacements.Single().Outcome);
+            var rebuilt = simulation.CityBuilding(0, 1)!.Seed.InstanceId;
+            Equal(((BuildingDeliveryPhase?)BuildingDeliveryPhase.Waiting, true), (Phase(rebuilt), simulation.IsSlotRising(0, 1)));
+            var updates = 0;
+            while (simulation.Delivery(rebuilt) is not null && updates++ < 1000) Send();
+            Equal((false, CatalogItemState.Done), (simulation.IsSlotRising(0, 1), simulation.CatalogState(0, 1)));
+        }, CheckTags.Data);
+
         Check("building prerequisites follow the live city slot and its variant", () =>
         {
             var install = GameInstallation.Open(dataPath);
