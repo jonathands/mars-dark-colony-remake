@@ -295,9 +295,15 @@ targets that the weapon/armor matrix says cannot be damaged, and scores armed
 targets above unarmed targets. Because weapon 38 is an area weapon, the
 candidate's ordinary-ground 3x3 neighborhood then contributes +10 per hostile
 occupant and -15 per cooperative occupant. Equal scores preserve the table's
-order. The range-one firing comparison admits the mine's cell and its four
-cardinal neighbors, so the compiled trigger selector now reproduces those
-native filters and priorities. Native state 1 may also lock a farther actor
+order. The scan works on whole cells. A range-one weapon's rings are ring
+0 and ring 1, the mine's own cell and all eight neighbours (`0x435C88`), and
+a hit fires with no further distance test (see `combat-range.md`). The
+compiled trigger selector reproduces those filters and priorities.
+
+It used to add an 8.8 distance test of one cell. That test left out the
+diagonal cells, and it also left out a hostile standing on a neighbouring
+cell whenever the movement jitter put it a few units past the cell centre.
+In play, mines then only fired at units walking right over them. Native state 1 may also lock a farther actor
 before the static executor cannot pursue it; that non-firing persistence edge
 remains isolated rather than being invented in the direct trigger adapter.
 

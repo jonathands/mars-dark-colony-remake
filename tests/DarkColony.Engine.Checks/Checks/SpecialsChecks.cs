@@ -331,6 +331,31 @@ internal static class SpecialsChecks
             Equal(false, simulation.Actor(2)!.IsDestroyed);
         });
 
+        Check("with the installed tables, a mine fires at a hostile that stops beside it, jitter and all", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var rules = SimulationRules.Load(install);
+            // Team 0: a Human mine guy (43) at (2,2). Team 1: a Gray warrior (8) at (8,2).
+            const string scenarioText = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 2 43 0 -1 0\n8 2 8 1 -1 0\n";
+            var pathBytes = new byte[PathRegionMap.RouteTableSize + 12 * 6];
+            pathBytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+            var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(scenarioText), PathRegionMap.Parse(pathBytes, 12, 6), rules);
+            simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new DeployMineIntent(1))]);
+            for (var tick = 0; tick < ScenarioSimulation.NativeImmediateSpecialTicks + 2; tick++) simulation.Step([]);
+            Equal("HMINE", simulation.EffectiveDefinition(simulation.Actor(1)!).Code);
+            // The warrior stops on the neighbouring cell, where the movement
+            // jitter leaves it off the centre and beyond an 8.8 range of one.
+            simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new MoveIntent(2, new CellCoordinate(3, 2)))]);
+            var fired = false;
+            for (var tick = 0; tick < 200 && !fired; tick++)
+            {
+                simulation.Step([]);
+                fired = simulation.LastWeaponFires.Any(fire => fire.SourceActorInstanceId == 1);
+            }
+            // It fires once the warrior's step claims the neighbouring cell in the ground grid.
+            Equal(true, fired);
+        }, CheckTags.Data);
+
         Check("native ground-special fields drive researched Napalm area fire", () =>
         {
             var install = GameInstallation.Open(dataPath);

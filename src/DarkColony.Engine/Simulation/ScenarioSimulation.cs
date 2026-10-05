@@ -41,9 +41,9 @@ public sealed partial class ScenarioSimulation
     /// </summary>
     public const int NativeMineFireIntegrityCost = 0x12c;
 
-    // First two rings of dc.exe's target-search table at 0x434090. The full
-    // table extends beyond the mine's range, but these are the only offsets
-    // whose cell centres pass weapon 38's range-one squared-distance test.
+    // First two rings of dc.exe's target-search table at 0x434090: ring 0 and
+    // ring 1, all eight neighbours, are weapon 38's range-one rings (0x435C88).
+    // A hit fires with no further distance test (docs/reverse-engineering/combat-range.md).
     private static readonly CellCoordinate[] NativeMineTargetOffsets =
     [
         new(0, 0),

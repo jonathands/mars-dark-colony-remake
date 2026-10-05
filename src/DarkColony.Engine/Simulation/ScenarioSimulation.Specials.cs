@@ -450,7 +450,8 @@ public sealed partial class ScenarioSimulation
     {
         SimulatedActor? best = null;
         var bestScore = -1;
-        var rangeRaw = (long)Math.Max(0, weapon.Range) * FixedPointPosition.One;
+        // The ring scan works on whole cells: a hostile anywhere in them is a
+        // target, wherever its movement jitter leaves it inside its cell.
         foreach (var offset in NativeMineTargetOffsets)
         {
             var cell = new CellCoordinate(
@@ -462,8 +463,7 @@ public sealed partial class ScenarioSimulation
                 if (!occupancy.TryGetOwner(cell, out var candidateId) || candidateId == source.Seed.InstanceId ||
                     !actorsById.TryGetValue(candidateId, out var candidate) || candidate.IsDestroyed ||
                     candidate.Seed.Team is 8 or 9 ||
-                    !TeamRelations.IsHostile(source.Seed.Team, candidate.Seed.Team) ||
-                    DistanceSquared(source.Movement.VisualPosition, candidate.Movement.VisualPosition) > rangeRaw * rangeRaw)
+                    !TeamRelations.IsHostile(source.Seed.Team, candidate.Seed.Team))
                     continue;
                 // Target search 0x435A06 rejects a weapon/armor pairing whose
                 // mbullet entry is zero before assigning any priority.
