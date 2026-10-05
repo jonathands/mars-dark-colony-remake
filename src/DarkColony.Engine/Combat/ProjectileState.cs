@@ -96,6 +96,31 @@ public sealed class ProjectileState
     public bool ReachedAimedPosition => RemainingTicks <= 0;
 
     /// <summary>
+    /// Projectile mode 4 (Napalm, Disease) does not end at its impact: it
+    /// turns to state 3 and burns there (<c>0x441C7B</c>). Word <c>+0x18</c>
+    /// then counts the substeps since; null while the projectile flies.
+    /// </summary>
+    public int? BurnSubsteps { get; private set; }
+    public bool IsBurning => BurnSubsteps is not null;
+    /// <summary>The explosion a burning projectile loops (its impact's draw); -1 for none.</summary>
+    public int ExplosionVariant { get; private set; } = -1;
+
+    internal void BeginBurn(FixedPointPosition position, int explosionVariant)
+    {
+        Position = position;
+        BurnSubsteps = 0;
+        ExplosionVariant = explosionVariant;
+    }
+
+    /// <summary>Returns the burn's substep count, then advances it (<c>0x4423E9</c>).</summary>
+    internal int NextBurnSubstep()
+    {
+        var count = BurnSubsteps ?? throw new InvalidOperationException("The projectile is not burning.");
+        BurnSubsteps = count + 1;
+        return count;
+    }
+
+    /// <summary>
     /// State 0 of the substep (<c>0x44244D</c>): while the counter is not
     /// zero it only counts down; at zero the projectile flies in the same
     /// substep. Returns whether this substep was spent waiting.

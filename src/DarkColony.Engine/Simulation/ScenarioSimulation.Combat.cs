@@ -483,6 +483,14 @@ public sealed partial class ScenarioSimulation
             var resolved = false;
             for (var substep = 0; substep < NativeProjectileSubstepsPerTick && !resolved; substep++)
             {
+                // State 3 (0x442476): a burning projectile burns instead of flying.
+                if (projectile.IsBurning)
+                {
+                    if (!UpdateBurn(projectile, weapon, destroyed)) continue;
+                    projectiles.RemoveAt(index);
+                    resolved = true;
+                    continue;
+                }
                 if (projectile.WaitForLaunch()) continue;
                 projectile.Step();
 
@@ -519,13 +527,20 @@ public sealed partial class ScenarioSimulation
                 // collision; ordinary missed shots instead continue until expiry.
                 if (projectile.TimedImpactCell is { } timedImpactCell && reachedTimedAim)
                 {
-                    projectiles.RemoveAt(index);
                     var impactPosition = FixedPointPosition.AtCellCenter(timedImpactCell);
                     var impactTargetId = projectile.GroundTargetCell is null ? projectile.TargetActorInstanceId : -1;
                     // 0x441BEC: a transport flight (modes 5-10) ends without an
                     // explosion; any other area impact draws one before its damage.
                     var explosion = weapon?.ProjectileMode is >= 5 and <= 10 ? -1 : NextExplosionVariant(projectile.WeaponId);
                     if (weaponClass >= 0) impacts.Add(new ProjectileImpactEvent(projectile.SourceActorInstanceId, impactTargetId, projectile.WeaponId, weaponClass, impactPosition, explosion));
+                    // Mode 4 (0x441C7B) burns where it lands: no damage now, and
+                    // the later substeps of this update already burn.
+                    if (weapon is { ProjectileMode: 4 })
+                    {
+                        projectile.BeginBurn(impactPosition, explosion);
+                        continue;
+                    }
+                    projectiles.RemoveAt(index);
                     if (weapon is not null && ResolveBattlefieldTransportImpact(projectile, weapon, timedImpactCell, battlefieldTransports))
                     {
                         resolved = true;

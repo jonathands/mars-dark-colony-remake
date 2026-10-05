@@ -80,7 +80,9 @@ public sealed partial class MainForm
         }
         foreach (var impact in _scenarioSimulation.LastProjectileImpacts)
         {
-            _impactEffects.Add(new ImpactEffect(impact.WeaponId, impact.ExplosionVariant, impact.Position, _world.TickCount));
+            // A burning projectile (mode 4) loops its explosion itself while it burns.
+            if (_weaponCatalog?.TryGet(impact.WeaponId, out var impactWeapon) != true || impactWeapon.ProjectileMode != 4)
+                _impactEffects.Add(new ImpactEffect(impact.WeaponId, impact.ExplosionVariant, impact.Position, _world.TickCount));
             if (impact.TargetActorInstanceId >= 0)
                 _hitActorStartedAt[impact.TargetActorInstanceId] = _world.TickCount;
         }

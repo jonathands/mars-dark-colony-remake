@@ -642,6 +642,11 @@ public sealed partial class MainForm
             {
                 // 0x439DCB: a projectile still waiting at its muzzle is not drawn.
                 if (projectile.LaunchDelaySubsteps > 0) continue;
+                if (projectile.IsBurning)
+                {
+                    DrawBurn(canvas, projectile);
+                    continue;
+                }
                 var x = projectile.Position.XRaw / 8 - _cameraX;
                 var y = WorldPixelY(projectile.Position.ZRaw) - projectile.HeightRaw / 8 - _cameraY;
                 var candidate = _weaponEffects?.Bullet(projectile.WeaponId);
@@ -780,6 +785,23 @@ public sealed partial class MainForm
             var origin = WorldAnimationOrigin(fileName, frame);
             canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + origin.Y);
         }
+    }
+
+    /// <summary>
+    /// A burning projectile (Napalm, Disease) loops its explosion where it
+    /// landed: the impact puts it on the projectile's channel in mode 0
+    /// (<c>0x441CB9</c>), and the dispatcher steps it every update until the
+    /// burn ends.
+    /// </summary>
+    private void DrawBurn(GameCanvas canvas, ProjectileState projectile)
+    {
+        if (_weaponEffects?.Explosion(projectile.WeaponId, projectile.ExplosionVariant) is not { } candidate) return;
+        var fileName = Path.GetFileName(candidate.FinPath);
+        var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, (ulong)((projectile.BurnSubsteps ?? 0) / ScenarioSimulation.NativeProjectileSubstepsPerTick));
+        var bitmap = WorldAnimationBitmap(fileName, frame);
+        if (bitmap is null) return;
+        var origin = WorldAnimationOrigin(fileName, frame);
+        canvas.Draw(GpuBitmap(bitmap), projectile.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(projectile.Position.ZRaw) - _cameraY + origin.Y);
     }
 
     private void DrawGameplayTransportEffects(Graphics graphics, GameCanvas canvas)

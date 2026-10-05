@@ -380,7 +380,7 @@ internal static class SpecialsChecks
             Equal(true, kinds.Contains("PayloadResolved"));
         }, CheckTags.Data);
 
-        Check("native ground-special fields drive researched Napalm area fire", () =>
+        Check("researched Napalm lands and burns: hits every 16 updates, blocks its empty cells, goes out after 211 updates", () =>
         {
             var install = GameInstallation.Open(dataPath);
             var catalog = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
@@ -428,7 +428,28 @@ internal static class SpecialsChecks
             Equal(-1, impact.TargetActorInstanceId);
             Equal(50, impact.WeaponId);
             Equal(FixedPointPosition.AtCellCenter(new CellCoordinate(3, 2)), impact.Position);
-            Equal(true, simulation.Actor(2)!.Health < simulation.Actor(2)!.MaximumHealth);
+
+            // Mode 4 (0x441C7B): the projectile stays, burning, and does no damage at the impact itself.
+            var fire = simulation.Projectiles.Single(projectile => projectile.WeaponId == 50);
+            Equal(true, fire.IsBurning);
+            var target = simulation.Actor(2)!;
+            var impactTick = simulation.TickCount;
+            for (var tick = 0; tick < 2 && target.Health == target.MaximumHealth; tick++) simulation.Step([]);
+            var firstHit = simulation.TickCount;
+            var afterFirst = target.Health;
+            Equal(true, afterFirst < target.MaximumHealth && firstHit - impactTick <= 1);
+            // 0x44232D: the empty cells of the 7x7 square burn, and nothing can enter them.
+            Equal(true, simulation.GroundOccupancy.TryGetOwner(new CellCoordinate(3, 3), out var occupant) && occupant == ScenarioSimulation.BurningCellOccupant);
+            // 0x442343: the next hit comes 16 updates later.
+            for (var tick = 0; tick < 15; tick++) simulation.Step([]);
+            Equal(afterFirst, target.Health);
+            simulation.Step([]);
+            Equal(true, target.IsDestroyed || target.Health < afterFirst);
+
+            // 0x442262: past 0x348 substeps the marks are cleared and the projectile goes.
+            while (simulation.Projectiles.Contains(fire) && simulation.TickCount < impactTick + 400) simulation.Step([]);
+            Equal(true, simulation.TickCount - impactTick is >= 210 and <= 213);
+            Equal(false, simulation.GroundOccupancy.Claims.Any(claim => claim.Value == ScenarioSimulation.BurningCellOccupant));
         }, CheckTags.Data);
 
         Check("healing uses the original class-7 resistance formula", () =>

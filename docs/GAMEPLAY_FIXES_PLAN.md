@@ -21,6 +21,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 13 | A Single Player War is never won after destroying everything | done: the native War end (0x40DEAC); units and empty positions' placed units count |
 | 14 | P7 multipliers in Single Player War (and probably multiplayer) do not work as intended | done: all six lobby options reach players 1-6 stat 0 (0x40183B) |
 | 15 | The Barrage's long-range attack does not animate correctly | done: the shell ends in its boom template's NUKE or GASY explosion, leaves the barrel at its muzzle frame, and the fire animation plays on the native clock |
+| 16 | Is the Napalm attack working? | it fired and its research gate worked, but it hit once at the impact. Now it burns as in the original: 14 hits over ~211 updates, its empty cells blocked, the NAPALM animation looping (Disease alike) |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

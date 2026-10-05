@@ -108,10 +108,51 @@ may create multiple Saucer deliveries.
 `GroundSpecialAttackIntent` retains the exact cell target. The simulation
 validates the source capability, source weapon, completed research item
 (Human 80 or Gray 54), map bounds, and installed weapon record. It turns and
-moves the actor until the strict native range test passes, fires one
-ground-target projectile through shared cooldown state, and applies the
-authored `boomstat` area template at the target cell even if no actor occupies
-that cell.
+moves the actor until the strict native range test passes, and fires one
+ground-target projectile through shared cooldown state. On landing, the
+projectile applies the authored `boomstat` area template at the target cell
+even if no actor occupies that cell. A mode-4 projectile burns instead (see
+"The burn").
+
+## The burn
+
+A projectile of mode 4 (Napalm, weapon 50; Disease, weapon 51) does not end
+at its impact. `0x441BEC` (`0x441C7B`):
+
+- zeroes its word `+0x18`;
+- sets state 3;
+- draws its explosion (`0x441C9C`) and puts it on the projectile's channel in
+  mode 0, a loop.
+
+No damage is done at the impact itself.
+
+From then on, each substep of the projectile update calls `0x4421B8` for it in
+place of a flight. It does work when `+0x18 & 3` is 0, then always adds 1 to
+`+0x18`, so it works once an update. Each working call:
+
+1. At count 0, starts sound 63 (`0x431834`) and keeps its handle at `+0x16`.
+2. Walks the template's square: half-size `size / 2`, 3 for templates 10 and
+   12. It goes x outer, z inner, inside the map, over the ground grid (the
+   occupant in the low 10 bits of each cell):
+   - An empty cell (`0x3FF`) gets the burning mark `0x3FE` (`0x44232D`), so
+     nothing can walk into it.
+   - A marked cell is skipped.
+   - An actor's cell, when `+0x18 & 0x3F` is 0 (every 16 updates), hits that
+     actor through `0x441930`. The multiplier is the cell's template weight,
+     the three-quarter flag 0, and there is no same-team scaling. A building
+     is hit once per cell it covers, and the burning unit's own side is hit
+     too.
+3. Once the count passes `0x348` (840), it instead turns every `0x3FE` back
+   into `0x3FF`. It then stops the sound (`0x431A58`) and sets state 4, so the
+   dispatcher removes the projectile (`0x4429DE`).
+
+The last working count is 844, about 211 updates (14 s at 66 ms). That gives
+14 hits, at counts 0, 64, …, 832.
+
+The port does this in `ScenarioSimulation.Burn.cs`. `ProjectileState`
+keeps `BurnSubsteps` and its explosion. `BurningCellOccupant` (-0x3FE) is the
+mark in `GroundOccupancy`, and the app loops the explosion at the fire. Sound
+63 is not played.
 
 The compiled HUD enables frame 72/73 only after its faction's research is
 complete and exposes Ground Attack, Drop Ship frame 125, and Saucer frame 126
