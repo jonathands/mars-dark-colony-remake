@@ -293,29 +293,97 @@ public sealed partial class MainForm
     private Point AnimationOrigin(string fileName, int frameIndex) =>
         _animationOrigins.GetValueOrDefault($"{fileName}:{frameIndex}:base");
 
-    /// <summary>Composite origin of a world sprite frame loaded by <see cref="WorldAnimationBitmap"/>.</summary>
-    private Point WorldAnimationOrigin(string fileName, int frameIndex) =>
-        _animationOrigins.GetValueOrDefault($"{fileName}:{frameIndex}:world");
+    /// <summary>
+    /// A world animation frame, ready to draw: its texture (kept with its
+    /// pixels for hit tests), where it sits from the actor's position (the FIN
+    /// origin), and the box of its opaque pixels.
+    /// </summary>
+    private sealed record WorldSprite(GpuImage Image, Point Origin, Rectangle Opaque)
+    {
+        public int Width => Image.Width;
+        public int Height => Image.Height;
+
+        /// <summary>Whether the pixel at (x, y) of the frame is drawn, as the selection mask reads it.</summary>
+        public bool IsOpaque(int x, int y) => Image.Rgba[(y * Image.Width + x) * 4 + 3] != 0;
+    }
+
+    private readonly Dictionary<(string File, int Frame, bool ShipOnly), WorldSprite?> _worldSprites = [];
+    private readonly Dictionary<string, string> _finFileNames = new(StringComparer.Ordinal);
+
+    /// <summary>The file name of a FIN path, without a new string per call.</summary>
+    private string FinFileName(string finPath)
+    {
+        if (_finFileNames.TryGetValue(finPath, out var name)) return name;
+        name = Path.GetFileName(finPath);
+        _finFileNames[finPath] = name;
+        return name;
+    }
 
     /// <summary>
     /// A frame as the world sprite blit draws it: each layer's bottom row sits
-    /// on its FIN Y (see <see cref="AnimationDefinition.Compose"/>).
+    /// on its FIN Y (see <see cref="AnimationDefinition.Compose"/>). With
+    /// <paramref name="shipOnly"/>, only the delivery ship of a building's
+    /// build animation: its <c>drop</c> or <c>sauc</c> layers. The composite
+    /// goes straight to a GPU image; a frame that cannot be read is
+    /// remembered as missing rather than retried on every frame.
     /// </summary>
-    private Bitmap? WorldAnimationBitmap(string fileName, int frameIndex) => AnimationBitmap(fileName, frameIndex, world: true);
-
-    /// <summary>
-    /// Only the delivery ship of a building's build animation: its <c>drop</c>
-    /// or <c>sauc</c> layers, composed like a world sprite.
-    /// </summary>
-    private Bitmap? DeliveryShipBitmap(string fileName, int frameIndex) => AnimationBitmap(fileName, frameIndex, world: true, shipOnly: true);
-
-    private Point DeliveryShipOrigin(string fileName, int frameIndex) =>
-        _animationOrigins.GetValueOrDefault($"{fileName}:{frameIndex}:ship");
-
-    private Bitmap? AnimationBitmap(string fileName, int frameIndex, bool remapWarControlPalette = false, bool world = false, bool dimmed = false, bool shipOnly = false)
+    private WorldSprite? WorldFrame(string fileName, int frameIndex, bool shipOnly = false)
     {
         if (_installation is null) return null;
-        var key = $"{fileName}:{frameIndex}:{(shipOnly ? "ship" : world ? "world" : remapWarControlPalette ? "war-controls" : dimmed ? "dim" : "base")}";
+        var key = (fileName, frameIndex, shipOnly);
+        if (_worldSprites.TryGetValue(key, out var cached)) return cached;
+        WorldSprite? sprite = null;
+        try
+        {
+            if (!_animationDefinitions.TryGetValue(fileName, out var definition))
+            {
+                definition = AnimationDefinition.Load(_installation.DataFile("animate", fileName));
+                _animationDefinitions[fileName] = definition;
+            }
+            var composite = definition.Compose(frameIndex, LoadSprite, bottomAnchored: true,
+                includeLayer: shipOnly ? layer => layer.SpriteName.Equals("drop", StringComparison.OrdinalIgnoreCase) || layer.SpriteName.Equals("sauc", StringComparison.OrdinalIgnoreCase) : null);
+            var image = composite.Width > 0 && composite.Height > 0
+                ? new GpuImage(composite.Width, composite.Height, composite.Rgba)
+                : new GpuImage(1, 1, new byte[4]);
+            sprite = new WorldSprite(image, new Point(composite.X, composite.Y), OpaqueBounds(image));
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentOutOfRangeException)
+        {
+            _status = $"Animation error: {error.Message}";
+        }
+        _worldSprites[key] = sprite;
+        return sprite;
+    }
+
+    /// <summary>The box of an image's drawn pixels; the whole image when none is.</summary>
+    private static Rectangle OpaqueBounds(GpuImage image)
+    {
+        var left = image.Width;
+        var top = image.Height;
+        var right = -1;
+        var bottom = -1;
+        var rgba = image.Rgba;
+        for (var y = 0; y < image.Height; y++)
+        {
+            var row = y * image.Width * 4;
+            for (var x = 0; x < image.Width; x++)
+            {
+                if (rgba[row + x * 4 + 3] == 0) continue;
+                if (x < left) left = x;
+                if (x > right) right = x;
+                if (y < top) top = y;
+                bottom = y;
+            }
+        }
+        return right < left
+            ? new Rectangle(0, 0, image.Width, image.Height)
+            : Rectangle.FromLTRB(left, top, right + 1, bottom + 1);
+    }
+
+    private Bitmap? AnimationBitmap(string fileName, int frameIndex, bool remapWarControlPalette = false, bool dimmed = false)
+    {
+        if (_installation is null) return null;
+        var key = $"{fileName}:{frameIndex}:{(remapWarControlPalette ? "war-controls" : dimmed ? "dim" : "base")}";
         try
         {
             if (_animationFrames.TryGetValue(key, out var cached)) return cached;
@@ -325,8 +393,7 @@ public sealed partial class MainForm
                 _animationDefinitions[fileName] = definition;
             }
 
-            var composite = definition.Compose(frameIndex, LoadSprite, bottomAnchored: world,
-                includeLayer: shipOnly ? layer => layer.SpriteName.Equals("drop", StringComparison.OrdinalIgnoreCase) || layer.SpriteName.Equals("sauc", StringComparison.OrdinalIgnoreCase) : null);
+            var composite = definition.Compose(frameIndex, LoadSprite);
             if (remapWarControlPalette && fileName.Equals("knobe.fin", StringComparison.OrdinalIgnoreCase))
             {
                 // `multie` uses the same knobe sprites as the green menus,
@@ -357,30 +424,6 @@ public sealed partial class MainForm
             _status = $"Animation error: {error.Message}";
             return null;
         }
-    }
-
-    private Rectangle AnimationOpaqueBounds(string key, Bitmap bitmap)
-    {
-        if (_animationOpaqueBounds.TryGetValue(key, out var cached)) return cached;
-        var left = bitmap.Width;
-        var top = bitmap.Height;
-        var right = -1;
-        var bottom = -1;
-        for (var y = 0; y < bitmap.Height; y++)
-        for (var x = 0; x < bitmap.Width; x++)
-        {
-            if (bitmap.GetPixel(x, y).A == 0) continue;
-            left = Math.Min(left, x);
-            top = Math.Min(top, y);
-            right = Math.Max(right, x);
-            bottom = Math.Max(bottom, y);
-        }
-
-        var bounds = right < left
-            ? new Rectangle(0, 0, bitmap.Width, bitmap.Height)
-            : Rectangle.FromLTRB(left, top, right + 1, bottom + 1);
-        _animationOpaqueBounds[key] = bounds;
-        return bounds;
     }
 
     private Sprite LoadSprite(string name)

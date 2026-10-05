@@ -100,7 +100,7 @@ public sealed partial class MainForm
             if (IsNetworkGame && next.UpdateIntervalMilliseconds != _clock.IntervalMilliseconds) _status = "Game speed is fixed in a network game.";
             else if (next.UpdateIntervalMilliseconds != _clock.IntervalMilliseconds)
             {
-                _clock = new FixedStepClock(Environment.TickCount64, next.UpdateIntervalMilliseconds);
+                _clock = new FixedStepClock(LoopMilliseconds, next.UpdateIntervalMilliseconds);
                 RuntimeLog.Info($"Game speed {next.SpeedPercent}%: {next.UpdateIntervalMilliseconds} ms per update.");
             }
             _optionsDraft = null;

@@ -102,7 +102,7 @@ public sealed partial class MainForm
         var count = _entityAnimations.FireVariantCount(entityId);
         if (count == 0 || Math.Abs(roll % count) != Math.Abs(fired.PresentationVariantRoll % count) ||
             _entityAnimations.PreferredFire(entityId, actor.Facing.RenderSector16, roll) is not { } selection) return false;
-        return NativeFrame(Path.GetFileName(selection.Candidate.FinPath), selection.Candidate.FirstFrame, selection.Candidate.LastFrame,
+        return NativeFrame(FinFileName(selection.Candidate.FinPath), selection.Candidate.FirstFrame, selection.Candidate.LastFrame,
             _world.TickCount - startedAt, NativeAnimationMode.Once) >= 0;
     }
 

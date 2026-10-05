@@ -19,7 +19,10 @@ Without -LogPath they are posted as window coordinates, which is right for a
 shows it at. Each action is one of:
   move:X,Y     click:X,Y     rclick:X,Y     shiftclick:X,Y
   drag:X1,Y1,X2,Y2           key:<System.Windows.Forms.Keys name>
-  wait:<milliseconds>
+  sweep:X1,Y1,X2,Y2,MS       wait:<milliseconds>
+drag posts eight moves 40 ms apart. sweep holds the left button for MS
+milliseconds while it moves back and forth between the two points every few
+milliseconds, as a hand on a real mouse does.
 
 .EXAMPLE
 .\tools\Send-PortInput.ps1 -Actions 'click:563,446','wait:2000','key:F3'
@@ -98,6 +101,21 @@ foreach ($action in $Actions) {
                 $x = $numbers[0] + [int](($numbers[2] - $numbers[0]) * $step / 8)
                 $y = $numbers[1] + [int](($numbers[3] - $numbers[1]) * $step / 8)
                 Post $WM_MOUSEMOVE $MK_LBUTTON $x $y
+            }
+            Post $WM_LBUTTONUP 0 $numbers[2] $numbers[3]
+        }
+        'sweep' {
+            Post $WM_MOUSEMOVE 0 $numbers[0] $numbers[1]
+            Post $WM_LBUTTONDOWN $MK_LBUTTON $numbers[0] $numbers[1]
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            while ($clock.ElapsedMilliseconds -lt $numbers[4]) {
+                # A triangle wave between the points, one leg per second.
+                $phase = ($clock.ElapsedMilliseconds % 2000) / 1000.0
+                $share = if ($phase -le 1) { $phase } else { 2 - $phase }
+                $x = $numbers[0] + [int](($numbers[2] - $numbers[0]) * $share)
+                $y = $numbers[1] + [int](($numbers[3] - $numbers[1]) * $share)
+                [PortInput]::PostMessage($surface, $WM_MOUSEMOVE, [IntPtr]$MK_LBUTTON, (Point $x $y)) | Out-Null
+                [Threading.Thread]::Sleep(4)
             }
             Post $WM_LBUTTONUP 0 $numbers[2] $numbers[3]
         }

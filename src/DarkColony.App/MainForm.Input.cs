@@ -575,30 +575,30 @@ public sealed partial class MainForm
         if (_scenarioSimulation is null || _entityCatalog is null || _entityAnimations is null || point.X >= GameplayWorldArea.Width || point.Y >= GameplayWorldArea.Height) return null;
         WorldEntity? hit = null;
         // Same painter's order as drawing: the last hit is the topmost sprite.
-        foreach (var entity in GameplayEntities().OrderByDescending(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
+        foreach (var (entity, visual) in ActorVisualsInPaintersOrder())
         {
+            if (visual.Actor.IsDestroyed) continue;
             if (locallyControllableOnly && !IsLocallyControllable(entity)) continue;
             if (selectionLayerFilter is { } filter && GameplayDefinition(entity) is { } definition && !filter.Includes(definition)) continue;
             var actorState = _scenarioSimulation.Actor(entity.InstanceId);
             if (!locallyControllableOnly && entity.Team != _localPlayerTeam &&
                 (actorState is null || !_scenarioSimulation.IsActorVisibleToTeam(_localPlayerTeam, actorState))) continue;
-            if (!TryGameplayActorVisual(entity, out var visual) || !visual.CanvasBounds.Contains(point)) continue;
-            var localX = point.X - visual.CanvasBounds.X;
-            var localY = point.Y - visual.CanvasBounds.Y;
-            if (visual.Bitmap.GetPixel(localX, localY).A != 0) hit = entity;
+            if (!visual.OpaqueBounds.Contains(point)) continue;
+            if (visual.Sprite.IsOpaque(point.X - visual.CanvasBounds.X, point.Y - visual.CanvasBounds.Y)) hit = entity;
         }
         return hit;
     }
 
     private static bool SelectionMaskIntersects(Rectangle selection, GameplayActorVisual visual)
     {
-        if (!selection.IntersectsWith(visual.OpaqueBounds)) return false;
-        var overlap = Rectangle.Intersect(selection, visual.CanvasBounds);
+        // Every drawn pixel lies in the opaque box, so only that part of the
+        // selection needs reading.
+        var overlap = Rectangle.Intersect(selection, visual.OpaqueBounds);
         if (overlap.Width <= 0 || overlap.Height <= 0) return false;
         for (var y = overlap.Top; y < overlap.Bottom; y++)
         for (var x = overlap.Left; x < overlap.Right; x++)
         {
-            if (visual.Bitmap.GetPixel(x - visual.CanvasBounds.Left, y - visual.CanvasBounds.Top).A != 0)
+            if (visual.Sprite.IsOpaque(x - visual.CanvasBounds.Left, y - visual.CanvasBounds.Top))
                 return true;
         }
         return false;
@@ -610,15 +610,16 @@ public sealed partial class MainForm
         UnitSelectionLayerFilter layerFilter)
     {
         if (_scenarioSimulation is null) return;
-        var candidates = GameplayEntities()
-            .Where(IsVisibleToLocalTeam)
-            .Where(entity => GameplayDefinition(entity) is { } definition && layerFilter.Includes(definition))
+        var candidates = ActorVisualsInPaintersOrder()
+            .Where(pair => !pair.Visual.Actor.IsDestroyed)
+            .Where(pair => IsVisibleToLocalTeam(pair.Entity))
+            .Where(pair => GameplayDefinition(pair.Entity) is { } definition && layerFilter.Includes(definition))
             // Native box selection works from the selected body's mask, not
             // merely its transparent FIN canvas or its opaque bounding box.
             // Keep it on the exact same composed frame and alpha predicate as
             // click selection so a selection edge cannot catch empty pixels.
-            .Where(entity => TryGameplayActorVisual(entity, out var visual) && SelectionMaskIntersects(bounds, visual))
-            .Select(entity => entity.InstanceId)
+            .Where(pair => SelectionMaskIntersects(bounds, pair.Visual))
+            .Select(pair => pair.Entity.InstanceId)
             .OrderBy(instanceId => instanceId)
             .ToArray();
         var updated = UnitCommandProfiles.ApplyActorSelection(_selectedEntityInstanceIds, candidates, toggle);

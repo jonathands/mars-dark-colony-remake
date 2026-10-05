@@ -125,6 +125,10 @@ Its first runs found three bugs:
 - An Atril firing drew from `tmp.fin`. That file is not in `anim.dat`, and its plain FIRE family names an `atri.spr` that is not shipped. FIREA takes the plain family's slot (`0x43B970`).
 - The PUS impact resolved to `pust.fin`, whose `pust.spr` is on neither the disk nor the CD.
 
+Performance runs combine `--load` on a late-game save, `--perf` and the
+`sweep` input action; `docs/PERFORMANCE.md` has the recipe and the numbers
+to compare with.
+
 ## Plan
 
 The rest of the suite plan, in order. Phase 1 and the catalog sweep are done.

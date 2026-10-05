@@ -52,7 +52,7 @@ public sealed partial class MainForm : Form
         DirectionalAnimationSelection? MoveSelection,
         string FileName,
         ushort Frame,
-        Bitmap Bitmap,
+        WorldSprite Sprite,
         Rectangle CanvasBounds,
         Rectangle OpaqueBounds);
     // Campaigns use team zero. War maps choose their enabled team from the
@@ -62,7 +62,7 @@ public sealed partial class MainForm : Form
     private GameplayHudLayout _gameplayHudLayout;
     private readonly WorldSimulation _world = new();
     private FixedStepClock _clock;
-    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 15 };
+    private readonly GameLoop _loop;
     // Presentation retains one completed authoritative step so rendering can
     // interpolate movement at the display cadence. This has no simulation use:
     // commands, pathing, collisions, and animation selection continue to read
@@ -77,7 +77,6 @@ public sealed partial class MainForm : Form
     private readonly Dictionary<string, AnimationDefinition> _animationDefinitions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Bitmap> _animationFrames = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Point> _animationOrigins = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, Rectangle> _animationOpaqueBounds = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, Bitmap> _fontGlyphs = [];
     private readonly Dictionary<string, Bitmap> _remappedFontGlyphs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Sprite> _sprites = new(StringComparer.OrdinalIgnoreCase);
@@ -214,7 +213,7 @@ public sealed partial class MainForm : Form
     {
         _installation = installation;
         _gameplayHudLayout = GameplayHudLayout.Load(installation);
-        _clock = new FixedStepClock(Environment.TickCount64);
+        _clock = new FixedStepClock(LoopMilliseconds);
         _status = InspectInstallation(installation);
 
         Text = "Dark Colony";
@@ -313,43 +312,54 @@ public sealed partial class MainForm : Form
         if (initialScreen == MenuScreenId.Main)
             Shown += (_, _) =>
             {
-                if (ReplayPath is not null) StartReplay();
+                if (ReplayPath is not null || LoadPath is not null) StartReplay();
                 else if (_display.IntroVideo) PlayVideo("avi/intro.avi", () => ShowScreen(MenuScreenId.Main));
             };
-        _timer.Tick += (_, _) =>
+        _loop = new GameLoop(RunFrame, _surface);
+        _loop.Start();
+    }
+
+    /// <summary>The game loop's integer milliseconds, which the fixed-step clock counts.</summary>
+    private static long LoopMilliseconds => (long)GameLoop.Milliseconds;
+
+    /// <summary>One frame of the game loop: the simulation steps that are due, then a render.</summary>
+    private void RunFrame()
+    {
+        FrameProfiler.FrameStarted();
+        FrameProfiler.BeginFrame();
+        UpdateDisplayConfirmation();
+        _surface.LogicalSize = CurrentLogicalSize();
+        if (_video is not null)
         {
-            UpdateDisplayConfirmation();
-            _surface.LogicalSize = CurrentLogicalSize();
-            if (_video is not null)
+            AdvanceVideo();
+            _surface.RenderAndPresent();
+            return;
+        }
+        PumpNetworkLobby();
+        var simulationStarted = FrameProfiler.Begin();
+        _clock.Advance(LoopMilliseconds, () =>
+        {
+            FrameProfiler.Step();
+            UpdateGameplayEdgeScroll();
+            if (IsNetworkGame)
             {
-                AdvanceVideo();
-                _surface.RenderAndPresent();
+                // A network game never pauses: the other players would stall.
+                StepNetworkGame();
                 return;
             }
-            PumpNetworkLobby();
-            _clock.Advance(Environment.TickCount64, () =>
+            if (!_gameplayPaused && _optionsDraft is null && !VideoPanelOpen && !_quitConfirmOpen)
             {
-                UpdateGameplayEdgeScroll();
-                if (IsNetworkGame)
-                {
-                    // A network game never pauses: the other players would stall.
-                    StepNetworkGame();
-                    return;
-                }
-                if (!_gameplayPaused && _optionsDraft is null && !VideoPanelOpen && !_quitConfirmOpen)
-                {
-                    CapturePreviousActorRenderPositions();
-                    _world.Step();
-                    if (_replay is not null) StepReplay();
-                    else if (_scenarioSimulation is not null) _journal.Step(_scenarioSimulation, _world.LastCommands);
-                    CaptureSimulationFeedback();
-                }
-            });
-            if (_screen == MenuScreenId.Gameplay) PollCdMusic();
-            LogStatusChange();
-            _surface.RenderAndPresent();
-        };
-        _timer.Start();
+                CapturePreviousActorRenderPositions();
+                _world.Step();
+                if (_replay is not null) StepReplay();
+                else if (_scenarioSimulation is not null) _journal.Step(_scenarioSimulation, _world.LastCommands);
+                CaptureSimulationFeedback();
+            }
+        });
+        FrameProfiler.End(FrameProfiler.Stage.Simulation, simulationStarted);
+        if (_screen == MenuScreenId.Gameplay) PollCdMusic();
+        LogStatusChange();
+        _surface.RenderAndPresent();
     }
 
     protected override void OnFormClosing(FormClosingEventArgs eventArgs)
@@ -376,7 +386,7 @@ public sealed partial class MainForm : Form
         if (disposing)
         {
             SetGameplayCursorVisibility(visible: true);
-            _timer.Dispose();
+            _loop.Dispose();
             _surface.Dispose();
             foreach (var image in _backgrounds.Values) image.Dispose();
             foreach (var image in _animationFrames.Values) image.Dispose();

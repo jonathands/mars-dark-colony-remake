@@ -226,5 +226,77 @@ internal static class PresentationChecks
                 File.Delete(path);
             }
         });
+
+        Check("the sprite atlas packs images inside its pages, apart, each with its transparent gutter", () =>
+        {
+            var packer = new AtlasPacker(pageSize: 256, largestPacked: 64);
+            var random = new Random(7);
+            var placed = new List<(int Page, Rectangle Cell)>();
+            for (var image = 0; image < 600; image++)
+            {
+                var (width, height) = (random.Next(1, 65), random.Next(1, 65));
+                Equal(true, packer.TryPack(width, height, out var slot));
+                // The image and its gutter: inside the page, and clear of every other.
+                var cell = new Rectangle(slot.X - AtlasPacker.Gutter, slot.Y - AtlasPacker.Gutter, width + 2 * AtlasPacker.Gutter, height + 2 * AtlasPacker.Gutter);
+                Equal(true, new Rectangle(0, 0, 256, 256).Contains(cell));
+                if (placed.Any(other => other.Page == slot.Page && other.Cell.IntersectsWith(cell)))
+                    throw new InvalidOperationException($"image {image} at {cell} on page {slot.Page} overlaps another");
+                placed.Add((slot.Page, cell));
+            }
+            Equal(true, packer.PageCount > 1);
+            // Larger than the largest packed image: a texture of its own.
+            Equal((false, false), (packer.TryPack(65, 1, out _), packer.TryPack(1, 65, out _)));
+            // Reset refills the first page from its corner.
+            packer.Reset();
+            Equal(true, packer.TryPack(10, 10, out var first));
+            Equal(new AtlasSlot(0, AtlasPacker.Gutter, AtlasPacker.Gutter), first);
+        });
+
+        Check("a thick line's row spans cover exactly its Bresenham squares, each pixel once", () =>
+        {
+            // The rasterizer the canvas used before the spans: a thickness-square
+            // at every Bresenham step, as a set of pixels.
+            static HashSet<Point> Squares(Point start, Point end, int thickness)
+            {
+                var pixels = new HashSet<Point>();
+                var (minX, minY) = (Math.Min(start.X, end.X), Math.Min(start.Y, end.Y));
+                var (dx, dy) = (end.X - start.X, end.Y - start.Y);
+                var (width, height) = (Math.Abs(dx) + thickness, Math.Abs(dy) + thickness);
+                var x = dx < 0 ? width - thickness : 0;
+                var y = dy < 0 ? height - thickness : 0;
+                var targetX = dx < 0 ? 0 : width - thickness;
+                var targetY = dy < 0 ? 0 : height - thickness;
+                var stepX = Math.Abs(targetX - x);
+                var stepY = -Math.Abs(targetY - y);
+                var directionX = x < targetX ? 1 : -1;
+                var directionY = y < targetY ? 1 : -1;
+                var error = stepX + stepY;
+                while (true)
+                {
+                    for (var offsetY = 0; offsetY < thickness; offsetY++)
+                    for (var offsetX = 0; offsetX < thickness; offsetX++)
+                        pixels.Add(new Point(minX + x + offsetX, minY + y + offsetY));
+                    if (x == targetX && y == targetY) break;
+                    var twiceError = error * 2;
+                    if (twiceError >= stepY) { error += stepY; x += directionX; }
+                    if (twiceError <= stepX) { error += stepX; y += directionY; }
+                }
+                return pixels;
+            }
+
+            var random = new Random(11);
+            for (var line = 0; line < 400; line++)
+            {
+                var start = new Point(random.Next(-50, 50), random.Next(-50, 50));
+                var end = line < 4 ? start : new Point(random.Next(-50, 50), random.Next(-50, 50));
+                var thickness = 1 + line % 3;
+                var spans = PixelLine.Spans(start, end, thickness);
+                var covered = spans.SelectMany(span => Enumerable.Range(span.X, span.Width).Select(x => new Point(x, span.Y))).ToList();
+                Equal(true, spans.All(span => span.Height == 1) && spans.Select(span => span.Y).Distinct().Count() == spans.Count);
+                Equal(covered.Count, covered.Distinct().Count());
+                if (!Squares(start, end, thickness).SetEquals(covered))
+                    throw new InvalidOperationException($"line {start}->{end} x{thickness}: spans differ from the squares");
+            }
+        });
     }
 }

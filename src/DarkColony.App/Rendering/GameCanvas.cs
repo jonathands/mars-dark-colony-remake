@@ -1,3 +1,5 @@
+using DarkColony.Presentation;
+
 namespace DarkColony.App.Rendering;
 
 public sealed class GpuImage
@@ -130,49 +132,17 @@ public sealed class GameCanvas
         else Draw(image, destination);
     }
 
+    /// <summary>
+    /// A thick Bresenham line, drawn as one filled span per row
+    /// (<see cref="PixelLine"/>). Route and selection lines change every frame;
+    /// as spans they need no texture of their own.
+    /// </summary>
     public void Line(Point start, Point end, Color color, int thickness = 1, bool foreground = false)
     {
-        var minX = Math.Min(start.X, end.X);
-        var minY = Math.Min(start.Y, end.Y);
-        var dx = end.X - start.X;
-        var dy = end.Y - start.Y;
-        var width = Math.Abs(dx) + thickness;
-        var height = Math.Abs(dy) + thickness;
-        var rgba = new byte[width * height * 4];
-        var x = dx < 0 ? width - thickness : 0;
-        var y = dy < 0 ? height - thickness : 0;
-        var targetX = dx < 0 ? 0 : width - thickness;
-        var targetY = dy < 0 ? 0 : height - thickness;
-        var stepX = Math.Abs(targetX - x);
-        var stepY = -Math.Abs(targetY - y);
-        var directionX = x < targetX ? 1 : -1;
-        var directionY = y < targetY ? 1 : -1;
-        var error = stepX + stepY;
-        while (true)
+        foreach (var span in PixelLine.Spans(start, end, thickness))
         {
-            for (var offsetY = 0; offsetY < thickness; offsetY++)
-            for (var offsetX = 0; offsetX < thickness; offsetX++)
-            {
-                var pixelX = x + offsetX;
-                var pixelY = y + offsetY;
-                if ((uint)pixelX >= width || (uint)pixelY >= height) continue;
-                var offset = (pixelY * width + pixelX) * 4;
-                rgba[offset] = color.R;
-                rgba[offset + 1] = color.G;
-                rgba[offset + 2] = color.B;
-                rgba[offset + 3] = color.A;
-            }
-            if (x == targetX && y == targetY) break;
-            var twiceError = error * 2;
-            if (twiceError >= stepY) { error += stepY; x += directionX; }
-            if (twiceError <= stepX) { error += stepX; y += directionY; }
+            if (foreground) FillForeground(span, color);
+            else Fill(span, color);
         }
-        // Route and selection lines change length every frame as an actor or
-        // pointer moves. Caching them by dimensions leaks a GPU texture for
-        // every distinct position, so make each line explicitly frame-local.
-        var image = new GpuImage(width, height, rgba, transient: true);
-        var destination = new Rectangle(minX, minY, image.Width, image.Height);
-        if (foreground) DrawForeground(image, destination);
-        else Draw(image, destination);
     }
 }

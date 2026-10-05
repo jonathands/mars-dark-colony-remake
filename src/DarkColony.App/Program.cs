@@ -12,6 +12,7 @@ internal static class Program
     {
         RuntimeLog.Initialize(arguments);
         RuntimeLog.InstallExceptionHandlers();
+        FrameProfiler.Initialize(arguments);
         ApplicationConfiguration.Initialize();
         GameInstallation? installation;
         try
@@ -72,6 +73,10 @@ internal static class Program
             // --replay <file.dcsave> watches a saved game from its first update.
             ReplayPath = Array.FindIndex(arguments, argument => argument.Equals("--replay", StringComparison.OrdinalIgnoreCase)) is var replay and >= 0 && replay + 1 < arguments.Length
                 ? arguments[replay + 1]
+                : null,
+            // --load <file.dcsave> opens a saved game at its last update.
+            LoadPath = Array.FindIndex(arguments, argument => argument.Equals("--load", StringComparison.OrdinalIgnoreCase)) is var load and >= 0 && load + 1 < arguments.Length
+                ? arguments[load + 1]
                 : null,
         });
         RuntimeLog.Info("Exited normally.");

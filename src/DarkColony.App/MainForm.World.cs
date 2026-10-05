@@ -443,7 +443,7 @@ public sealed partial class MainForm
         var candidate = combatPresentation?.Candidate ?? moveSelection?.Candidate ?? _entityAnimations.Preferred(renderEntityId);
         if (candidate is null) return false;
         var span = candidate.LastFrame - candidate.FirstFrame + 1;
-        var fileName = Path.GetFileName(candidate.FinPath);
+        var fileName = FinFileName(candidate.FinPath);
         // Stands, walks and fire animations run on the native clock; hit and
         // deployment presentations keep the port's one frame per update.
         var frame = combatPresentation is null
@@ -452,25 +452,45 @@ public sealed partial class MainForm
                 ? (ushort)Math.Max(candidate.FirstFrame, NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame,
                     _world.TickCount - combatPresentation.StartedAtTick, NativeAnimationMode.Once))
                 : (ushort)(candidate.FirstFrame + (_world.TickCount - combatPresentation.StartedAtTick) % (ulong)span);
-        var bitmap = WorldAnimationBitmap(fileName, frame);
-        if (bitmap is null) return false;
-        var key = $"{fileName}:{frame}:world";
-        var origin = WorldAnimationOrigin(fileName, frame);
+        var sprite = WorldFrame(fileName, frame);
+        if (sprite is null) return false;
         var position = _scenarioSimulation.CityArtAnchor(entity.InstanceId) ?? ActorPosition(entity);
         var canvas = new Rectangle(
-            position.XRaw / 8 - _cameraX + origin.X,
-            WorldPixelY(position.ZRaw) - _cameraY + origin.Y,
-            bitmap.Width,
-            bitmap.Height);
-        var localOpaque = AnimationOpaqueBounds(key, bitmap);
+            position.XRaw / 8 - _cameraX + sprite.Origin.X,
+            WorldPixelY(position.ZRaw) - _cameraY + sprite.Origin.Y,
+            sprite.Width,
+            sprite.Height);
         var opaque = new Rectangle(
-            canvas.X + localOpaque.X,
-            canvas.Y + localOpaque.Y,
-            localOpaque.Width,
-            localOpaque.Height);
+            canvas.X + sprite.Opaque.X,
+            canvas.Y + sprite.Opaque.Y,
+            sprite.Opaque.Width,
+            sprite.Opaque.Height);
         visual = new GameplayActorVisual(actorState, renderEntityId, candidate, combatPresentation,
-            moveSelection, fileName, frame, bitmap, canvas, opaque);
+            moveSelection, fileName, frame, sprite, canvas, opaque);
         return true;
+    }
+
+    // The actors the last frame drew, in its painter's order, and the update
+    // and camera it drew them at. The cursor and the selection hit tests read
+    // them instead of composing every actor again.
+    private readonly List<(WorldEntity Entity, GameplayActorVisual Visual)> _drawnActorVisuals = [];
+    private (ulong Tick, int CameraX, int CameraY)? _drawnActorVisualsAt;
+
+    /// <summary>
+    /// Every actor's visual in painter's order: higher on screen first, which
+    /// is larger world Z, then left to right. The frame's own pass rebuilds
+    /// them; a hit test reuses that pass while the update and the camera are
+    /// the same, so it tests what the player sees.
+    /// </summary>
+    private IReadOnlyList<(WorldEntity Entity, GameplayActorVisual Visual)> ActorVisualsInPaintersOrder(bool rebuild = false)
+    {
+        var at = (_world.TickCount, _cameraX, _cameraY);
+        if (!rebuild && _drawnActorVisualsAt == at) return _drawnActorVisuals;
+        _drawnActorVisuals.Clear();
+        foreach (var entity in GameplayEntities().OrderByDescending(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
+            if (TryGameplayActorVisual(entity, out var visual)) _drawnActorVisuals.Add((entity, visual));
+        _drawnActorVisualsAt = at;
+        return _drawnActorVisuals;
     }
 
     // How high the delivery ship starts and ends its flight above the slot.
@@ -489,32 +509,30 @@ public sealed partial class MainForm
     {
         if (_scenarioSimulation is not { } simulation || simulation.Delivery(building.InstanceId) is not { } delivery ||
             delivery.Phase == BuildingDeliveryPhase.Waiting || _entityAnimations?.PreferredBuild(building.EntityId) is not { } animation) return false;
-        var fileName = Path.GetFileName(animation.FinPath);
+        var fileName = FinFileName(animation.FinPath);
         _ = Animation(fileName, string.Empty);
         var position = simulation.CityArtAnchor(building.InstanceId) ?? ActorPosition(building);
-        void DrawAt(Bitmap? bitmap, Point origin, int lift)
+        void DrawAt(WorldSprite? sprite, int lift)
         {
-            if (bitmap is null) return;
-            canvas.Draw(GpuBitmap(bitmap), new Rectangle(
-                position.XRaw / 8 - _cameraX + origin.X,
-                WorldPixelY(position.ZRaw) - _cameraY + origin.Y - lift,
-                bitmap.Width,
-                bitmap.Height));
+            if (sprite is null) return;
+            canvas.Draw(sprite.Image,
+                position.XRaw / 8 - _cameraX + sprite.Origin.X,
+                WorldPixelY(position.ZRaw) - _cameraY + sprite.Origin.Y - lift);
         }
         var share = delivery.PhaseTicks <= 0 ? 0.0 : (double)delivery.TicksRemaining / delivery.PhaseTicks;
         switch (delivery.Phase)
         {
             case BuildingDeliveryPhase.Arriving:
-                DrawAt(DeliveryShipBitmap(fileName, animation.FirstFrame), DeliveryShipOrigin(fileName, animation.FirstFrame), (int)(DeliveryFlightHeight * share * share));
+                DrawAt(WorldFrame(fileName, animation.FirstFrame, shipOnly: true), (int)(DeliveryFlightHeight * share * share));
                 return true;
             case BuildingDeliveryPhase.Building:
                 var frame = NativeFrame(fileName, animation.FirstFrame, animation.LastFrame,
                     (ulong)Math.Max(0, delivery.PhaseTicks - delivery.TicksRemaining), NativeAnimationMode.Hold);
-                DrawAt(WorldAnimationBitmap(fileName, frame), WorldAnimationOrigin(fileName, frame), 0);
+                DrawAt(WorldFrame(fileName, frame), 0);
                 return true;
             default:
-                canvas.Draw(GpuBitmap(visual.Bitmap), visual.CanvasBounds);
-                DrawAt(DeliveryShipBitmap(fileName, animation.LastFrame), DeliveryShipOrigin(fileName, animation.LastFrame), (int)(DeliveryFlightHeight * (1 - share) * (1 - share)));
+                canvas.Draw(visual.Sprite.Image, visual.CanvasBounds);
+                DrawAt(WorldFrame(fileName, animation.LastFrame, shipOnly: true), (int)(DeliveryFlightHeight * (1 - share) * (1 - share)));
                 return true;
         }
     }
@@ -534,21 +552,18 @@ public sealed partial class MainForm
         if (queue is null) return;
         var state = simulation.ProductionQueues.FirstOrDefault(candidate => candidate.TeamId == building.Team && candidate.Queue == queue && !candidate.Ready);
         if (state is null || state.QueuedEntityIds.Count == 0 || _entityAnimations.PreferredBuild(state.QueuedEntityIds[0]) is not { } animation) return;
-        var fileName = Path.GetFileName(animation.FinPath);
+        var fileName = FinFileName(animation.FinPath);
         // The building's clock: the steps since the exit was reserved.
         var total = TroopBuildTimings.PlayOnceTicks(
             Enumerable.Range(animation.FirstFrame, animation.LastFrame - animation.FirstFrame + 1)
                 .Select(frame => _animationDefinitions.TryGetValue(fileName, out var definition) ? definition.LogicalFrames[frame].Delay : (ushort)0).ToArray());
         _ = Animation(fileName, string.Empty);
         var frame = NativeFrame(fileName, animation.FirstFrame, animation.LastFrame, (ulong)Math.Max(0, total - state.TicksRemaining), NativeAnimationMode.Once);
-        if (frame < 0 || WorldAnimationBitmap(fileName, frame) is not { } bitmap) return;
-        var origin = WorldAnimationOrigin(fileName, frame);
+        if (frame < 0 || WorldFrame(fileName, frame) is not { } sprite) return;
         var position = simulation.CityArtAnchor(building.InstanceId) ?? ActorPosition(building);
-        canvas.Draw(GpuBitmap(bitmap), new Rectangle(
-            position.XRaw / 8 - _cameraX + origin.X,
-            WorldPixelY(position.ZRaw) - _cameraY + origin.Y,
-            bitmap.Width,
-            bitmap.Height));
+        canvas.Draw(sprite.Image,
+            position.XRaw / 8 - _cameraX + sprite.Origin.X,
+            WorldPixelY(position.ZRaw) - _cameraY + sprite.Origin.Y);
     }
 
     private void DrawGameplayActors(Graphics graphics, GameCanvas canvas)
@@ -568,17 +583,14 @@ public sealed partial class MainForm
                 .Where(actor => !actor.IsDestroyed && actor.AttackTargetInstanceId is not null)
                 .Select(actor => actor.AttackTargetInstanceId!.Value)
                 .ToHashSet();
-            // Painter's order: higher on screen first, which is larger world Z.
-            foreach (var entity in GameplayEntities().OrderByDescending(entity => ActorPosition(entity).ZRaw).ThenBy(entity => ActorPosition(entity).XRaw))
+            foreach (var (entity, visual) in ActorVisualsInPaintersOrder(rebuild: true))
             {
-                if (!TryGameplayActorVisual(entity, out var visual)) continue;
                 var actorState = visual.Actor;
                 var renderEntityId = visual.RenderEntityId;
                 var candidate = visual.Candidate;
                 var combatPresentation = visual.CombatPresentation;
                 var moveSelection = visual.MoveSelection;
                 var fileName = visual.FileName;
-                var bitmap = visual.Bitmap;
                 var position = ActorPosition(entity);
                 var worldX = position.XRaw / 8;
                 var worldY = WorldPixelY(position.ZRaw);
@@ -593,7 +605,7 @@ public sealed partial class MainForm
                     var groundY = opaque.Bottom;
                     canvas.Ellipse(new Rectangle(centerX - 25, groundY - 12, 50, 20), Color.FromArgb(72, 255, 255), thickness: 2, foreground: true);
                 }
-                if (!DrawBuildingDelivery(canvas, entity, visual)) canvas.Draw(GpuBitmap(bitmap), visual.CanvasBounds);
+                if (!DrawBuildingDelivery(canvas, entity, visual)) canvas.Draw(visual.Sprite.Image, visual.CanvasBounds);
                 if (actorState is not null && actorState.Definition.MovementSpeed <= 0) DrawProductionAnimation(canvas, entity);
 
                 // Status indicators are foreground UI. Draw them after the
@@ -653,14 +665,12 @@ public sealed partial class MainForm
                 var rendered = false;
                 if (candidate is not null)
                 {
-                    var fileName = Path.GetFileName(candidate.FinPath);
+                    var fileName = FinFileName(candidate.FinPath);
                     var span = candidate.LastFrame - candidate.FirstFrame + 1;
                     var frame = candidate.FirstFrame + (ushort)(projectile.AnimationTicks % span);
-                    var bitmap = WorldAnimationBitmap(fileName, frame);
-                    if (bitmap is not null)
+                    if (WorldFrame(fileName, frame) is { } sprite)
                     {
-                        var origin = WorldAnimationOrigin(fileName, frame);
-                        canvas.Draw(GpuBitmap(bitmap), x + origin.X, y + origin.Y);
+                        canvas.Draw(sprite.Image, x + sprite.Origin.X, y + sprite.Origin.Y);
                         rendered = true;
                     }
                 }
@@ -773,17 +783,15 @@ public sealed partial class MainForm
             }
             // The projectile plays its explosion once (0x42630C mode 1) and is
             // removed when it ends (0x4429A4).
-            var fileName = Path.GetFileName(candidate.FinPath);
+            var fileName = FinFileName(candidate.FinPath);
             var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, _world.TickCount - effect.StartedAtTick, NativeAnimationMode.Once);
             if (frame < 0)
             {
                 _impactEffects.RemoveAt(index);
                 continue;
             }
-            var bitmap = WorldAnimationBitmap(fileName, frame);
-            if (bitmap is null) continue;
-            var origin = WorldAnimationOrigin(fileName, frame);
-            canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + origin.Y);
+            if (WorldFrame(fileName, frame) is not { } sprite) continue;
+            canvas.Draw(sprite.Image, effect.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + sprite.Origin.Y);
         }
     }
 
@@ -796,12 +804,10 @@ public sealed partial class MainForm
     private void DrawBurn(GameCanvas canvas, ProjectileState projectile)
     {
         if (_weaponEffects?.Explosion(projectile.WeaponId, projectile.ExplosionVariant) is not { } candidate) return;
-        var fileName = Path.GetFileName(candidate.FinPath);
+        var fileName = FinFileName(candidate.FinPath);
         var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, (ulong)((projectile.BurnSubsteps ?? 0) / ScenarioSimulation.NativeProjectileSubstepsPerTick));
-        var bitmap = WorldAnimationBitmap(fileName, frame);
-        if (bitmap is null) return;
-        var origin = WorldAnimationOrigin(fileName, frame);
-        canvas.Draw(GpuBitmap(bitmap), projectile.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(projectile.Position.ZRaw) - _cameraY + origin.Y);
+        if (WorldFrame(fileName, frame) is not { } sprite) return;
+        canvas.Draw(sprite.Image, projectile.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(projectile.Position.ZRaw) - _cameraY + sprite.Origin.Y);
     }
 
     private void DrawGameplayTransportEffects(Graphics graphics, GameCanvas canvas)
@@ -814,14 +820,12 @@ public sealed partial class MainForm
                 : null;
             var candidate = move?.Candidate ?? _entityAnimations.Preferred(transport.TransportEntityId);
             if (candidate is null) continue;
-            var fileName = Path.GetFileName(candidate.FinPath);
+            var fileName = FinFileName(candidate.FinPath);
             var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, _world.TickCount);
-            var bitmap = WorldAnimationBitmap(fileName, frame);
-            if (bitmap is null) continue;
-            var origin = WorldAnimationOrigin(fileName, frame);
-            canvas.Draw(GpuBitmap(bitmap),
-                transport.Position.XRaw / 8 - _cameraX + origin.X,
-                WorldPixelY(transport.Position.ZRaw) - transport.HeightRaw / 8 - _cameraY + origin.Y);
+            if (WorldFrame(fileName, frame) is not { } sprite) continue;
+            canvas.Draw(sprite.Image,
+                transport.Position.XRaw / 8 - _cameraX + sprite.Origin.X,
+                WorldPixelY(transport.Position.ZRaw) - transport.HeightRaw / 8 - _cameraY + sprite.Origin.Y);
             if (!_showAssetNames) continue;
             using var font = new Font(FontFamily.GenericMonospace, 8, FontStyle.Regular, GraphicsUnit.Pixel);
             using var text = new SolidBrush(Color.FromArgb(245, 241, 200));
@@ -846,17 +850,15 @@ public sealed partial class MainForm
                 _deathEffects.RemoveAt(index);
                 continue;
             }
-            var fileName = Path.GetFileName(candidate.FinPath);
+            var fileName = FinFileName(candidate.FinPath);
             var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, _world.TickCount - effect.StartedAtTick, NativeAnimationMode.Once);
             if (frame < 0)
             {
                 _deathEffects.RemoveAt(index);
                 continue;
             }
-            var bitmap = WorldAnimationBitmap(fileName, frame);
-            if (bitmap is null) continue;
-            var origin = WorldAnimationOrigin(fileName, frame);
-            canvas.Draw(GpuBitmap(bitmap), effect.Position.XRaw / 8 - _cameraX + origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + origin.Y);
+            if (WorldFrame(fileName, frame) is not { } sprite) continue;
+            canvas.Draw(sprite.Image, effect.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + sprite.Origin.Y);
         }
     }
 
@@ -905,7 +907,7 @@ public sealed partial class MainForm
         var candidate = selection.Candidate;
         var span = candidate.LastFrame - candidate.FirstFrame + 1;
         var over = nativeClock
-            ? NativeFrame(Path.GetFileName(candidate.FinPath), candidate.FirstFrame, candidate.LastFrame, _world.TickCount - startedAtTick, NativeAnimationMode.Once) < 0
+            ? NativeFrame(FinFileName(candidate.FinPath), candidate.FirstFrame, candidate.LastFrame, _world.TickCount - startedAtTick, NativeAnimationMode.Once) < 0
             : _world.TickCount - startedAtTick >= (ulong)span;
         if (over)
         {
@@ -934,12 +936,8 @@ public sealed partial class MainForm
         var animation = Animation("curs.fin", animationName);
         if (animation is null) return;
         var frame = NativeFrame("curs.fin", animation.FirstFrame, animation.LastFrame, _world.TickCount - _screenStartedAtTick);
-        if (WorldAnimationBitmap("curs.fin", frame) is not { } bitmap) return;
-        var origin = WorldAnimationOrigin("curs.fin", frame);
-        if (_activeCanvas is { } canvas)
-            canvas.DrawForeground(GpuBitmap(bitmap), pointer.X + origin.X, pointer.Y + origin.Y);
-        else
-            graphics.DrawImageUnscaled(bitmap, pointer.X + origin.X, pointer.Y + origin.Y);
+        if (WorldFrame("curs.fin", frame) is not { } sprite || _activeCanvas is not { } canvas) return;
+        canvas.DrawForeground(sprite.Image, pointer.X + sprite.Origin.X, pointer.Y + sprite.Origin.Y);
     }
 
     private string GameplayCursorAnimation(Point pointer)
@@ -1007,7 +1005,7 @@ public sealed partial class MainForm
     {
         if (!_previousActorRenderPositions.TryGetValue(instanceId, out var previous)) return current;
 
-        var elapsedSinceStep = Environment.TickCount64 - _clock.AccumulatedTimestamp;
+        var elapsedSinceStep = GameLoop.Milliseconds - _clock.AccumulatedTimestamp;
         var alpha = Math.Clamp(elapsedSinceStep / (double)_clock.IntervalMilliseconds, 0d, 1d);
         return new FixedPointPosition(
             (int)Math.Round(previous.XRaw + (current.XRaw - previous.XRaw) * alpha),

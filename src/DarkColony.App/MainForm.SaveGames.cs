@@ -25,6 +25,13 @@ public sealed partial class MainForm
 
     /// <summary>A saved game to watch from its first update (<c>--replay &lt;file&gt;</c>).</summary>
     public string? ReplayPath { get; init; }
+
+    /// <summary>
+    /// A saved game to load at its last update (<c>--load &lt;file&gt;</c>), as
+    /// the Load menu does. A save with no steps and a large tick count opens a
+    /// late game at once, for performance runs.
+    /// </summary>
+    public string? LoadPath { get; init; }
     private SavedGame? _pendingSavedGame;
     private IReadOnlyList<string> _saveFiles = [];
     private int _selectedSave;
@@ -106,17 +113,21 @@ public sealed partial class MainForm
         BeginSavedGame(saved, replay: false);
     }
 
-    /// <summary>Opens <see cref="ReplayPath"/> and plays it from the first update.</summary>
+    /// <summary>
+    /// Opens <see cref="ReplayPath"/> and plays it from the first update, or
+    /// loads <see cref="LoadPath"/> at its last.
+    /// </summary>
     private void StartReplay()
     {
-        if (ReplayPath is null || _installation is null) return;
+        var path = ReplayPath ?? LoadPath;
+        if (path is null || _installation is null) return;
         try
         {
-            BeginSavedGame(SavedGame.FromJson(File.ReadAllText(ReplayPath)), replay: true);
+            BeginSavedGame(SavedGame.FromJson(File.ReadAllText(path)), replay: ReplayPath is not null);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or System.Text.Json.JsonException)
         {
-            _status = $"Cannot replay {Path.GetFileName(ReplayPath)}: {error.Message}";
+            _status = $"Cannot open {Path.GetFileName(path)}: {error.Message}";
             RuntimeLog.Info(_status);
         }
     }

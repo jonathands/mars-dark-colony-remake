@@ -15,6 +15,7 @@ The app uses 64, so `.dcsave` files carry checkpoints (`SavedCheckpoint`).
 | `SavedGame.VerifyReplay` | Replays from a fresh scenario and compares every checkpoint and the final digest. It returns a `ReplayCheck` naming the first update that differs. |
 | `ReplayPlayer` | Does the same one update at a time. |
 | `--replay <file.dcsave>` (app) | Opens the saved scenario and plays it from update 0 at normal speed, using only the recorded commands; player input is ignored. At the end it reports in the status line and the log whether every checkpoint and the end state matched, then pauses. |
+| `--load <file.dcsave>` (app) | Loads the save at its last update, as the Load menu does. A save with no steps and a large `ticks` opens a late game at once (`docs/PERFORMANCE.md`). |
 
 The check *a recorded War match replays bit for bit* proves both properties:
 - 400 updates of a scripted match on Dead Man's Wharf replay with all 8 checkpoints matching.
