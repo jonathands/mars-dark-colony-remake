@@ -43,6 +43,39 @@ maximized, and the picture follows the scaling mode.
 When the window moves to a monitor with another DPI, it keeps its physical
 size. With the automatic scale, it instead takes the new monitor's scale.
 
+## Fullscreen
+
+**Alt+Enter** switches between windowed and the last fullscreen kind used,
+borderless unless exclusive was chosen. The change is saved like a Video panel
+change.
+
+- **Borderless** (default fullscreen): the window loses its frame and covers
+  the monitor that holds it, at the desktop resolution. The picture is scaled
+  onto the whole monitor.
+- **Exclusive**: the monitor switches to a chosen display mode, then the
+  borderless window covers it.
+  - The modes come from `EnumDisplaySettings`, one per size with its highest
+    refresh rate. With none chosen, it uses the desktop's mode.
+  - The switch uses `ChangeDisplaySettingsEx` with `CDS_FULLSCREEN`, so it is
+    temporary and never written to the registry.
+  - DXGI's own exclusive state is not used, because it needs a top-level
+    swap chain window and the port's surface is a child control
+    (`SetFullscreenState` returned `DXGI_ERROR_INVALID_CALL`).
+  - When the window loses focus, the desktop mode comes back and the window
+    minimizes. When it returns, the chosen mode is set again. Closing the
+    game restores the desktop mode too.
+  - A mode the monitor does not have falls back to windowed, with a log line.
+
+During play, the pointer is kept on the picture (`ClipCursor`) while the game
+has the focus. This makes the scroll edges easy to reach. By default this
+applies in fullscreen only. `--confine-cursor on` extends it to windowed;
+`off` disables it everywhere, and the tools pass `off`.
+
+`--display-cycle N` is a diagnostic for resource leaks. It switches windowed
+→ borderless → exclusive N times, logs live textures, handles, GDI/USER
+objects and private memory at every step, then closes. It never saves
+settings.
+
 ## Settings
 
 `%LOCALAPPDATA%\DarkColonyPort\display.json` holds the port's display
@@ -87,8 +120,23 @@ every time they change.
 - **Fit:** a 1000x700 client gives a 933x700 picture between bars, and the
   mapped clicks reach the War lobby's READY and the Research tab.
 
+- **Mode switches:** 20 cycles (60 switches, 20 display-mode restores)
+  leave the process steady at about 415-420 handles, 25 GDI / 28-30 USER
+  objects and 40-44 MB. The first frame alone loads 123 cached textures.
+- **Exclusive:** `--exclusive 1280x720` switched the monitor to
+  1280x720@60. The picture sat at 1x between bars (Integer), mapped clicks
+  worked, and the desktop mode came back on close. `--exclusive 1234x567`
+  fell back to windowed.
+- **Borderless:** 1920x1080 shows the 2x picture centred.
+  `Test-LiveConstruction -Fullscreen` passes, and a pointer held at the
+  right edge scrolls the view.
+
 Not verified yet:
 
 - a DPI change between two monitors;
 - a 150% monitor;
-- window scale 3, which this 1080p monitor cannot fit.
+- window scale 3, which this 1080p monitor cannot fit;
+- a second monitor: borderless and exclusive pick the monitor that holds
+  the window;
+- alt-tab with exclusive fullscreen by hand (posted input cannot take the
+  focus away).

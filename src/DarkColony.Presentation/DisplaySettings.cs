@@ -91,8 +91,15 @@ public sealed record DisplaySettings
 
     public bool VSync { get; init; } = true;
 
-    /// <summary>Keeps the pointer inside the window during play when windowed. Fullscreen always does.</summary>
-    public bool ConfineCursor { get; init; }
+    /// <summary>
+    /// Keeps the pointer on the picture during play. Unset confines it in
+    /// fullscreen only; on and off apply to every mode.
+    /// </summary>
+    public bool? ConfineCursor { get; init; }
+
+    /// <summary>Whether the pointer is kept on the picture during play in <see cref="Mode"/>.</summary>
+    [JsonIgnore]
+    public bool ConfinesCursor => ConfineCursor ?? Mode != WindowMode.Windowed;
 
     /// <summary>Whether <see cref="View"/> is the original 640x480.</summary>
     [JsonIgnore]

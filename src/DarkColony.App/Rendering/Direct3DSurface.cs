@@ -97,8 +97,9 @@ public sealed class Direct3DSurface : Control
     /// <summary>Waits for the vertical blank when presenting. Off presents at once, tearing where allowed.</summary>
     public bool VSync { get; set; } = true;
 
-    /// <summary>The swap chain is in exclusive fullscreen.</summary>
-    public bool IsExclusiveFullscreen { get; private set; }
+    /// <summary>Live GPU objects, for the display-mode leak test.</summary>
+    public string ResourceSummary() =>
+        $"{_gpuImages.Count} cached textures, back buffer {_backBufferSize.Width}x{_backBufferSize.Height}, target {_nativeTargetSize.Width}x{_nativeTargetSize.Height}";
 
     public void RenderAndPresent()
     {
@@ -132,7 +133,7 @@ public sealed class Direct3DSurface : Control
                 if (layout.PixelExact) DrawTexture(_nativeTargetResource!, _backBufferView!, layout.Destination, alphaBlend: false);
                 else DrawSharpBilinear(layout);
             }
-            var tearing = !VSync && _tearingSupported && !IsExclusiveFullscreen;
+            var tearing = !VSync && _tearingSupported;
             var result = _swapChain!.Present(VSync ? 1u : 0u, tearing ? PresentFlags.AllowTearing : PresentFlags.None);
             if (result.Code == Vortice.DXGI.ResultCode.DeviceRemoved.Code || result.Code == Vortice.DXGI.ResultCode.DeviceReset.Code)
             {
@@ -240,28 +241,10 @@ public sealed class Direct3DSurface : Control
             _factory = adapter.GetParent<IDXGIFactory2>();
         using (var factory5 = _factory.QueryInterfaceOrNull<IDXGIFactory5>())
             _tearingSupported = factory5?.PresentAllowTearing == true;
-        _swapChainFlags = SwapChainFlags.AllowModeSwitch | (_tearingSupported ? SwapChainFlags.AllowTearing : SwapChainFlags.None);
-
-        // Flip model: the back buffer is the client area in physical pixels
-        // and is resized with it (EnsureBackBuffer).
-        _backBufferSize = new Size(Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height));
-        _swapChain = _factory.CreateSwapChainForHwnd(device, Handle, new SwapChainDescription1
-        {
-            Width = (uint)_backBufferSize.Width,
-            Height = (uint)_backBufferSize.Height,
-            Format = Format.B8G8R8A8_UNorm,
-            SampleDescription = new SampleDescription(1, 0),
-            BufferUsage = Usage.RenderTargetOutput,
-            BufferCount = 2,
-            Scaling = Scaling.Stretch,
-            SwapEffect = SwapEffect.FlipDiscard,
-            AlphaMode = AlphaMode.Ignore,
-            Flags = _swapChainFlags,
-        }, new SwapChainFullscreenDescription { Windowed = true }, null);
+        CreateSwapChain(allowTearing: _tearingSupported);
         // The app toggles fullscreen itself (Alt+Enter goes through its settings).
         _factory.MakeWindowAssociation(Handle, WindowAssociationFlags.IgnoreAltEnter).CheckError();
         RuntimeLog.Info($"D3D11 device created: feature level {device.FeatureLevel}, flip-model swap chain {_backBufferSize.Width}x{_backBufferSize.Height}, tearing {(_tearingSupported ? "supported" : "unsupported")}.");
-        CreateBackBufferView();
 
         ReadOnlySpan<QuadVertex> vertices =
         [
@@ -292,6 +275,40 @@ public sealed class Direct3DSurface : Control
         _pointSampler = device.CreateSamplerState(SamplerDescription.PointClamp);
         _linearSampler = device.CreateSamplerState(SamplerDescription.LinearClamp);
         _alphaBlend = device.CreateBlendState(BlendDescription.NonPremultiplied);
+    }
+
+    /// <summary>
+    /// Creates the flip-model swap chain at the client area's size. With
+    /// AllowTearing, presenting without vsync may tear instead of waiting.
+    /// </summary>
+    private void CreateSwapChain(bool allowTearing)
+    {
+        _backBufferView?.Dispose();
+        _backBuffer?.Dispose();
+        _backBufferView = null;
+        _backBuffer = null;
+        if (_swapChain is not null)
+        {
+            _context!.ClearState();
+            _context.Flush();
+            _swapChain.Dispose();
+        }
+        _swapChainFlags = (allowTearing ? SwapChainFlags.AllowTearing : SwapChainFlags.None);
+        _backBufferSize = new Size(Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height));
+        _swapChain = _factory!.CreateSwapChainForHwnd(_device!, Handle, new SwapChainDescription1
+        {
+            Width = (uint)_backBufferSize.Width,
+            Height = (uint)_backBufferSize.Height,
+            Format = Format.B8G8R8A8_UNorm,
+            SampleDescription = new SampleDescription(1, 0),
+            BufferUsage = Usage.RenderTargetOutput,
+            BufferCount = 2,
+            Scaling = Scaling.Stretch,
+            SwapEffect = SwapEffect.FlipDiscard,
+            AlphaMode = AlphaMode.Ignore,
+            Flags = _swapChainFlags,
+        }, new SwapChainFullscreenDescription { Windowed = true }, null);
+        CreateBackBufferView();
     }
 
     /// <summary>Resizes the flip-model buffers to the client area.</summary>
@@ -454,8 +471,6 @@ public sealed class Direct3DSurface : Control
             image.Texture.Dispose();
         }
         _transientGpuImages.Clear();
-        if (IsExclusiveFullscreen) _swapChain?.SetFullscreenState(false, null);
-        IsExclusiveFullscreen = false;
         _alphaBlend?.Dispose();
         _linearSampler?.Dispose();
         _pointSampler?.Dispose();

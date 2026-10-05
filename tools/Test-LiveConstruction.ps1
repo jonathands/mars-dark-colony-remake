@@ -59,7 +59,7 @@ $capture = Join-Path $repo 'capture-port-window.ps1'
 $start = [Diagnostics.ProcessStartInfo]::new($exe)
 $start.WorkingDirectory = $repo
 $start.UseShellExecute = $false
-$display = @($(if ($Fullscreen) { '--fullscreen' } else { '--windowed' }), '--window-scale', "$WindowScale", '--scale-mode', $ScaleMode, '--view', 'classic')
+$display = @($(if ($Fullscreen) { '--fullscreen' } else { '--windowed' }), '--window-scale', "$WindowScale", '--scale-mode', $ScaleMode, '--view', 'classic', '--confine-cursor', 'off')
 foreach ($argument in @('--data', (Resolve-Path $DataPath).Path, '--no-dialogs', '--no-music', '--no-video',
         '--single-player-war', '--grant-p7', "$GrantP7", '--log', $log) + $display) {
     $start.ArgumentList.Add($argument)

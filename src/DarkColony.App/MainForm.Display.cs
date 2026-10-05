@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using DarkColony.App.Diagnostics;
+using DarkColony.App.Rendering;
 using DarkColony.App.Ui;
 using DarkColony.Presentation;
 
@@ -15,6 +18,13 @@ public sealed partial class MainForm
     private DisplaySettings _display = new();
     private bool _pointerInsideSurface;
     private Point? _menuPointer;
+    // The window's bounds while windowed, restored when fullscreen ends.
+    private Rectangle? _windowedBounds;
+    // Alt+Enter goes back to the last fullscreen kind used.
+    private WindowMode _lastFullscreenMode = WindowMode.Borderless;
+    private Rectangle _cursorClip;
+    // The monitor whose mode exclusive fullscreen changed, until it is restored.
+    private string? _exclusiveDevice;
 
     /// <summary>The display settings in effect: the settings file plus command-line overrides.</summary>
     public DisplaySettings DisplaySettings
@@ -26,6 +36,13 @@ public sealed partial class MainForm
     /// <summary>Where changed display settings are saved; none keeps them for this run only.</summary>
     public string? DisplaySettingsPath { get; init; }
 
+    /// <summary>
+    /// Diagnostic (<c>--display-cycle N</c>): switches windowed → borderless →
+    /// exclusive → windowed N times, logging live resources at each step,
+    /// then closes. It checks that mode switches leak nothing.
+    /// </summary>
+    public int? DisplayCycles { get; init; }
+
     protected override void OnLoad(EventArgs eventArgs)
     {
         base.OnLoad(eventArgs);
@@ -33,8 +50,14 @@ public sealed partial class MainForm
         {
             RuntimeLog.Info($"Presentation: {_surface.PictureLayout}");
             SetGameplayCursorVisibility(visible: _screen != MenuScreenId.Gameplay);
+            UpdateCursorClip();
         };
-        ApplyDisplaySettings(_display);
+        if (_display.Mode != WindowMode.Windowed) _lastFullscreenMode = _display.Mode;
+        // Exclusive fullscreen needs a visible window: start borderless and
+        // let OnShown enter it.
+        var requested = _display;
+        ApplyDisplaySettings(requested.Mode == WindowMode.Exclusive ? requested with { Mode = WindowMode.Borderless } : requested);
+        _display = requested;
         RuntimeLog.Info($"Display: {_display.Mode}, window scale {(_display.WindowScale == 0 ? "auto" : _display.WindowScale)}, " +
             $"{_display.Scale} scaling, view {_display.View}, vsync {(_display.VSync ? "on" : "off")}, DPI {DeviceDpi}.");
         RuntimeLog.Info($"Presentation: {_surface.PictureLayout}");
@@ -49,13 +72,176 @@ public sealed partial class MainForm
         ApplyWindowMode();
     }
 
+    protected override void OnShown(EventArgs eventArgs)
+    {
+        base.OnShown(eventArgs);
+        if (_display.Mode == WindowMode.Exclusive && _exclusiveDevice is null) ApplyWindowMode();
+        if (DisplayCycles is { } cycles) StartDisplayCycle(cycles);
+    }
+
     private void ApplyWindowMode()
     {
-        FormBorderStyle = FormBorderStyle.Sizable;
-        MaximizeBox = true;
-        if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
-        ClientSize = WindowedClientSize();
+        var screen = Screen.FromControl(this);
+        if (_display.Mode != WindowMode.Exclusive) RestoreDisplayMode();
+        if (_display.Mode != WindowMode.Windowed && FormBorderStyle != FormBorderStyle.None && WindowState == FormWindowState.Normal)
+            _windowedBounds = Bounds;
+        switch (_display.Mode)
+        {
+            case WindowMode.Windowed:
+                FormBorderStyle = FormBorderStyle.Sizable;
+                MaximizeBox = true;
+                if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
+                if (_windowedBounds is { } bounds) Bounds = bounds;
+                ClientSize = WindowedClientSize();
+                if (_windowedBounds is null) CenterToScreen();
+                break;
+            case WindowMode.Borderless:
+                FormBorderStyle = FormBorderStyle.None;
+                if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
+                Bounds = screen.Bounds;
+                break;
+            case WindowMode.Exclusive:
+                FormBorderStyle = FormBorderStyle.None;
+                if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
+                var device = _exclusiveDevice ?? DisplayModeSwitcher.MonitorOf(Handle).DeviceName;
+                var wanted = _display.ExclusiveMode ?? DisplayModeSwitcher.DesktopMode(device);
+                try
+                {
+                    var mode = DisplayModeSwitcher.Set(device, wanted);
+                    _exclusiveDevice = device;
+                    Bounds = DisplayModeSwitcher.MonitorOf(Handle).Bounds;
+                    RuntimeLog.Info($"Exclusive fullscreen {mode} on {device}.");
+                }
+                catch (InvalidOperationException error)
+                {
+                    // A failed mode falls back to a window and says why.
+                    RuntimeLog.Info($"Exclusive fullscreen {wanted} failed: {error.Message} Falling back to windowed.");
+                    _status = $"Exclusive fullscreen {wanted} failed; windowed.";
+                    _display = _display with { Mode = WindowMode.Windowed };
+                    ApplyWindowMode();
+                    return;
+                }
+                break;
+        }
+        UpdateCursorClip();
     }
+
+    /// <summary>Alt+Enter: windowed ↔ the last fullscreen kind. Saved like a Video panel change.</summary>
+    private void ToggleFullscreen()
+    {
+        var next = _display.Mode == WindowMode.Windowed ? _lastFullscreenMode : WindowMode.Windowed;
+        ChangeDisplaySettings(_display with { Mode = next });
+    }
+
+    /// <summary>Applies new display settings and saves them.</summary>
+    private void ChangeDisplaySettings(DisplaySettings settings)
+    {
+        var previous = _display;
+        if (settings.Mode != WindowMode.Windowed) _lastFullscreenMode = settings.Mode;
+        ApplyDisplaySettings(settings);
+        RuntimeLog.Info($"Display: {previous.Mode} -> {_display.Mode}; {_surface.ResourceSummary()}.");
+        // The leak-test cycle must not overwrite the player's settings.
+        if (DisplaySettingsPath is null || DisplayCycles is not null) return;
+        try
+        {
+            _display.Save(DisplaySettingsPath);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            RuntimeLog.Info($"Display settings not saved: {error.Message}");
+        }
+    }
+
+    /// <summary>Gives the monitor its desktop mode back.</summary>
+    private void RestoreDisplayMode()
+    {
+        if (_exclusiveDevice is not { } device) return;
+        _exclusiveDevice = null;
+        DisplayModeSwitcher.Restore(device);
+        RuntimeLog.Info($"Display mode of {device} restored.");
+    }
+
+    // Exclusive fullscreen gives the desktop its mode back while the game is
+    // in the background, and takes the monitor again when it returns.
+    protected override void OnActivated(EventArgs eventArgs)
+    {
+        base.OnActivated(eventArgs);
+        if (_display.Mode == WindowMode.Exclusive && _exclusiveDevice is null && WindowState == FormWindowState.Normal) ApplyWindowMode();
+        UpdateCursorClip();
+    }
+
+    protected override void OnDeactivate(EventArgs eventArgs)
+    {
+        base.OnDeactivate(eventArgs);
+        if (_exclusiveDevice is not null && DisplayCycles is null)
+        {
+            RestoreDisplayMode();
+            WindowState = FormWindowState.Minimized;
+        }
+        UpdateCursorClip();
+    }
+
+    protected override void OnResize(EventArgs eventArgs)
+    {
+        base.OnResize(eventArgs);
+        if (_display.Mode == WindowMode.Exclusive && _exclusiveDevice is null && WindowState == FormWindowState.Normal && ActiveForm == this)
+            ApplyWindowMode();
+    }
+
+    protected override void OnLocationChanged(EventArgs eventArgs)
+    {
+        base.OnLocationChanged(eventArgs);
+        UpdateCursorClip();
+    }
+
+    /// <summary>
+    /// Keeps the pointer on the picture during play while the window has the
+    /// focus: by default in fullscreen, otherwise as the settings say.
+    /// The 3-pixel scroll edges are then reachable without leaving the window.
+    /// </summary>
+    private void UpdateCursorClip()
+    {
+        var confine = ActiveForm == this && WindowState != FormWindowState.Minimized && Visible &&
+            _screen == MenuScreenId.Gameplay && _display.ConfinesCursor;
+        var clip = confine ? _surface.PictureScreenBounds() : Rectangle.Empty;
+        if (clip == _cursorClip) return;
+        _cursorClip = clip;
+        Cursor.Clip = clip;
+    }
+
+    private void StartDisplayCycle(int cycles)
+    {
+        WindowMode[] order = [WindowMode.Borderless, WindowMode.Exclusive, WindowMode.Windowed];
+        var step = 0;
+        var timer = new System.Windows.Forms.Timer { Interval = 1200 };
+        timer.Tick += (_, _) =>
+        {
+            if (step == cycles * order.Length)
+            {
+                timer.Dispose();
+                RuntimeLog.Info($"Display cycle done: {DisplayResources()}.");
+                Close();
+                return;
+            }
+            var mode = order[step % order.Length];
+            ChangeDisplaySettings(_display with { Mode = mode });
+            step++;
+            RuntimeLog.Info($"Display cycle {step}/{cycles * order.Length}: {mode} (mode changed: {_exclusiveDevice is not null}), client {ClientSize.Width}x{ClientSize.Height}, {DisplayResources()}.");
+        };
+        RuntimeLog.Info($"Display cycle start: {DisplayResources()}.");
+        timer.Start();
+    }
+
+    private string DisplayResources()
+    {
+        using var process = Process.GetCurrentProcess();
+        return $"{_surface.ResourceSummary()}, {process.HandleCount} handles, " +
+            $"{GetGuiResources(process.Handle, 0)} GDI / {GetGuiResources(process.Handle, 1)} USER objects, " +
+            $"{process.PrivateMemorySize64 / (1024 * 1024)} MB private";
+    }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetGuiResources(IntPtr process, uint flags);
 
     /// <summary>
     /// Windowed play shows the classic picture times the window scale. The

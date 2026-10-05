@@ -50,6 +50,9 @@ internal static class Program
         {
             DisplaySettings = displaySettings,
             DisplaySettingsPath = displaySettingsPath,
+            // --display-cycle N switches display modes N times and exits (leak test).
+            DisplayCycles = Array.FindIndex(arguments, argument => argument.Equals("--display-cycle", StringComparison.OrdinalIgnoreCase)) is var cycle and >= 0 &&
+                cycle + 1 < arguments.Length && int.TryParse(arguments[cycle + 1], out var cycles) && cycles > 0 ? cycles : null,
             RevealMap = revealMap,
             ForcedOutcomeAfterSeconds = outcomeAfter,
             ForcedVictory = forcedVictory,

@@ -75,8 +75,11 @@ internal static class PresentationChecks
                 ["--data", "x", "--fullscreen", "--window-scale", "3", "--scale-mode", "fit", "--view", "1280x720", "--vsync", "off", "--confine-cursor", "on"],
                 out var problems);
             Equal(0, problems.Count);
-            Equal((WindowMode.Borderless, 3, ScaleMode.Fit, "1280x720", false, true),
+            Equal((WindowMode.Borderless, 3, ScaleMode.Fit, "1280x720", false, (bool?)true),
                 (settings.Mode, settings.WindowScale, settings.Scale, settings.View, settings.VSync, settings.ConfineCursor));
+            // Unset, the pointer is confined in fullscreen only.
+            Equal((false, true, false), (new DisplaySettings().ConfinesCursor, new DisplaySettings { Mode = WindowMode.Borderless }.ConfinesCursor,
+                new DisplaySettings { Mode = WindowMode.Exclusive, ConfineCursor = false }.ConfinesCursor));
             Equal(new Size(1280, 720), settings.GameplayViewFor(new Size(1920, 1080)));
 
             var exclusive = settings.WithArguments(["--exclusive", "1024x768@75"], out _);

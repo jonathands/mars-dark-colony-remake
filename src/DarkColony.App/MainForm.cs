@@ -244,6 +244,14 @@ public sealed partial class MainForm : Form
 
         KeyDown += (_, eventArgs) =>
         {
+            // Alt+Enter: windowed ↔ fullscreen (MainForm.Display.cs).
+            if (eventArgs.KeyCode == Keys.Enter && eventArgs.Alt)
+            {
+                ToggleFullscreen();
+                eventArgs.Handled = true;
+                eventArgs.SuppressKeyPress = true;
+                return;
+            }
             if (_video is not null)
             {
                 EndVideo();
@@ -332,6 +340,8 @@ public sealed partial class MainForm : Form
     protected override void OnFormClosing(FormClosingEventArgs eventArgs)
     {
         RuntimeLog.Info($"Window closing: {eventArgs.CloseReason}");
+        Cursor.Clip = Rectangle.Empty;
+        RestoreDisplayMode();
         base.OnFormClosing(eventArgs);
     }
 

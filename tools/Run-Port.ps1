@@ -44,8 +44,9 @@ $start.UseShellExecute = $false
 # Unattended runs skip the CD soundtrack and the videos unless -Media asks for them.
 $mediaArguments = if ($Media) { @() } else { @('--no-music', '--no-video') }
 # A 640x480 window with the classic view, whatever display.json says, so
-# -Actions coordinates are window coordinates. -ExtraArguments come later and win.
-$displayArguments = @('--windowed', '--window-scale', '1', '--view', 'classic')
+# -Actions coordinates are window coordinates, and the real pointer is never
+# confined. -ExtraArguments come later and win.
+$displayArguments = @('--windowed', '--window-scale', '1', '--view', 'classic', '--confine-cursor', 'off')
 foreach ($argument in @('--data', (Resolve-Path $DataPath).Path, '--no-dialogs', '--log', $logPath) + $mediaArguments + $displayArguments + $ExtraArguments) {
     $start.ArgumentList.Add($argument)
 }

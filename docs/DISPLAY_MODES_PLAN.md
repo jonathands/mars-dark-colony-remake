@@ -181,7 +181,10 @@ Robustness:
   - `Test-LiveConstruction` passes at 1x and with `-WindowScale 2`. The
     script learns to map clicks through the `Presentation:` log line.
 
-**Phase 2: fullscreen**
+**Phase 2: fullscreen** — done (2026-10-04). Exclusive fullscreen changes
+the display mode (`ChangeDisplaySettingsEx`, temporary) under a borderless
+window. DXGI's exclusive state refuses the port's child-window swap chain.
+See `docs/DISPLAY.md`.
 - Borderless fullscreen (default) and exclusive with the display-mode list.
 - Alt+Enter, focus loss and alt-tab, device-loss recovery, cursor
   confinement, multi-monitor.

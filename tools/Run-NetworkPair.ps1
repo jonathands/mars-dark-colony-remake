@@ -39,7 +39,7 @@ function Start-Peer([string] $role) {
     $start.WorkingDirectory = $repo
     $start.UseShellExecute = $false
     foreach ($argument in @('--data', (Resolve-Path $DataPath).Path, '--no-dialogs', '--no-music', '--no-video',
-            '--windowed', '--window-scale', '1', '--view', 'classic', '--log', (Join-Path $logDirectory "$Name-$role.log"))) {
+            '--windowed', '--window-scale', '1', '--view', 'classic', '--confine-cursor', 'off', '--log', (Join-Path $logDirectory "$Name-$role.log"))) {
         $start.ArgumentList.Add($argument)
     }
     $process = [Diagnostics.Process]::Start($start)
