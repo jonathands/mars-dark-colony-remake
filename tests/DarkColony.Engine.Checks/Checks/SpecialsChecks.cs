@@ -356,6 +356,30 @@ internal static class SpecialsChecks
             Equal(true, fired);
         }, CheckTags.Data);
 
+        Check("with the installed tables, a Human captain's Drop Ship brings two troops to a map point and leaves", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var rules = SimulationRules.Load(install);
+            // Team 0: a Human commander (70) at (2,4) and a hostile Gray (8) far off at (14,7).
+            const string scenarioText = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n1\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n2 4 70 0 -1 0\n14 7 8 1 -1 0\n";
+            var pathBytes = new byte[PathRegionMap.RouteTableSize + 16 * 9];
+            pathBytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+            var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(scenarioText), PathRegionMap.Parse(pathBytes, 16, 9), rules);
+            // Captain 70: projectile mode 5 (weapon 57), two Security Troops.
+            Equal(57, simulation.GroundSpecialWeaponFor(simulation.Actor(1)!)?.Id ?? -1);
+            simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new GroundSpecialAttackIntent(1, new CellCoordinate(5, 4)))]);
+            Equal(GroundSpecialAttackOutcome.Accepted, simulation.LastGroundSpecialAttacks.Single().Outcome);
+            var before = simulation.Actors.Count;
+            var kinds = new List<string>();
+            for (var tick = 0; tick < 300; tick++)
+            {
+                simulation.Step([]);
+                kinds.AddRange(simulation.LastBattlefieldTransports.Select(transport => transport.Kind.ToString()));
+            }
+            Equal((2, "Started", "Departed"), (simulation.Actors.Count - before, kinds.First(), kinds.Last()));
+            Equal(true, kinds.Contains("PayloadResolved"));
+        }, CheckTags.Data);
+
         Check("native ground-special fields drive researched Napalm area fire", () =>
         {
             var install = GameInstallation.Open(dataPath);
