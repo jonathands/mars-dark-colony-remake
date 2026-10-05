@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using DarkColony.Engine.Data;
 
 namespace DarkColony.Engine.Assets;
@@ -26,6 +27,14 @@ public sealed class EntityAnimationCatalog
     private readonly IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> hitCandidates;
     private readonly IReadOnlyDictionary<int, IReadOnlyList<EntityAnimationCandidate>> deathCandidates;
     private Dictionary<int, EntityAnimationCandidate> buildCandidates = [];
+
+    // The selections are fixed once the catalog is built, and the renderer
+    // asks for them for every actor on every frame. Each family keeps its 16
+    // sectors per entity, resolved on first use; fire keeps one such table
+    // per variant, in the native slot order.
+    private enum Family { Move, Deploy, Retract, Hit }
+    private readonly ConcurrentDictionary<(Family Family, int EntityId), DirectionalAnimationSelection?[]> sectorTables = new();
+    private readonly ConcurrentDictionary<int, DirectionalAnimationSelection?[][]> fireTables = new();
 
     private EntityAnimationCatalog(
         IReadOnlyDictionary<int, IReadOnlyList<EntityAnimationCandidate>> candidates,
@@ -186,13 +195,13 @@ public sealed class EntityAnimationCatalog
     public EntityAnimationCandidate? Preferred(int entityId) => Candidates(entityId).FirstOrDefault();
 
     public DirectionalAnimationSelection? PreferredMove(int entityId, int sector)
-        => PreferredDirectional(moveCandidates, entityId, sector);
+        => PreferredDirectional(Family.Move, moveCandidates, entityId, sector);
 
     public DirectionalAnimationSelection? PreferredDeploy(int entityId, int sector)
-        => PreferredDirectional(deployCandidates, entityId, sector);
+        => PreferredDirectional(Family.Deploy, deployCandidates, entityId, sector);
 
     public DirectionalAnimationSelection? PreferredRetract(int entityId, int sector)
-        => PreferredDirectional(retractCandidates, entityId, sector);
+        => PreferredDirectional(Family.Retract, retractCandidates, entityId, sector);
 
     public DirectionalAnimationSelection? PreferredFire(int entityId, int sector)
         => PreferredFire(entityId, sector, 0);
@@ -206,14 +215,19 @@ public sealed class EntityAnimationCatalog
     public DirectionalAnimationSelection? PreferredFire(int entityId, int sector, int variantRoll)
     {
         if (sector is < 0 or > 15) throw new ArgumentOutOfRangeException(nameof(sector));
-        var (variants, orderedKeys) = FireVariants(entityId);
-        if (orderedKeys.Count == 0) return null;
-        var key = orderedKeys[Math.Abs(variantRoll % orderedKeys.Count)];
-        return PreferredDirectional(variants[key], sector);
+        var variants = FireTables(entityId);
+        if (variants.Length == 0) return null;
+        return variants[Math.Abs(variantRoll % variants.Length)][sector];
     }
 
     /// <summary>The entity's fire families (runtime <c>+0xE4</c>), which a presentation draw is taken modulo.</summary>
-    public int FireVariantCount(int entityId) => FireVariants(entityId).OrderedKeys.Count;
+    public int FireVariantCount(int entityId) => FireTables(entityId).Length;
+
+    private DirectionalAnimationSelection?[][] FireTables(int entityId) => fireTables.GetOrAdd(entityId, id =>
+    {
+        var (variants, orderedKeys) = FireVariants(id);
+        return orderedKeys.Select(key => SectorTable(variants[key])).ToArray();
+    });
 
     private (Dictionary<string, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> Variants, List<string> OrderedKeys) FireVariants(int entityId)
     {
@@ -235,7 +249,7 @@ public sealed class EntityAnimationCatalog
     }
 
     public DirectionalAnimationSelection? PreferredHit(int entityId, int sector)
-        => PreferredDirectional(hitCandidates, entityId, sector);
+        => PreferredDirectional(Family.Hit, hitCandidates, entityId, sector);
 
     private static bool TryTrailingSector(string suffix, out int sector)
     {
@@ -246,12 +260,20 @@ public sealed class EntityAnimationCatalog
     }
 
     private DirectionalAnimationSelection? PreferredDirectional(
+        Family family,
         IReadOnlyDictionary<int, IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)>> source,
         int entityId,
         int sector)
     {
         if (sector is < 0 or > 15) throw new ArgumentOutOfRangeException(nameof(sector));
-        return PreferredDirectional(source.GetValueOrDefault(entityId, []), sector);
+        return sectorTables.GetOrAdd((family, entityId), static (key, candidates) => SectorTable(candidates.GetValueOrDefault(key.EntityId, [])), source)[sector];
+    }
+
+    private static DirectionalAnimationSelection?[] SectorTable(IReadOnlyList<(int Sector, EntityAnimationCandidate Candidate)> candidates)
+    {
+        var table = new DirectionalAnimationSelection?[16];
+        for (var sector = 0; sector < table.Length; sector++) table[sector] = PreferredDirectional(candidates, sector);
+        return table;
     }
 
     public EntityAnimationCandidate? PreferredDeath(int entityId) => deathCandidates.GetValueOrDefault(entityId, []).FirstOrDefault();

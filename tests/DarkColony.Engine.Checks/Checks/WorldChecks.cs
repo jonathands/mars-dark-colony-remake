@@ -179,5 +179,38 @@ internal static class WorldChecks
             var critter = simulation.Actors.Single(actor => actor.Seed.Team == AutonomousSpawnSeeder.InternalNeutralTeam);
             Equal(true, critter.MoveOrder is not null || critter.Movement.OccupiedCell != new CellCoordinate(16, 16));
         });
+
+        Check("cell occupancy knows each owner's cells through claims, moves, overwrites and releases", () =>
+        {
+            var occupancy = new CellOccupancy();
+            var random = new Random(3);
+            CellCoordinate Cell() => new(random.Next(0, 6), random.Next(0, 6));
+            void Agrees()
+            {
+                foreach (var owner in Enumerable.Range(1, 5))
+                {
+                    var claimed = occupancy.Claims.Where(claim => claim.Value == owner).Select(claim => claim.Key).ToHashSet();
+                    if (!claimed.SetEquals(occupancy.CellsOf(owner)))
+                        throw new InvalidOperationException($"owner {owner}: CellsOf disagrees with the claims");
+                }
+            }
+            for (var operation = 0; operation < 3000; operation++)
+            {
+                var owner = random.Next(1, 6);
+                switch (random.Next(5))
+                {
+                    case 0: occupancy.TryClaim(owner, [Cell(), Cell()]); break;
+                    case 1: occupancy.TryMove(owner, Cell(), Cell()); break;
+                    // Construction overwrites whoever held the cell.
+                    case 2: occupancy.ReplaceClaims(owner, [Cell(), Cell(), Cell()]); break;
+                    case 3: occupancy.ReleaseCell(Cell()); break;
+                    default:
+                        occupancy.Release(owner);
+                        Equal(0, occupancy.CellsOf(owner).Count);
+                        break;
+                }
+                Agrees();
+            }
+        });
     }
 }

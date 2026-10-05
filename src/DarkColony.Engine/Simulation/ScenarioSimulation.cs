@@ -494,16 +494,23 @@ public sealed partial class ScenarioSimulation
         var origin = attacker.Movement.VisualPosition.Cell;
         if (targetRings is null)
             return range >= 0 && CellDistanceSquared(origin, target.Movement.VisualPosition.Cell) < (long)(range + 1) * (range + 1);
-        var rings = targetRings.Rings;
-        for (var ring = 0; ring <= Math.Min(range, rings.Count - 1); ring++)
-        foreach (var offset in rings[ring])
+        // The executable walks rings 0 through the range and tests each cell's
+        // owner. Whether any of those cells belongs to the target is the same
+        // as whether any cell the target holds lies in one of those rings, and
+        // the target holds a few cells where the rings hold hundreds.
+        var table = targetRings;
+        var lastRing = Math.Min(range, table.Rings.Count - 1);
+        return HoldsCellWithinRings(GroundOccupancy) || HoldsCellWithinRings(AlternateOccupancy) || HoldsCellWithinRings(MineOccupancy);
+
+        bool HoldsCellWithinRings(CellOccupancy grid)
         {
-            var cell = new CellCoordinate(origin.X + offset.X, origin.Z + offset.Z);
-            if ((uint)cell.X >= (uint)path.Width || (uint)cell.Z >= (uint)path.Height) continue;
-            foreach (var grid in (CellOccupancy[])[GroundOccupancy, AlternateOccupancy, MineOccupancy])
-                if (grid.TryGetOwner(cell, out var owner) && owner == target.Seed.InstanceId) return true;
+            foreach (var cell in grid.CellsOf(target.Seed.InstanceId))
+            {
+                if ((uint)cell.X >= (uint)path.Width || (uint)cell.Z >= (uint)path.Height) continue;
+                if (table.RingOf(cell.X - origin.X, cell.Z - origin.Z) is { } ring && ring <= lastRing) return true;
+            }
+            return false;
         }
-        return false;
     }
 
     private static long CellDistanceSquared(CellCoordinate left, CellCoordinate right)
