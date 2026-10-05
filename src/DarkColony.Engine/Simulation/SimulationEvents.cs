@@ -85,6 +85,6 @@ public enum BuildingDropOutcome { Placed, CatalogUnavailable, UnknownItem, NotBu
 public sealed record BuildingPlacedEvent(int TeamId, int DependencyItemId, int EntityInstanceId, int EntityId, CellCoordinate Origin, BuildingDropOutcome Outcome);
 public enum UnitProductionOutcome { Produced, CatalogUnavailable, UnknownItem, NotTroop, NotReserved, SourceInvalid, PrerequisiteMissing, SpawnBlocked, Queued, NoProductionQueue, CapReached, NoCity }
 public sealed record UnitProducedEvent(int TeamId, int DependencyItemId, int EntityInstanceId, int EntityId, int SourceBuildingInstanceId, UnitProductionOutcome Outcome);
-public enum ResearchOutcome { Completed, CatalogUnavailable, UnknownItem, NotUpgrade, NotReserved, SourceInvalid, PrerequisiteMissing }
+public enum ResearchOutcome { Completed, CatalogUnavailable, UnknownItem, NotUpgrade, NotReserved, SourceInvalid, PrerequisiteMissing, Refunded }
 public sealed record ResearchCompletedEvent(int TeamId, int DependencyItemId, int SourceBuildingInstanceId, ResearchOutcome Outcome);
 public sealed record AutonomousWanderEvent(int EntityInstanceId, int GroupId, CellCoordinate Target, bool MovementStarted);

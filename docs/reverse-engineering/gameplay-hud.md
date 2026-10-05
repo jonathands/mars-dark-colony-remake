@@ -108,6 +108,18 @@ black instead of showing the map.
 The check *maine catalog gadgets draw their own picture and name themselves in
 the 15-character strip* covers the data side.
 
+Only offered items are shown (`0x437EA0`, state 1 of `0x437BC4`), so a
+building disappears once it is built. A building and its upgraded variant
+share a button and are never offered together.
+
+A clicked gadget shows its count at its `offset` argument: (38,3) for
+troops, (3,3) for buildings and research. It uses font 0 (`mfonto7`) on the
+`erase` colour (`bg erase`). Its text colour has not been compared with the
+original; the port uses colour 4 of the `intrface` palette.
+
+BUILD is `pushb 19` at (516,422), part of `intrface.gif`, and the space bar.
+See `production-flow.md`, "The player's catalog and BUILD".
+
 ## Selection command-state projection
 
 `UnitCommandProfiles.DescribeSelection` is the common state source for the

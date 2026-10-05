@@ -24,6 +24,8 @@ namespace DarkColony.Engine.Commands;
 [JsonDerivedType(typeof(ProduceUnitIntent), "produce")]
 [JsonDerivedType(typeof(ResearchIntent), "research")]
 [JsonDerivedType(typeof(AllianceIntent), "alliance")]
+[JsonDerivedType(typeof(CatalogCountIntent), "catalogCount")]
+[JsonDerivedType(typeof(BuildIntent), "build")]
 public abstract record WorldCommand;
 
 public sealed record MoveIntent(int EntityInstanceId, CellCoordinate TargetCell, bool AppendWaypoint = false) : WorldCommand;
@@ -99,5 +101,16 @@ public sealed record ResearchIntent(int TeamId, int DependencyItemId, int Source
 /// both sides have set theirs.
 /// </summary>
 public sealed record AllianceIntent(int Player, int Other, bool Offer) : WorldCommand;
+
+/// <summary>
+/// A click on a build or research <c>count</c> gadget (<c>0x433124</c>
+/// events 4 and 5): the left button adds one to the item's count and pays
+/// its price at once, the right button (<paramref name="Remove"/>) takes one
+/// back and refunds it.
+/// </summary>
+public sealed record CatalogCountIntent(int TeamId, int DependencyItemId, bool Remove = false) : WorldCommand;
+
+/// <summary>The BUILD button (<c>pushb 19</c>, <c>0x437F3C</c>): orders every counted catalog item.</summary>
+public sealed record BuildIntent(int TeamId) : WorldCommand;
 
 public readonly record struct ScheduledWorldCommand(ulong Tick, ulong Sequence, WorldCommand Command);

@@ -392,6 +392,53 @@ internal static class EconomyChecks
             Equal(new CellCoordinate(10, 52), simulation.Actor(produced.EntityInstanceId)!.Movement.OccupiedCell);
         }, CheckTags.Data);
 
+        Check("catalog counts are paid when added, and BUILD orders them: buildings and research once, troops up to 50", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var rules = SimulationRules.Load(install);
+            var (simulation, _) = DeterminismHarness.Load(install, rules, "mplayer/j4play01");
+            var economy = simulation.EconomyForTeam(0)!;
+            economy.AddP7(100_000);
+            var p7 = economy.P7;
+            void Send(params WorldCommand[] commands) =>
+                simulation.Step(commands.Select((command, index) => new ScheduledWorldCommand(simulation.TickCount, (ulong)index, command)).ToArray());
+            CatalogItemState[] States() => [.. new[] { 1, 2, 4, 9, 59 }.Select(item => simulation.CatalogState(0, item))];
+            // depend.txt: 1 barracks (1000, needs the HQ 0), 2 the slot-3 building
+            // (2000, needs 0), 4 its variant 1 (needs 2), 9 the marine (350,
+            // needs 1), 59 marine weapon 1 (1000, needs 1 and 2).
+            Equal(new[] { CatalogItemState.Offered, CatalogItemState.Offered, CatalogItemState.Unavailable, CatalogItemState.Unavailable, CatalogItemState.Unavailable }, States());
+
+            // A building counts once, and the right button refunds.
+            Send(new CatalogCountIntent(0, 1), new CatalogCountIntent(0, 1), new CatalogCountIntent(0, 2));
+            Equal((1, 1, p7 - 3000), (economy.CatalogCount(1), economy.CatalogCount(2), economy.P7));
+            Send(new CatalogCountIntent(0, 2, Remove: true), new CatalogCountIntent(0, 2, Remove: true));
+            Equal((0, p7 - 1000), (economy.CatalogCount(2), economy.P7));
+            Send(new CatalogCountIntent(0, 2));
+            Equal(true, simulation.CityBuilding(0, 1) is null);
+
+            // BUILD orders both at once; the states are the ones before it.
+            Send(new BuildIntent(0));
+            Equal(2, simulation.LastBuildingPlacements.Count(placement => placement.Outcome == BuildingDropOutcome.Placed));
+            Equal((0, 0, p7 - 3000), (economy.CatalogCount(1), economy.CatalogCount(2), economy.P7));
+            Equal(new[] { CatalogItemState.Done, CatalogItemState.Done, CatalogItemState.Offered, CatalogItemState.Offered, CatalogItemState.Offered }, States());
+            Send(new CatalogCountIntent(0, 1));
+            Equal((0, p7 - 3000), (economy.CatalogCount(1), economy.P7));
+
+            // Troops count up to 50 and queue with their count; research needs no building.
+            Send([.. Enumerable.Repeat<WorldCommand>(new CatalogCountIntent(0, 9), 52), new CatalogCountIntent(0, 59), new CatalogCountIntent(0, 59)]);
+            Equal((50, 1, p7 - 3000 - 50 * 350 - 1000), (economy.CatalogCount(9), economy.CatalogCount(59), economy.P7));
+            Send(new BuildIntent(0));
+            Equal(UnitProductionOutcome.Queued, simulation.LastUnitProductions.Single().Outcome);
+            Equal(true, simulation.ProductionQueues.Single(queue => queue.TeamId == 0 && queue.Queue == 0).QueuedEntityIds.Count is 49 or 50);
+            Equal(ResearchOutcome.Completed, simulation.LastResearchCompletions.Single().Outcome);
+            Equal(CatalogItemState.Done, simulation.CatalogState(0, 59));
+            Equal((0, 0), (economy.CatalogCount(9), economy.CatalogCount(59)));
+
+            // Both commands travel as JSON, like every saved or networked command.
+            foreach (var command in new WorldCommand[] { new CatalogCountIntent(0, 9, Remove: true), new BuildIntent(3) })
+                Equal(command, System.Text.Json.JsonSerializer.Deserialize<WorldCommand>(System.Text.Json.JsonSerializer.Serialize(command))!);
+        }, CheckTags.Data);
+
         Check("building prerequisites follow the live city slot and its variant", () =>
         {
             var install = GameInstallation.Open(dataPath);

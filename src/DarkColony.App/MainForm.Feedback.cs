@@ -248,8 +248,9 @@ public sealed partial class MainForm
         foreach (var research in _scenarioSimulation.LastResearchCompletions)
         {
             if (research.TeamId != _localPlayerTeam) continue;
+            var name = _dependencyCatalog?.TryGet(research.DependencyItemId, out var item) == true ? _gameplayHudLayout.ControlText(item.UiId) : null;
             _status = research.Outcome == ResearchOutcome.Completed
-                ? $"Research item {research.DependencyItemId} complete."
+                ? $"{name ?? $"Research item {research.DependencyItemId}"} complete."
                 : $"Research rejected: {research.Outcome}.";
             RuntimeLog.Info($"Research item {research.DependencyItemId}: {research.Outcome} at tick {_scenarioSimulation.TickCount}.");
         }

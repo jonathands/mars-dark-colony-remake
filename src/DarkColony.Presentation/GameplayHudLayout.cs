@@ -47,6 +47,10 @@ public sealed class GameplayHudLayout
         LastMessage = Button(source, 147, "LAST MSG", new Rectangle(4, 460, 20, 19), 40);
         NextMessage = Button(source, 149, "NEXT MSG", new Rectangle(24, 460, 20, 19), 57);
         PetraCounter = Button(source, 75, "P7", new Rectangle(524, 456, 72, 17), 104);
+        // pushb 19 has no picture: BUILD is part of intrface.gif.
+        BuildButton = new GameplayHudButton(19,
+            Screen.Anchor(source?.Controls.TryGetValue(19, out var build) == true ? ToRectangle(build.Bounds) : new Rectangle(516, 422, 86, 27)),
+            -1, source?.LabelFor(19) ?? "Push to build");
 
         // `maine` declares control 79 as the 15-character identity strip at
         // the foot of the command panel. Original gameplay captures show the
@@ -88,6 +92,8 @@ public sealed class GameplayHudLayout
     public GameplayHudButton LastMessage { get; }
     public GameplayHudButton NextMessage { get; }
     public GameplayHudButton PetraCounter { get; }
+    /// <summary>BUILD (<c>pushb 19</c>), which orders the counted catalog items (<c>0x437F3C</c>).</summary>
+    public GameplayHudButton BuildButton { get; }
     public GameplayHudReadout PanelIdentity { get; }
     public GameplayHudReadout LowerReadoutTop { get; }
     public GameplayHudReadout LowerReadoutBottom { get; }
@@ -117,6 +123,25 @@ public sealed class GameplayHudLayout
     /// "Exploiter 1500".
     /// </summary>
     public string? ControlText(int uiId) => source?.LabelFor(uiId);
+
+    /// <summary>
+    /// Where a <c>count</c> gadget writes its count: its corner plus its
+    /// <c>offset</c> argument, (3,3) for buildings and research and (38,3)
+    /// for troops in <c>maine</c>.
+    /// </summary>
+    public Point? CatalogCountOrigin(int uiId)
+    {
+        if (source is null || !source.Controls.TryGetValue(uiId, out var control)) return null;
+        var arguments = control.RemainingArguments;
+        for (var index = 0; index + 2 < arguments.Count; index++)
+        {
+            if (!arguments[index].Equals("offset", StringComparison.OrdinalIgnoreCase) ||
+                !int.TryParse(arguments[index + 1], out var x) || !int.TryParse(arguments[index + 2], out var y)) continue;
+            var bounds = Screen.Anchor(ToRectangle(control.Bounds));
+            return new Point(bounds.X + x, bounds.Y + y);
+        }
+        return null;
+    }
 
     public static GameplayHudLayout Load(GameInstallation? installation, GameplayScreen? screen = null)
     {

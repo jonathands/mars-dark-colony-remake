@@ -26,6 +26,7 @@ public sealed class TeamEconomy
     private readonly HashSet<int> completedItems = [];
     private readonly List<int> reservedItems = [];
     private readonly HashSet<int> disabledItems = [];
+    private readonly SortedDictionary<int, int> catalogCounts = new();
 
     public TeamEconomy(int p7) => P7 = Math.Max(0, p7);
 
@@ -126,6 +127,42 @@ public sealed class TeamEconomy
         if (catalog?.TryGet(itemId, out var item) != true || !item.IsUpgrade) return false;
         if (!reservedItems.Remove(itemId)) return false;
         return completedItems.Add(itemId);
+    }
+
+    /// <summary>
+    /// The count on an item's catalog gadget (<c>0x42776C</c>): ordered and
+    /// paid, not yet sent by BUILD. Kept out of the public properties, so
+    /// the state digest is unchanged while no count is set.
+    /// </summary>
+    public int CatalogCount(int itemId) => catalogCounts.GetValueOrDefault(itemId);
+
+    internal void SetCatalogCount(int itemId, int count)
+    {
+        if (count == 0) catalogCounts.Remove(itemId);
+        else catalogCounts[itemId] = count;
+    }
+
+    /// <summary>
+    /// Command 12 (<c>0x41CA04</c>) for a research item bought with its
+    /// catalog count: false when its level is already set, which refunds.
+    /// </summary>
+    public bool ApplyResearch(DependencyCatalog? catalog, int itemId) =>
+        catalog?.TryGet(itemId, out var item) == true && item.IsUpgrade && completedItems.Add(itemId);
+
+    /// <summary>
+    /// The level command 12 has set for an entity's weapon (category 0) or
+    /// armour (1): the highest completed upgrade item, abilities included,
+    /// since they are weapon levels too (<c>0x437BC4</c> reads one table).
+    /// </summary>
+    public int ResearchLevel(DependencyCatalog? catalog, int entityId, int category)
+    {
+        if (catalog is null) return 0;
+        return completedItems
+            .Select(itemId => catalog.TryGet(itemId, out var item) ? item : null)
+            .Where(item => item is { IsUpgrade: true } && item.UpgradeEntityId == entityId && item.UpgradeCategory == category)
+            .Select(item => item!.UpgradeLevel ?? 0)
+            .DefaultIfEmpty(0)
+            .Max();
     }
 
     /// <summary>

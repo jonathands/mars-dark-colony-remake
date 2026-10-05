@@ -32,6 +32,12 @@ public sealed partial class MainForm
         var shift = keyData.HasFlag(Keys.Shift);
         var control = keyData.HasFlag(Keys.Control);
         var alt = keyData.HasFlag(Keys.Alt);
+        // 0x40A520: the space bar presses BUILD.
+        if (key == Keys.Space && !shift && !control && !alt)
+        {
+            QueueBuild();
+            return true;
+        }
         if (key == Keys.Escape && _gameplayCommandMode != GameplayCommandMode.MoveOnly)
         {
             // A paid building reservation has no recovered refund/cancel path;
@@ -145,68 +151,23 @@ public sealed partial class MainForm
         _surface.Capture = false;
     }
 
-    private void HandleBuildCatalogPurchase(Point point)
-    {
-        var item = BuildCatalogItemAt(point);
-        if (item is null) return;
-        var eligibility = PurchaseEligibilityFor(item);
-        if (eligibility != PurchaseEligibility.Available)
-        {
-            var label = item.IsBuilding ? BuildingLabel(item) : TroopLabel(item);
-            _status = $"{label} unavailable: {eligibility}.";
-            return;
-        }
-        if (item.IsBuilding && _scenarioSimulation?.HasCity(_localPlayerTeam) == true)
-        {
-            // Native command 9: the engine builds the purchased slot of the
-            // team's city at once.
-            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new PurchaseIntent(_localPlayerTeam, item.Id));
-            _status = $"{BuildingLabel(item)} ordered if P7 and prerequisites allow.";
-            return;
-        }
-        if (item.IsBuilding)
-        {
-            _pendingBuildingItemId = item.Id;
-            _gameplayCommandMode = GameplayCommandMode.PlaceBuilding;
-            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new PurchaseIntent(_localPlayerTeam, item.Id));
-            _status = $"{BuildingLabel(item)} reserved if P7 and prerequisites allow; right-click a clear drop location.";
-            return;
-        }
-
-        var anchor = ProductionAnchorFor(item);
-        if (anchor is null)
-        {
-            _status = $"{TroopLabel(item)} requires one completed prerequisite structure before this port can place its spawn.";
-            return;
-        }
-        _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new PurchaseIntent(_localPlayerTeam, item.Id));
-        _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new ProduceUnitIntent(_localPlayerTeam, item.Id, anchor.InstanceId));
-        _status = $"{TroopLabel(item)} ordered if P7 and tech-tree requirements allow.";
-    }
-
     /// <summary>
-    /// Adapts one selected source structure's recovered production buttons to
-    /// the command queue. This deliberately does not use the global fallback
-    /// anchor: the player selected this building, and the engine must validate
-    /// that exact instance against the troop's dependency record.
+    /// A click on an offered catalog gadget (<c>0x433124</c> events 4 and 5).
+    /// The simulation adds one to its count and pays it, or with
+    /// <paramref name="remove"/> takes one back and refunds it.
     /// </summary>
-    private void HandleProductionPurchase(Point point, WorldEntity structure)
+    private bool HandleCatalogCountClick(Point point, bool remove)
     {
-        var item = TroopItemsForStructure(structure)
-            .FirstOrDefault(candidate => TroopSlots().TryGetValue(candidate.UiId, out var position) &&
-                CatalogBounds(candidate.UiId, position).Contains(point));
-        if (item is null) return;
-        var eligibility = PurchaseEligibilityFor(item);
-        if (eligibility != PurchaseEligibility.Available)
-        {
-            _status = $"{TroopLabel(item)} unavailable: {eligibility}.";
-            return;
-        }
-        _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new PurchaseIntent(_localPlayerTeam, item.Id));
-        _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1,
-            new ProduceUnitIntent(_localPlayerTeam, item.Id, structure.InstanceId));
-        _status = $"{TroopLabel(item)} ordered from structure #{structure.InstanceId} if P7 and tech-tree requirements allow.";
+        if (!CatalogShown) return false;
+        var button = CatalogButtons().FirstOrDefault(button => CatalogBounds(button.Item.UiId, button.Position).Contains(point));
+        if (button.Item is null) return false;
+        _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new CatalogCountIntent(_localPlayerTeam, button.Item.Id, remove));
+        return true;
     }
+
+    /// <summary>BUILD (<c>pushb 19</c> or the space bar, <c>0x437F3C</c>): the simulation orders every counted item.</summary>
+    private void QueueBuild() =>
+        _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new BuildIntent(_localPlayerTeam));
 
     private void SetGameplayCommandMode(GameplayCommandMode mode)
     {
@@ -383,7 +344,8 @@ public sealed partial class MainForm
         {
             SelectGameplayActor(eventArgs.Location, selectionToggle, selectionLayerFilter);
         }
-        if (button is null && _screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Right)
+        if (button is null && _screen == MenuScreenId.Gameplay && eventArgs.Button == MouseButtons.Right &&
+            !HandleCatalogCountClick(eventArgs.Location, remove: true))
         {
             QueueDiagnosticMove(eventArgs.Location);
         }
@@ -676,7 +638,7 @@ public sealed partial class MainForm
         {
             _gameplayHudTab = GameplayHudTab.Research;
             _showAlliesPanel = false;
-            _status = "Research tab: select a completed structure to inspect its supported upgrades.";
+            _status = "Research tab.";
             return true;
         }
         if (_gameplayHudLayout.OptionsTab.Bounds.Contains(point))
@@ -684,6 +646,11 @@ public sealed partial class MainForm
             _gameplayHudTab = GameplayHudTab.Options;
             _showAlliesPanel = false;
             _status = "Game options tab.";
+            return true;
+        }
+        if (_gameplayHudLayout.BuildButton.Bounds.Contains(point))
+        {
+            QueueBuild();
             return true;
         }
         var commandArea = _gameplayScreen.Anchor(Rectangle.FromLTRB(518, 112, 638, 399));
@@ -819,49 +786,9 @@ public sealed partial class MainForm
             }
             return true;
         }
-        if (_gameplayHudTab == GameplayHudTab.Build && !SelectedGameplayEntities().Any())
+        if (CatalogShown)
         {
-            HandleBuildCatalogPurchase(point);
-            return true;
-        }
-        if (_gameplayHudTab == GameplayHudTab.Build && !SelectedGameplayActors().Any())
-        {
-            // Selection rendering uses the first deterministic structure as
-            // the source too. A mixed static selection is therefore never
-            // silently redirected to an unrelated global production anchor.
-            var structure = SelectedGameplayEntities().FirstOrDefault(entity =>
-                _scenarioSimulation?.Actor(entity.InstanceId) is { } actor &&
-                actor.Definition.MovementSpeed <= 0);
-            if (structure is not null) HandleProductionPurchase(point, structure);
-            return true;
-        }
-        if (_gameplayHudTab == GameplayHudTab.Research)
-        {
-            var structure = SelectedGameplayEntities().FirstOrDefault(entity => _scenarioSimulation?.Actor(entity.InstanceId)?.Definition.MovementSpeed <= 0);
-            if (structure is null)
-            {
-                _status = "Select one local research structure first.";
-                return true;
-            }
-            var upgrade = ResearchButtonsForStructure(structure)
-                .FirstOrDefault(button => CatalogBounds(button.Item.UiId, button.Position).Contains(point)).Item;
-            if (upgrade is null) return true;
-            var eligibility = PurchaseEligibilityFor(upgrade);
-            if (eligibility != PurchaseEligibility.Available)
-            {
-                _status = $"{UpgradeLabel(upgrade)} unavailable: {eligibility}.";
-                return true;
-            }
-            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new PurchaseIntent(_localPlayerTeam, upgrade.Id));
-            _world.Commands.Enqueue(_world.TickCount, _world.TickCount + 1, new ResearchIntent(_localPlayerTeam, upgrade.Id, structure.InstanceId));
-            _status = $"{UpgradeLabel(upgrade)} ordered if P7 and all research requirements allow.";
-            return true;
-        }
-        if (_gameplayHudTab != GameplayHudTab.Build || !SelectedGameplayActors().Any())
-        {
-            _status = _gameplayHudTab == GameplayHudTab.Build
-                ? "Production requires the later pedestal and production engine."
-                : "Upgrade behavior has not been recovered into the engine yet.";
+            HandleCatalogCountClick(point, remove: false);
             return true;
         }
         if (_gameplayHudLayout.Stop.Bounds.Contains(point))

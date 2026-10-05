@@ -31,13 +31,16 @@ The steps are:
 1. Buy the six buildings that can be bought, through their HUD buttons, in
    prerequisite order: barracks, science lab, robot factory, then the
    level-2 lab and factory on the same buttons, then the research center.
-   A screenshot follows each purchase.
-2. Order one of each of the nine troops from the Build tab.
-3. Wait -TrainSeconds for the queues, then take a last screenshot.
+   Each one is counted on its button, then BUILD orders it. A screenshot
+   follows each purchase.
+2. Count one of each of the nine troops on the Build tab, then press the
+   space bar, which is BUILD too.
+3. Count the first research button on the Research tab, then BUILD.
+4. Wait -TrainSeconds for the queues, then take a last screenshot.
 
-The script then reads the log's "Built" and "Trained" lines and fails unless
-there are six buildings and nine troops, no animation or sprite errors, and a
-normal exit. Input is posted to the window, so
+The script then reads the log's "Built", "Trained" and "Research" lines and
+fails unless there are six buildings, nine troops and one research, no
+animation or sprite errors, and a normal exit. Input is posted to the window, so
 the real cursor never moves. Screenshots go to screenshots/, the log to
 artifacts/logs/.
 
@@ -111,18 +114,27 @@ try {
         '06-robot-factory-2' = Hud 606 337
         '07-research-center' = Hud 606 378
     }
+    # A click counts an item on its button; BUILD (pushb 19) orders it.
+    $build = Hud 559 435
     foreach ($step in $buildings.Keys) {
-        Send @($buildings[$step], 'move:258,240', 'wait:1500')
+        Send @($buildings[$step], 'wait:300', $build, 'move:258,240', 'wait:1500')
         Shot $step
     }
 
     # The troop buttons: the left column top to bottom, then the right column's first two.
     $troops = @((Hud 547 132), (Hud 547 173), (Hud 547 214), (Hud 547 255), (Hud 547 296),
         (Hud 547 337), (Hud 547 378), (Hud 606 132), (Hud 606 173))
-    foreach ($troop in $troops) { Send @($troop, 'wait:400') }
+    foreach ($troop in $troops) { Send @($troop, 'wait:300') }
     # Rest the pointer inside the map view: left at the HUD's edge it would scroll the view.
-    Send @('move:258,240')
+    Send @('move:258,240', 'wait:300')
+    Shot '08-troops-counted'
+    Send @('key:Space', 'wait:500')
     Shot '08-troops-ordered'
+
+    # The Research tab's first button, then BUILD, then back to the Build tab.
+    Send @((Hud 577 102), 'wait:300', (Hud 547 132), 'wait:300', $build, 'wait:500')
+    Shot '08-research'
+    Send @((Hud 538 102), 'move:258,240', 'wait:300')
     Start-Sleep -Seconds $TrainSeconds
     Shot '09-troops-trained'
 }
@@ -135,16 +147,18 @@ finally {
 
 $built = @(Select-String -Path $log -Pattern '\] Built ' | ForEach-Object { $_.Line -replace '^.*\] ', '' })
 $trained = @(Select-String -Path $log -Pattern '\] Trained ' | ForEach-Object { $_.Line -replace '^.*\] ', '' })
+$researched = @(Select-String -Path $log -Pattern '\] Research item \d+: Completed' | ForEach-Object { $_.Line -replace '^.*\] ', '' })
 $rejected = @(Select-String -Path $log -Pattern 'unavailable|rejected|not reserved' | ForEach-Object { $_.Line -replace '^.*\] ', '' })
 $errors = @(Select-String -Path $log -Pattern 'Animation error|sprite error|\[ERROR\]' | ForEach-Object { $_.Line -replace '^.*\] ', '' } | Select-Object -Unique)
-Write-Output "--- ${Race}: $($built.Count) buildings, $($trained.Count) troops"
+Write-Output "--- ${Race}: $($built.Count) buildings, $($trained.Count) troops, $($researched.Count) research"
 $built | ForEach-Object { Write-Output "  $_" }
 $trained | ForEach-Object { Write-Output "  $_" }
+$researched | ForEach-Object { Write-Output "  $_" }
 $rejected | ForEach-Object { Write-Output "  REJECTED $_" }
 $errors | ForEach-Object { Write-Output "  ERROR $_" }
 Write-Output "log: $log"
-if ($built.Count -ne 6 -or $trained.Count -ne 9 -or $errors.Count -ne 0 -or $process.ExitCode -ne 0) {
-    Write-Error "Expected 6 buildings, 9 troops, no asset errors and a normal exit (exit code $($process.ExitCode))."
+if ($built.Count -ne 6 -or $trained.Count -ne 9 -or $researched.Count -ne 1 -or $errors.Count -ne 0 -or $process.ExitCode -ne 0) {
+    Write-Error "Expected 6 buildings, 9 troops, 1 research, no asset errors and a normal exit (exit code $($process.ExitCode))."
     exit 1
 }
 Write-Output 'Live construction test passed.'

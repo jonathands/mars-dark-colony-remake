@@ -78,16 +78,22 @@ cursor stays put, and takes a screenshot at each step:
 
 1. The lobby (for Gray, the local row's race is toggled first).
 2. The city at the start.
-3. Each of the six buildings, bought from its Build button in prerequisite order.
-4. The nine troops just after they are ordered.
-5. The nine troops again once they are trained.
+3. Each of the six buildings, in prerequisite order: counted on its Build
+   button, then ordered with BUILD.
+4. The nine troops counted, then ordered with the space bar (BUILD's key).
+5. The first research button counted on the Research tab, then BUILD.
+6. The nine troops again once they are trained.
+
+The test window takes the focus. Typing while it runs reaches the game, and
+a space presses BUILD.
 
 The app runs with the `--grant-p7 N` diagnostic, which gives the local player
 N P7 when a Single Player War starts. A game started this way cannot be saved.
 
 The test passes only if all of these hold:
 
-- the log has six `Built` lines and nine `Trained` lines;
+- the log has six `Built` lines, nine `Trained` lines and one completed
+  `Research item` line;
 - the log has no animation or sprite error and no `[ERROR]`;
 - the app exits normally.
 

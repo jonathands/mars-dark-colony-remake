@@ -102,7 +102,7 @@ public sealed partial class MainForm
             DrawGameplayIconButton(graphics, _gameplayHudLayout.LastMessage.Bounds, _gameplayHudLayout.LastMessage.Frame, false, _gameplayMessageIndex > 0);
             DrawGameplayIconButton(graphics, _gameplayHudLayout.NextMessage.Bounds, _gameplayHudLayout.NextMessage.Frame, false,
                 _gameplayMessageIndex >= 0 && _gameplayMessageIndex < _gameplayMessageHistory.Count - 1);
-            NoteHoveredHudControl(_gameplayHudLayout.LastMessage, _gameplayHudLayout.NextMessage);
+            NoteHoveredHudControl(_gameplayHudLayout.LastMessage, _gameplayHudLayout.NextMessage, _gameplayHudLayout.BuildButton);
             var message = GameplayMessageText();
             DrawGameplayHudText(graphics, FitGameplayReadout(message, _gameplayHudLayout.MessageStatus.CharacterCapacity),
                 new Rectangle(_gameplayHudLayout.MessageStatus.Origin, new Size(427, 14)));
@@ -277,18 +277,15 @@ public sealed partial class MainForm
         var actor = _scenarioSimulation?.Actor(lead.InstanceId);
         SetGameplayPanelIdentity(
             selected.Count == 1 && definition is not null ? definition.DisplayName : $"{selected.Count} Structures");
-        // A selected completed structure is a production source, not a
-        // generic faction palette.  `depend.txt` records the prerequisite
-        // building for every troop, so expose only the entries this exact
-        // source can satisfy.  This keeps the HUD's unit buttons aligned with
-        // the engine's authoritative source-building validation.
-        DrawProductionButtons(graphics, lead);
+        // The original has no production per building: a selected structure
+        // leaves the build catalog in place.
+        DrawBuildCatalogButtons(graphics);
         // Structures use the same live actor state as units. Showing their
         // health and decoded stats here keeps production selection from
         // hiding damage state behind a generic instruction.
         if (_showAssetNames)
             DrawGameplayLowerReadout(graphics, definition is null
-                ? (!AvailableTroopItems().Any() ? "NO MATCHED PRODUCTION" : "SELECT UNIT")
+                ? "SELECT UNIT"
                 : GameplayStatsLine(actor, definition), bottom: true);
     }
 
@@ -356,22 +353,50 @@ public sealed partial class MainForm
 
     private void DrawBuildCatalogButtons(Graphics graphics)
     {
-        foreach (var item in AvailableTroopItems())
-            if (TroopSlots().TryGetValue(item.UiId, out var position))
-                DrawCatalogButton(graphics, item.UiId, position, PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
-        foreach (var item in AvailableBuildingItems().GroupBy(item => BuildingSlots().GetValueOrDefault(item.UiId)).Select(group => group
-                     .OrderByDescending(item => PurchaseEligibilityFor(item) == PurchaseEligibility.Available)
-                     .ThenByDescending(item => item.Id)
-                     .First()))
-            if (BuildingSlots().TryGetValue(item.UiId, out var position))
-                DrawCatalogButton(graphics, item.UiId, position, PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
+        foreach (var (item, position) in CatalogButtons())
+            DrawCatalogItem(graphics, item, position);
     }
 
-    private void DrawProductionButtons(Graphics graphics, WorldEntity structure)
+    /// <summary>
+    /// The build catalog shows while no mobile unit of the player is
+    /// selected; the research catalog always.
+    /// </summary>
+    private bool CatalogShown =>
+        _gameplayHudTab == GameplayHudTab.Research || _gameplayHudTab == GameplayHudTab.Build && !SelectedGameplayActors().Any();
+
+    /// <summary>
+    /// The offered gadgets of the current tab's catalog and their places:
+    /// <c>0x437EA0</c> shows only records in state 1. Gadgets that share a
+    /// place (a building and its upgrade) are never offered together.
+    /// </summary>
+    private IEnumerable<(DependencyDefinition Item, Point Position)> CatalogButtons()
     {
-        foreach (var item in TroopItemsForStructure(structure))
-            if (TroopSlots().TryGetValue(item.UiId, out var position))
-                DrawCatalogButton(graphics, item.UiId, position, PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
+        if (_dependencyCatalog is null || _scenarioSimulation is not { } simulation) yield break;
+        var research = _gameplayHudTab == GameplayHudTab.Research;
+        foreach (var item in _dependencyCatalog.Items.Values.OrderBy(item => item.Id))
+        {
+            if (item.IsUpgrade != research) continue;
+            var slots = item.IsTroop ? TroopSlots() : item.IsBuilding ? BuildingSlots() : _grayRace ? GrayResearchSlots : HumanResearchSlots;
+            if (slots.TryGetValue(item.UiId, out var position) && simulation.CatalogState(_localPlayerTeam, item.Id) == CatalogItemState.Offered)
+                yield return (item, position);
+        }
+    }
+
+    /// <summary>
+    /// An offered gadget and its count, which <c>maine</c> writes at the
+    /// gadget's <c>offset</c> in font 0 on the <c>erase</c> colour. An
+    /// unaffordable item is drawn like any other: P7 is only checked on the click.
+    /// </summary>
+    private void DrawCatalogItem(Graphics graphics, DependencyDefinition item, Point position)
+    {
+        DrawCatalogButton(graphics, item.UiId, position, available: true);
+        var count = _scenarioSimulation?.EconomyForTeam(_localPlayerTeam)?.CatalogCount(item.Id) ?? 0;
+        if (count <= 0 || _gameplayHudLayout.CatalogCountOrigin(item.UiId) is not { } origin || _installation is null) return;
+        var font = LoadFont("mfonto7");
+        var text = count.ToString(CultureInfo.InvariantCulture);
+        var cell = font.Sprite.Frames[0].Width + 1;
+        FillNative(graphics, new Rectangle(origin, new Size(text.Length * cell, font.Sprite.Frames[0].Height)), Color.Black);
+        DrawCellText(graphics, text, origin.X, origin.Y, font, colour: 4, palette: "intrface");
     }
 
     private IReadOnlyDictionary<int, Point> TroopSlots() => _grayRace ? GrayTroopSlots : HumanTroopSlots;
@@ -380,59 +405,6 @@ public sealed partial class MainForm
 
     private Rectangle CatalogBounds(int uiId, Point fallbackPosition) =>
         _gameplayHudLayout.CatalogBounds(uiId, new Rectangle(fallbackPosition, new Size(59, 41)));
-
-    private DependencyDefinition? BuildCatalogItemAt(Point point)
-    {
-        var troop = AvailableTroopItems()
-            .FirstOrDefault(item => TroopSlots().TryGetValue(item.UiId, out var position) && CatalogBounds(item.UiId, position).Contains(point));
-        if (troop is not null) return troop;
-        return AvailableBuildingItems()
-            .Where(item => BuildingSlots().TryGetValue(item.UiId, out var position) && CatalogBounds(item.UiId, position).Contains(point))
-            // Advanced variants deliberately overlap their base control in
-            // `maine`; prefer the currently legal record at that location.
-            .OrderByDescending(item => PurchaseEligibilityFor(item) == PurchaseEligibility.Available)
-            .ThenByDescending(item => item.Id)
-            .FirstOrDefault();
-    }
-
-    private WorldEntity? ProductionAnchorFor(DependencyDefinition troop)
-    {
-        if (_scenarioSimulation is null) return null;
-        var selectedIds = _selectedEntityInstanceIds;
-        // The current engine still needs an anchor while native troop-create
-        // coordinates are being traced. Prefer a matching selected structure,
-        // otherwise choose the earliest live completed prerequisite structure
-        // deterministically. This choice is intentionally port-owned.
-        return _scenarioSimulation.Actors
-            .Where(actor => !actor.IsDestroyed && actor.Seed.Team == _localPlayerTeam && actor.Definition.MovementSpeed <= 0)
-            .Select(actor => actor.Seed)
-            .Where(structure => troop.PrerequisiteItemIds.Any(itemId => StructureMatchesBuildItem(structure, itemId)))
-            .OrderByDescending(structure => selectedIds.Contains(structure.InstanceId))
-            .ThenBy(structure => structure.InstanceId)
-            .FirstOrDefault();
-    }
-
-    private IEnumerable<DependencyDefinition> AvailableBuildingItems()
-    {
-        if (_dependencyCatalog is null) return [];
-        return _dependencyCatalog.Items.Values
-            .Where(item => item.IsBuilding && item.BuildingFaction == (_grayRace ? 1 : 0))
-            .OrderBy(item => item.Id);
-    }
-
-    private IEnumerable<DependencyDefinition> AvailableTroopItems()
-    {
-        if (_dependencyCatalog is null || _entityCatalog is null) return [];
-        return _dependencyCatalog.Items.Values
-            .Where(item => item.IsTroop && item.TroopEntityId is { } troopId && (uint)troopId < (uint)_entityCatalog.Entities.Count)
-            .Where(item => _entityCatalog[item.TroopEntityId!.Value].Faction == (_grayRace ? 1 : 0))
-            .OrderBy(item => item.Id);
-    }
-
-    private PurchaseEligibility PurchaseEligibilityFor(DependencyDefinition item) =>
-        _scenarioSimulation is { } simulation && !simulation.UsesPortConstructionAdapters() && !simulation.HasCity(_localPlayerTeam)
-            ? PurchaseEligibility.NoCity
-            : _scenarioSimulation?.EconomyForTeam(_localPlayerTeam)?.Evaluate(_dependencyCatalog, item.Id) ?? PurchaseEligibility.CatalogUnavailable;
 
     private string HarvesterHudStatus(SimulatedActor actor, int ventId)
     {
@@ -491,27 +463,6 @@ public sealed partial class MainForm
         return $"BUILD {item.Id}";
     }
 
-    private IEnumerable<DependencyDefinition> TroopItemsForStructure(WorldEntity structure)
-    {
-        if (_dependencyCatalog is null || _entityCatalog is null) return [];
-        return _dependencyCatalog.Items.Values
-            .Where(item => item.IsTroop && item.TroopEntityId is { } troopId && (uint)troopId < (uint)_entityCatalog.Entities.Count)
-            .Where(item => _entityCatalog[item.TroopEntityId!.Value].Faction == (_grayRace ? 1 : 0))
-            .Where(item => item.PrerequisiteItemIds.Any(prerequisite => StructureMatchesBuildItem(structure, prerequisite)))
-            .OrderBy(item => item.Id);
-    }
-
-    private bool StructureMatchesBuildItem(WorldEntity structure, int itemId)
-    {
-        if (_scenarioSimulation?.Actor(structure.InstanceId) is { } actor) return _scenarioSimulation.StructureSatisfiesBuildItem(actor, itemId);
-        if (_dependencyCatalog?.TryGet(itemId, out var item) != true || !item.IsBuilding || _buildingFootprints is null) return false;
-        return _buildingFootprints.TryResolveBuildingEntity(item.BuildingFaction!.Value, item.BuildingVariant!.Value, item.BuildingSlot!.Value, out var entityId) &&
-               entityId == structure.EntityId;
-    }
-
-    private string TroopLabel(DependencyDefinition item) => _entityCatalog is not null && item.TroopEntityId is { } entityId && (uint)entityId < (uint)_entityCatalog.Entities.Count
-        ? _entityCatalog[entityId].DisplayName.ToUpperInvariant() : $"UNIT {item.Id}";
-
     private string GameplayWeaponLabel(SimulatedActor? actor, EntityDefinition definition)
     {
         var weapon = actor is null ? null : _scenarioSimulation?.EffectiveWeaponFor(actor);
@@ -556,60 +507,15 @@ public sealed partial class MainForm
         return status + $" {special.Label.Replace(" ATTACK", string.Empty, StringComparison.Ordinal)} TECH:{(researched ? "ON" : "OFF")}";
     }
 
-    private IEnumerable<DependencyDefinition> UpgradeItemsForStructure(WorldEntity structure)
-    {
-        if (_dependencyCatalog is null || _entityCatalog is null) return [];
-        return _dependencyCatalog.Items.Values
-            .Where(item => item.IsUpgrade && item.UpgradeEntityId is { } targetId && (uint)targetId < (uint)_entityCatalog.Entities.Count)
-            .Where(item => _entityCatalog[item.UpgradeEntityId!.Value].Faction == (_grayRace ? 1 : 0))
-            .Where(item => _scenarioSimulation?.Actor(structure.InstanceId) is { } actor
-                ? _scenarioSimulation.StructureOffersResearch(actor, item.Id)
-                : item.PrerequisiteItemIds.Any(prerequisite => StructureMatchesBuildItem(structure, prerequisite)))
-            .OrderBy(item => item.Id);
-    }
-
-    private static string UpgradeLabel(DependencyDefinition item) => item.ResearchEffect switch
-    {
-        ResearchEffectKind.Ability => item.UiId == 131 ? "NAPALM" : "VIRUS SAC",
-        ResearchEffectKind.WeaponLevel => $"WPN+{item.UpgradeLevel}",
-        ResearchEffectKind.ArmorLevel => $"ARM+{item.UpgradeLevel}",
-        _ => "RESEARCH",
-    };
-
-    private IReadOnlyList<(DependencyDefinition Item, Point Position)> ResearchButtonsForStructure(WorldEntity structure)
-    {
-        var slots = _grayRace ? GrayResearchSlots : HumanResearchSlots;
-        IReadOnlySet<int> completed = _scenarioSimulation?.EconomyForTeam(_localPlayerTeam)?.CompletedItems ?? new HashSet<int>();
-        return UpgradeItemsForStructure(structure)
-            .Where(item => slots.ContainsKey(item.UiId))
-            .GroupBy(item => slots[item.UiId])
-            .Select(group =>
-            {
-                var ordered = group.OrderBy(item => item.UpgradeLevel ?? 0).ThenBy(item => item.Id).ToArray();
-                var visible = ordered.FirstOrDefault(item => !completed.Contains(item.Id)) ?? ordered[^1];
-                return (Item: visible, Position: slots[visible.UiId]);
-            })
-            .OrderBy(button => button.Item.Id)
-            .ToArray();
-    }
-
+    /// <summary>
+    /// The research catalog: like the build catalog, every offered upgrade
+    /// of the race. Command 12 needs no building.
+    /// </summary>
     private void DrawResearchCatalog(Graphics graphics)
     {
-        var structure = SelectedGameplayEntities().FirstOrDefault(entity => _scenarioSimulation?.Actor(entity.InstanceId)?.Definition.MovementSpeed <= 0);
-        if (structure is not null)
-        {
-            var upgrades = ResearchButtonsForStructure(structure);
-            foreach (var (item, position) in upgrades)
-                DrawCatalogButton(graphics, item.UiId, position, PurchaseEligibilityFor(item) == PurchaseEligibility.Available);
-            SetGameplayPanelIdentity(upgrades.Count == 0 ? "NO RESEARCH" : "RESEARCH");
-            return;
-        }
-        // A preview of the race's upgrade gadgets (maine ids), until a
-        // structure is selected to research at.
-        foreach (var preview in _grayRace ? new[] { 56, 99, 60 } : new[] { 110, 112 })
-            if ((_grayRace ? GrayResearchSlots : HumanResearchSlots).TryGetValue(preview, out var position))
-                DrawCatalogButton(graphics, preview, position, available: false);
-        SetGameplayPanelIdentity("UPGRADES");
+        foreach (var (item, position) in CatalogButtons())
+            DrawCatalogItem(graphics, item, position);
+        SetGameplayPanelIdentity("Research");
     }
 
     private void DrawOptionsCatalog(Graphics graphics)

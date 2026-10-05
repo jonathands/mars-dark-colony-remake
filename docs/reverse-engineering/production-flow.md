@@ -211,16 +211,42 @@ a player queue, a building queue, or an external delivery record; it will also
 reveal source-rate depletion, charge time, and queue capacity without modifying
 or pausing the original process.
 
-## Port implications
+## The player's catalog and BUILD
 
-- Research has no source building in `dc.exe`: the purchase path `0x437F3C`
-  sends command 12 once the availability check passes. The port's research
-  tab and `ResearchIntent` name a structure. A structure offers an upgrade when
-  it stands for one of the upgrade's building prerequisites in any variant at
-  least as high (`0x438220`), or when it offers one of the upgrade's
-  prerequisite upgrades (`StructureOffersResearch`). The catalog sweep
-  (`docs/CATALOG_SWEEP.md`) found research that was unreachable under the
-  earlier exact-building rule.
+The player buys through the catalog's `count` gadgets and the BUILD button,
+implemented by `ScenarioSimulation.Catalog.cs`, `CatalogCountIntent` and
+`BuildIntent`.
+
+- **Clicking a gadget** (`0x433124`): event 4 is the left button, event 5 the
+  right.
+  - The left button adds one to the count and pays the price from P7 at once,
+    but only when the price fits P7. A troop counts up to 50; a building or
+    research only rises from 0.
+  - The right button takes one back and refunds it.
+- **BUILD** (`pushb 19` or the space bar, `0x437F3C`): every record in state 1
+  with a count loses its count and is ordered:
+  - command 9 for a building;
+  - command 10 for a troop, with the count;
+  - command 12 for research.
+- **Command 12** (`0x41CA04`), bytes (type, entity, level, player): sets the
+  weapon (`0x4F18B0`) or armour (`0x4F18B8`) level at once. If the level is
+  already set, it refunds level × 1000. No building is involved.
+- **States** (`0x437BC4`):
+  - 0, done: the building's slot holds that variant or a higher one, or the
+    research level is reached;
+  - 2, unavailable: a prerequisite that is not done, a prerequisite or the
+    item itself still rising (`+0xC10`), or a disabled item;
+  - 1, offered: anything else.
+
+  `0x437EA0` shows only the offered gadgets. P7 is not part of the state.
+
+Because the port runs in lockstep, the counts are simulation state, kept per
+team in `TeamEconomy.CatalogCount`.
+
+The older `PurchaseIntent`, `ProduceUnitIntent` and `ResearchIntent` stay for
+saved games, replays and the engine checks. The app no longer sends them.
+They name a source structure, and in the original research and troops have
+none.
 
 - `depend.txt` prerequisites are evidence-backed. The runnable image's
   purchase helper at `dc16.exe` `0x4566d0` selects from the active player/UI
@@ -251,13 +277,9 @@ or pausing the original process.
   claim that the original building-delivery animation/timing has been matched.
   Do not introduce an authoritative synthetic pedestal or delay until its
   source state and completion boundary are traced.
-- The present engine spawns outside a completed prerequisite structure's
-  executable footprint. With no structure selected, the Build page falls back
-  deterministically to the earliest matching live structure. With one selected,
-  the HUD instead projects only troop records whose prerequisite list matches
-  that exact structure and sends its instance ID to the port-side spawn adapter.
-  This makes production buttons and the authoritative validation agree without
-  claiming that the native command packet carried a building instance.
+- Teams with a city train through their city queues (above). Only a scenario
+  that declares no city at all, which is an engine fixture, still spawns
+  beside a prerequisite structure through `ProduceUnitIntent`.
 - The purchase helper sends its resolved action through `0x40c16c`, which
   serializes opcode `9` on queue kind 7. Dispatcher `0x43db64` handles opcode
   `9` by clearing an indexed player dependency byte and refreshing local

@@ -661,6 +661,16 @@ public sealed partial class ScenarioSimulation
                     buildingPlacements.Add(built);
                 continue;
             }
+            if (command is CatalogCountIntent catalogCount)
+            {
+                ApplyCatalogCount(catalogCount);
+                continue;
+            }
+            if (command is BuildIntent build)
+            {
+                ApplyBuild(build, events);
+                continue;
+            }
             if (command is AllianceIntent alliance)
             {
                 SetAllianceBit(alliance.Player, alliance.Other, alliance.Offer);
