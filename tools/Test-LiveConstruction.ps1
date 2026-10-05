@@ -117,9 +117,9 @@ try {
     # A click counts an item on its button; BUILD (pushb 19) orders it.
     $build = Hud 559 435
     foreach ($step in $buildings.Keys) {
-        # A ship delivers each building (command 19): about 150 updates, ten
-        # seconds, before what needs it can be bought.
-        Send @($buildings[$step], 'wait:300', $build, 'move:258,240', 'wait:11000')
+        # A ship delivers each building (command 19): up to about 250 updates
+        # (the Gray hives' animations are long) before what needs it can be bought.
+        Send @($buildings[$step], 'wait:300', $build, 'move:258,240', 'wait:18000')
         Shot $step
     }
 

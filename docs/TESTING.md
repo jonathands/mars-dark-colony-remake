@@ -79,7 +79,8 @@ cursor stays put, and takes a screenshot at each step:
 1. The lobby (for Gray, the local row's race is toggled first).
 2. The city at the start.
 3. Each of the six buildings, in prerequisite order: counted on its Build
-   button, then ordered with BUILD.
+   button, then ordered with BUILD. The test then waits 18 seconds while a
+   ship delivers it.
 4. The nine troops counted, then ordered with the space bar (BUILD's key).
 5. The first research button counted on the Research tab, then BUILD.
 6. The nine troops again once they are trained.
