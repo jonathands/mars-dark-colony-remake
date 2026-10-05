@@ -319,6 +319,9 @@ public sealed partial class MainForm : Form
         _loop.Start();
     }
 
+    /// <summary>The longest stall the fixed-step clock catches up with, in updates run back to back.</summary>
+    private const int LongestCatchUpMilliseconds = 250;
+
     /// <summary>The game loop's integer milliseconds, which the fixed-step clock counts.</summary>
     private static long LoopMilliseconds => (long)GameLoop.Milliseconds;
 
@@ -337,6 +340,13 @@ public sealed partial class MainForm : Form
         }
         PumpNetworkLobby();
         var simulationStarted = FrameProfiler.Begin();
+        // A frame held up for long (a scenario or save loading, a dialog,
+        // the window being dragged) does not owe the simulation that time:
+        // running the missed updates in one burst froze the game for up to
+        // 256 updates. The clock starts again from now. A network game keeps
+        // its pace with the other players instead.
+        if (!IsNetworkGame && LoopMilliseconds - _clock.AccumulatedTimestamp > LongestCatchUpMilliseconds)
+            _clock = new FixedStepClock(LoopMilliseconds, _clock.IntervalMilliseconds);
         _clock.Advance(LoopMilliseconds, () =>
         {
             FrameProfiler.Step();

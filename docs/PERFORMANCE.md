@@ -52,6 +52,13 @@ perf: 60 fps, frame worst 4.3 | simulation 0.41/2.9 | build 1.08/2.0 | submit 0.
    - The fixed-step clock and movement interpolation read this loop's
      high-resolution clock. `Environment.TickCount64` advances in 15.6 ms
      steps, which made interpolated movement stutter.
+   - A stall longer than 250 ms restarts the fixed-step clock from now
+     instead of being caught up. Stalls include a scenario or save loading,
+     a dialog, and dragging the window. Before, loading a late save in the
+     Debug build took 23 s, and the game then ran up to 256 updates per
+     frame to catch up: 630 ms frames, and the computer players playing
+     the load time unwatched. A network game keeps catching up, at the
+     lockstep's pace.
 2. **Build** (`MainForm.RenderFrame`).
    - World frames are `WorldSprite`s: a GPU image composed straight from the
      FIN, its origin, and the box of its opaque pixels. There is no GDI+
