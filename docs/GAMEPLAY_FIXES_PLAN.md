@@ -28,7 +28,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 20 | A War's map cannot be chosen | done: the list worked but drew its selection with GDI, which the GPU frame drops, and re-centred under the pointer. It is now `multie` list 27 as `list.c` draws it: a cyan row with black text, scroll bar 30, and arrows 28/29 that scroll the rows shown |
 | 21 | Some menu elements are missing or wrong (the encyclopedia among them) | done: every menu with an intrface definition (new campaign, load, War lobby, encyclopedia, network, story) draws its push and check buttons from `knobe.spr` at the native brightness, builds them up with its `banim` and ACTIVE.WAV, plays its gadgets (the encyclopedia's globes, the decorations), labels and scroll bars, and clicks with BUTTON.WAV and HLIGHT.WAV. The encyclopedia's article layout and the main menu are unchanged |
 | 22 | Choosing a race in the new campaign played an animation and a sound | done: the Human portrait rezzes in with REZIN.WAV once the buttons are built; HUMAN/GRAY rez one race out and the other in, then loop it; "Type in a name for your leader" pulses (`interface-widgets.md`) |
-| 23 | Some shots and explosions ignore transparency | open |
+| 23 | Some shots and explosions ignore transparency | done: FIN draw types 4 and 5 are blend tables from the tileset's `.rmp` (haze darkens the ground; fire, sparks, smoke and flashes glow over it). The port fits each table row to `colour + m * ground` and blends it on the GPU; before, they drew as grey and white blobs (`fin-layers.md`) |
 | 24 | A War's Storage Cells and Artifacts options do nothing | done: the loader scatters each position's FUEL/FILL cells (`0x41C6B4`), and the map's artifact sites open only with Artifacts on (`0x41C5C0`); the triggers already filled them |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
@@ -87,8 +87,8 @@ The port had four faults; see `docs/reverse-engineering/combat-damage.md`.
   port drew it opaque. World sprites now leave type-3 layers out; that also
   covers the `blaz` flash of Gray and marine fire. See `fin-layers.md`.
 
-Still different: GASY's `spon` layer (draw type 4) shows as a white blob. The
-original draws type 4 through a remap table that is not verified yet.
+GASY's `spon` layer no longer shows as a white blob: draw types 4 and 5 now
+blend through the tileset's tables (item 23).
 
 The goldens changed for three reasons:
 

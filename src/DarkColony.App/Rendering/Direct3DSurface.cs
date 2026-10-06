@@ -56,6 +56,7 @@ public sealed class Direct3DSurface : Control
     private ID3D11SamplerState? _pointSampler;
     private ID3D11SamplerState? _linearSampler;
     private ID3D11BlendState? _alphaBlend;
+    private ID3D11BlendState? _modulateBlend;
     private const int AtlasPageSize = 2048;
     private const int LargestAtlasImage = 256;
     private readonly AtlasPacker _atlas = new(AtlasPageSize, LargestAtlasImage);
@@ -72,7 +73,7 @@ public sealed class Direct3DSurface : Control
     private ID3D11VertexShader? _batchVertexShader;
     private ID3D11InputLayout? _batchInputLayout;
     private BatchVertex[] _batchQuads = new BatchVertex[4 * 1024];
-    private readonly List<(ID3D11ShaderResourceView View, int FirstQuad, int QuadCount)> _batchRuns = [];
+    private readonly List<(ID3D11ShaderResourceView View, SpriteBlend Blend, int FirstQuad, int QuadCount)> _batchRuns = [];
     private Size _logicalSize = DisplaySettings.ClassicSize;
     private ScaleMode _scaleMode = ScaleMode.Integer;
 
@@ -338,6 +339,20 @@ public sealed class Direct3DSurface : Control
         _pointSampler = device.CreateSamplerState(SamplerDescription.PointClamp);
         _linearSampler = device.CreateSamplerState(SamplerDescription.LinearClamp);
         _alphaBlend = device.CreateBlendState(BlendDescription.NonPremultiplied);
+        // SpriteBlend.Modulate: colour = source + destination * source alpha; the target keeps its alpha.
+        var modulate = new BlendDescription();
+        modulate.RenderTarget[0] = new RenderTargetBlendDescription
+        {
+            BlendEnable = true,
+            SourceBlend = Blend.One,
+            DestinationBlend = Blend.SourceAlpha,
+            BlendOperation = BlendOperation.Add,
+            SourceBlendAlpha = Blend.Zero,
+            DestinationBlendAlpha = Blend.One,
+            BlendOperationAlpha = BlendOperation.Add,
+            RenderTargetWriteMask = ColorWriteEnable.All,
+        };
+        _modulateBlend = device.CreateBlendState(modulate);
     }
 
     /// <summary>
@@ -465,10 +480,10 @@ public sealed class Direct3DSurface : Control
                 _batchQuads[vertex + 1] = new BatchVertex(new Vector2(right, top), new Vector2(uv.Z, uv.Y));
                 _batchQuads[vertex + 2] = new BatchVertex(new Vector2(right, bottom), new Vector2(uv.Z, uv.W));
                 _batchQuads[vertex + 3] = new BatchVertex(new Vector2(left, bottom), new Vector2(uv.X, uv.W));
-                if (_batchRuns.Count > 0 && ReferenceEquals(_batchRuns[^1].View, placement.View))
+                if (_batchRuns.Count > 0 && ReferenceEquals(_batchRuns[^1].View, placement.View) && _batchRuns[^1].Blend == command.Blend)
                     _batchRuns[^1] = _batchRuns[^1] with { QuadCount = _batchRuns[^1].QuadCount + 1 };
                 else
-                    _batchRuns.Add((placement.View, quads, 1));
+                    _batchRuns.Add((placement.View, command.Blend, quads, 1));
                 quads++;
             }
         }
@@ -494,9 +509,15 @@ public sealed class Direct3DSurface : Control
         context.VSSetConstantBuffer(1, _batchConstants);
         context.PSSetShader(_pixelShader);
         context.PSSetSampler(0, _pointSampler);
+        var blend = SpriteBlend.Alpha;
         context.OMSetBlendState(_alphaBlend, null, uint.MaxValue);
-        foreach (var (view, firstQuad, quadCount) in _batchRuns)
+        foreach (var (view, runBlend, firstQuad, quadCount) in _batchRuns)
         {
+            if (runBlend != blend)
+            {
+                blend = runBlend;
+                context.OMSetBlendState(blend == SpriteBlend.Modulate ? _modulateBlend : _alphaBlend, null, uint.MaxValue);
+            }
             context.PSSetShaderResource(0, view);
             context.DrawIndexed((uint)(quadCount * 6), (uint)(firstQuad * 6), 0);
         }
@@ -678,6 +699,7 @@ public sealed class Direct3DSurface : Control
         }
         _transientGpuImages.Clear();
         _alphaBlend?.Dispose();
+        _modulateBlend?.Dispose();
         _linearSampler?.Dispose();
         _pointSampler?.Dispose();
         _inputLayout?.Dispose();
@@ -706,6 +728,7 @@ public sealed class Direct3DSurface : Control
         _pointSampler = null;
         _linearSampler = null;
         _alphaBlend = null;
+        _modulateBlend = null;
         _inputLayout = null;
         _pixelShader = null;
         _sharpPixelShader = null;

@@ -314,6 +314,9 @@ public sealed partial class MainForm
     /// </summary>
     private sealed record WorldSprite(GpuImage Image, Point Origin, Rectangle Opaque)
     {
+        /// <summary>The frame's translucent layers (draw types 4 and 5), drawn after it with <see cref="SpriteBlend.Modulate"/>.</summary>
+        public IReadOnlyList<(GpuImage Image, Point Origin)> Blends { get; init; } = [];
+
         public int Width => Image.Width;
         public int Height => Image.Height;
 
@@ -321,7 +324,43 @@ public sealed partial class MainForm
         public bool IsOpaque(int x, int y) => Image.Rgba[(y * Image.Width + x) * 4 + 3] != 0;
     }
 
-    private readonly Dictionary<(string File, int Frame, bool ShipOnly), WorldSprite?> _worldSprites = [];
+    private readonly Dictionary<(string File, int Frame, bool ShipOnly, string? Blends), WorldSprite?> _worldSprites = [];
+    private NativeBlendTables? _worldBlendTables;
+    private string? _worldBlendTileset;
+
+    /// <summary>
+    /// The tileset's blend tables (<c>jungle.rmp</c> with <c>jungle.gif</c>,
+    /// beside dc.exe), which <c>0x44F200</c> loads for the world. Without them
+    /// translucent layers draw as ordinary sprites.
+    /// </summary>
+    private void LoadWorldBlendTables(string tileset)
+    {
+        if (_installation is null) return;
+        var name = Path.GetFileNameWithoutExtension(tileset);
+        if (string.Equals(name, _worldBlendTileset, StringComparison.OrdinalIgnoreCase)) return;
+        _worldBlendTables = null;
+        _worldBlendTileset = null;
+        try
+        {
+            var tables = _installation.DataFile($"{name}.rmp");
+            var palette = _installation.DataFile($"{name}.gif");
+            if (!File.Exists(tables) || !File.Exists(palette)) return;
+            _worldBlendTables = NativeBlendTables.Load(tables, GifPalette.Load(palette));
+            _worldBlendTileset = name;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException)
+        {
+            RuntimeLog.Info($"Blend tables for {name} unavailable: {error.Message}");
+        }
+    }
+
+    /// <summary>A world sprite with its image's top-left at (x, y), then its translucent layers over it.</summary>
+    private static void DrawWorldSprite(GameCanvas canvas, WorldSprite sprite, int x, int y)
+    {
+        canvas.Draw(sprite.Image, x, y);
+        foreach (var (image, origin) in sprite.Blends)
+            canvas.Draw(image, x - sprite.Origin.X + origin.X, y - sprite.Origin.Y + origin.Y, SpriteBlend.Modulate);
+    }
     private readonly Dictionary<string, string> _finFileNames = new(StringComparer.Ordinal);
 
     /// <summary>The file name of a FIN path, without a new string per call.</summary>
@@ -344,7 +383,7 @@ public sealed partial class MainForm
     private WorldSprite? WorldFrame(string fileName, int frameIndex, bool shipOnly = false)
     {
         if (_installation is null) return null;
-        var key = (fileName, frameIndex, shipOnly);
+        var key = (fileName, frameIndex, shipOnly, _worldBlendTileset);
         if (_worldSprites.TryGetValue(key, out var cached)) return cached;
         WorldSprite? sprite = null;
         try
@@ -354,12 +393,18 @@ public sealed partial class MainForm
                 definition = AnimationDefinition.Load(_installation.DataFile("animate", fileName));
                 _animationDefinitions[fileName] = definition;
             }
+            // Draw types 4 and 5 blend with the ground instead of covering it.
+            var blends = _worldBlendTables;
             var composite = definition.Compose(frameIndex, LoadSprite, bottomAnchored: true,
-                includeLayer: shipOnly ? layer => layer.SpriteName.Equals("drop", StringComparison.OrdinalIgnoreCase) || layer.SpriteName.Equals("sauc", StringComparison.OrdinalIgnoreCase) : null);
+                includeLayer: layer => (blends is null || !NativeBlendTables.IsTranslucent(layer.DrawType)) &&
+                    (!shipOnly || layer.SpriteName.Equals("drop", StringComparison.OrdinalIgnoreCase) || layer.SpriteName.Equals("sauc", StringComparison.OrdinalIgnoreCase)));
             var image = composite.Width > 0 && composite.Height > 0
                 ? new GpuImage(composite.Width, composite.Height, composite.Rgba)
                 : new GpuImage(1, 1, new byte[4]);
-            sprite = new WorldSprite(image, new Point(composite.X, composite.Y), OpaqueBounds(image));
+            sprite = new WorldSprite(image, new Point(composite.X, composite.Y), OpaqueBounds(image))
+            {
+                Blends = blends is null || shipOnly ? [] : ComposeBlendLayers(definition, frameIndex, blends),
+            };
         }
         catch (Exception error) when (error is IOException or InvalidDataException or ArgumentOutOfRangeException)
         {
@@ -367,6 +412,39 @@ public sealed partial class MainForm
         }
         _worldSprites[key] = sprite;
         return sprite;
+    }
+
+    /// <summary>
+    /// A frame's draw-type 4 and 5 layers, one image per type, as
+    /// <see cref="SpriteBlend.Modulate"/> applies them: each pixel holds its
+    /// sprite colour's fitted blend (<see cref="NativeBlendTables"/>), and
+    /// pixels no such layer covers leave the frame as it is.
+    /// </summary>
+    private IReadOnlyList<(GpuImage Image, Point Origin)> ComposeBlendLayers(AnimationDefinition definition, int frameIndex, NativeBlendTables blends)
+    {
+        var images = new List<(GpuImage, Point)>();
+        foreach (var drawType in (ReadOnlySpan<int>)[4, 5])
+        {
+            if (!definition.LogicalFrames[frameIndex].Layers.Any(layer => layer.DrawType == drawType)) continue;
+            var colours = new VgaColor[256];
+            var multipliers = new VgaColor[256];
+            for (var index = 0; index < 256; index++)
+            {
+                var blend = blends.For(drawType, (byte)index);
+                colours[index] = new VgaColor(blend.Red, blend.Green, blend.Blue);
+                multipliers[index] = new VgaColor(blend.Multiplier, blend.Multiplier, blend.Multiplier);
+            }
+            var colour = definition.Compose(frameIndex, LoadSprite, bottomAnchored: true, palette: colours, includeLayer: layer => layer.DrawType == drawType);
+            var multiplier = definition.Compose(frameIndex, LoadSprite, bottomAnchored: true, palette: multipliers, includeLayer: layer => layer.DrawType == drawType);
+            var rgba = colour.Rgba;
+            for (var pixel = 0; pixel < rgba.Length; pixel += 4)
+            {
+                if (rgba[pixel + 3] == 0) (rgba[pixel], rgba[pixel + 1], rgba[pixel + 2]) = ((byte)0, (byte)0, (byte)0);
+                rgba[pixel + 3] = rgba[pixel + 3] == 0 ? NativeBlend.Identity.Multiplier : multiplier.Rgba[pixel];
+            }
+            images.Add((new GpuImage(colour.Width, colour.Height, rgba), new Point(colour.X, colour.Y)));
+        }
+        return images;
     }
 
     /// <summary>The box of an image's drawn pixels; the whole image when none is.</summary>

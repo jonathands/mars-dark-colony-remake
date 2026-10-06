@@ -22,7 +22,20 @@ public sealed class GpuImage
     public bool IsTransient { get; }
 }
 
-public readonly record struct SpriteCommand(GpuImage Image, Rectangle Destination);
+/// <summary>How a sprite meets the frame under it.</summary>
+public enum SpriteBlend
+{
+    /// <summary>Ordinary alpha blending.</summary>
+    Alpha,
+
+    /// <summary>
+    /// The frame becomes <c>sprite + frame * sprite alpha</c>: the world's
+    /// translucent FIN draw types (<see cref="DarkColony.Engine.Assets.NativeBlendTables"/>).
+    /// </summary>
+    Modulate,
+}
+
+public readonly record struct SpriteCommand(GpuImage Image, Rectangle Destination, SpriteBlend Blend = SpriteBlend.Alpha);
 
 public sealed class GameCanvas
 {
@@ -59,8 +72,8 @@ public sealed class GameCanvas
         public void Dispose() => canvas._origin = previous;
     }
 
-    public void Draw(GpuImage image, int x, int y) =>
-        _commands.Add(new SpriteCommand(image, new Rectangle(x + _origin.X, y + _origin.Y, image.Width, image.Height)));
+    public void Draw(GpuImage image, int x, int y, SpriteBlend blend = SpriteBlend.Alpha) =>
+        _commands.Add(new SpriteCommand(image, new Rectangle(x + _origin.X, y + _origin.Y, image.Width, image.Height), blend));
 
     public void Draw(GpuImage image, Rectangle destination) =>
         _commands.Add(new SpriteCommand(image, Shifted(destination)));

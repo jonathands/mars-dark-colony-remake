@@ -61,15 +61,42 @@ The type-3 layers are:
 The port draws no light map. It therefore leaves type-3 layers out of world
 sprites (`DrawLayer.IsLight`, `AnimationDefinition.Compose` with
 `bottomAnchored`). Before this, each explosion showed an opaque grey ellipse
-over the ground. The other types still draw as ordinary sprites; what
-their routines do differently is not decoded.
+over the ground.
 
-One lead for type 4 (`spon`, `smae`, some `nuke` layers): `0x462468` reads
-the screen pixel and the sprite pixel and writes `table[sprite * 256 +
-screen]`. The table is `[0x4891FC]`, which `0x44F21D` sets to the
-colour/brightness remap of `interface-text.md`. As a remap, a `spon` pixel
-(48-79) would darken the ground to 6/16-9/16 of its brightness. This is
-unverified: no capture of the original shows it yet. So the port still draws
-type 4 as an opaque sprite, which is why GASY shows a white blob.
+## Draw types 4 and 5: blend tables
+
+Types 4 and 5 look up a table instead of writing the sprite pixel.
+`0x462468` (type 4) writes `table[sprite * 256 + screen]`, where the table is
+`[0x4891FC]`. `0x462444` (type 5) adds 0x10000 to that pointer (the
+`inc word [0x4891FE]`), calls the same routine, and restores it. The pairs
+in the dispatch table differ only in the direction they walk the sprite
+(`push 1` / `push -1`).
+
+`0x44F200` fills the tables. It reads `<name>.rmp` (0x30000 bytes, three 64
+KB tables) and builds them itself when the file is missing. The world uses
+the tileset's file, `jungle.rmp`, `desert.rmp` or `atlantis.rmp` beside
+`dc.exe`, with the palette of the `.gif` of the same name.
+
+- **The first table** is the colour/brightness remap of `interface-text.md`,
+  laid out `brightness * 0x800 + colour * 0x100 + index`. A type-4 sprite
+  pixel p is therefore brightness `p >> 3` and colour `p & 7` applied to the
+  ground: the `haze` smoke (`spon`, `smae` and `nuke` layers of `haze.fin`)
+  darkens it.
+- **The second table** (type 5) has glow ramps in rows 32-79: 32 leaves the
+  ground, 33-47 whiten it, 48-75 tint it red, then orange, then yellow, and
+  76-79 make it white. Explosion fire (`nuke`, `gasy`, `spon`, `smae`),
+  sparks, smoke, and muzzle and hit flashes are type 5.
+- The third table scales the ground by row / 128 (128 leaves it). It is
+  probably the light map's; the port does not use it.
+
+The port draws in RGB, so `NativeBlendTables` turns each row into the
+least-squares fit of `colour + m * ground` (one m for all channels) over the
+256 palette colours, and the GPU applies it with `SpriteBlend.Modulate`
+(`frame = sprite + frame * sprite alpha`). The fit leaves an RMS error of
+about 10-25 levels per channel, partly the palette's own rounding. A frame's
+type-4 and type-5 layers are composed into images of their own and drawn
+after its other layers, so a translucent layer that the original drew under
+an ordinary one now goes over it. Before this the port drew both types as
+ordinary sprites: grey and white blobs instead of fire.
 
 The first two trailing words remain unnamed.

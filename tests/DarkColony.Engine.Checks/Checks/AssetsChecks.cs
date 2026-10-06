@@ -450,5 +450,33 @@ internal static class AssetsChecks
             var slugRetract = animations.PreferredRetract(14, 0) ?? throw new InvalidOperationException("SLUG RETRACT family missing.");
             Equal(true, slugRetract.Candidate.AnimationName.StartsWith("SLUGRETRACT", StringComparison.OrdinalIgnoreCase));
         }, CheckTags.Data);
+        Check("translucent FIN layers blend through the tileset's .rmp tables", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var tables = NativeBlendTables.Load(install.DataFile("jungle.rmp"), GifPalette.Load(install.DataFile("jungle.gif")));
+            // Index 0 is transparent: it leaves the screen as it is.
+            Equal(NativeBlend.Identity, tables.For(5, 0));
+            // Type 5 reads the second table: row 32 leaves the screen, 76-79 make it white,
+            // and 48-75 glow red to yellow, brighter further up the ramp.
+            var neutral = tables.For(5, 32);
+            Equal(true, neutral.Multiplier >= 250 && neutral.Red + neutral.Green + neutral.Blue <= 3);
+            Equal(new NativeBlend(255, 255, 255, 0), tables.For(5, 76));
+            var (low, high) = (tables.For(5, 52), tables.For(5, 68));
+            Equal(true, high.Red > high.Green && high.Green > high.Blue && high.Red > low.Red && high.Multiplier < low.Multiplier);
+            // Type 4 reads the first (the colour remap): sprite 64 is brightness 8 of
+            // colour 0, about half the ground, untinted.
+            var shade = tables.For(4, 64);
+            Equal(true, shade.Multiplier is >= 110 and <= 135 && Math.Max(shade.Red, Math.Max(shade.Green, shade.Blue)) < 12);
+            Equal(false, NativeBlendTables.IsTranslucent(3));
+
+            // The explosions use them: NUKE and GASY draw their fire with draw type 5.
+            foreach (var (file, name) in (ReadOnlySpan<(string, string)>)[("nuke.fin", "NUKE"), ("gasy.fin", "GASY")])
+            {
+                var fin = AnimationDefinition.Load(install.DataFile("animate", file));
+                var range = fin.Animations.First(animation => animation.Name == name);
+                Equal(true, Enumerable.Range(range.FirstFrame, range.LastFrame - range.FirstFrame + 1)
+                    .Any(frame => fin.LogicalFrames[frame].Layers.Any(layer => layer.DrawType == 5)));
+            }
+        }, CheckTags.Data);
     }
 }

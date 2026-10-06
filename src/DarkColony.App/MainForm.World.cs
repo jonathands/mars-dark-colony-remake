@@ -198,6 +198,7 @@ public sealed partial class MainForm
             if (scenario.WarLaunch is { } warLaunch) definition = warLaunch.ApplyTo(definition);
             _gameplayMap = TerrainMap.Load(_installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.map"));
             _gameplayTileset = BtsTileset.Load(_installation.DataFile("scenario", definition.Tileset));
+            LoadWorldBlendTables(definition.Tileset);
             _gameplayPath = PathRegionMap.Load(
                 _installation.DataFile("scenario", scenario.Directory, $"{scenario.Name}.pth"),
                 _gameplayMap.Width,
@@ -537,7 +538,7 @@ public sealed partial class MainForm
         void DrawAt(WorldSprite? sprite, int lift)
         {
             if (sprite is null) return;
-            canvas.Draw(sprite.Image,
+            DrawWorldSprite(canvas, sprite,
                 position.XRaw / 8 - _cameraX + sprite.Origin.X,
                 WorldPixelY(position.ZRaw) - _cameraY + sprite.Origin.Y - lift);
         }
@@ -553,7 +554,7 @@ public sealed partial class MainForm
                 DrawAt(WorldFrame(fileName, frame), 0);
                 return true;
             default:
-                canvas.Draw(visual.Sprite.Image, visual.CanvasBounds);
+                DrawWorldSprite(canvas, visual.Sprite, visual.CanvasBounds.X, visual.CanvasBounds.Y);
                 DrawAt(WorldFrame(fileName, animation.LastFrame, shipOnly: true), (int)(DeliveryFlightHeight * (1 - share) * (1 - share)));
                 return true;
         }
@@ -583,7 +584,7 @@ public sealed partial class MainForm
         var frame = NativeFrame(fileName, animation.FirstFrame, animation.LastFrame, (ulong)Math.Max(0, total - state.TicksRemaining), NativeAnimationMode.Once);
         if (frame < 0 || WorldFrame(fileName, frame) is not { } sprite) return;
         var position = simulation.CityArtAnchor(building.InstanceId) ?? ActorPosition(building);
-        canvas.Draw(sprite.Image,
+        DrawWorldSprite(canvas, sprite,
             position.XRaw / 8 - _cameraX + sprite.Origin.X,
             WorldPixelY(position.ZRaw) - _cameraY + sprite.Origin.Y);
     }
@@ -627,7 +628,7 @@ public sealed partial class MainForm
                     var groundY = opaque.Bottom;
                     canvas.Ellipse(new Rectangle(centerX - 25, groundY - 12, 50, 20), Color.FromArgb(72, 255, 255), thickness: 2, foreground: true);
                 }
-                if (!DrawBuildingDelivery(canvas, entity, visual)) canvas.Draw(visual.Sprite.Image, visual.CanvasBounds);
+                if (!DrawBuildingDelivery(canvas, entity, visual)) DrawWorldSprite(canvas, visual.Sprite, visual.CanvasBounds.X, visual.CanvasBounds.Y);
                 if (actorState is not null && actorState.Definition.MovementSpeed <= 0) DrawProductionAnimation(canvas, entity);
 
                 // Status indicators are foreground UI. Draw them after the
@@ -692,7 +693,7 @@ public sealed partial class MainForm
                     var frame = candidate.FirstFrame + (ushort)(projectile.AnimationTicks % span);
                     if (WorldFrame(fileName, frame) is { } sprite)
                     {
-                        canvas.Draw(sprite.Image, x + sprite.Origin.X, y + sprite.Origin.Y);
+                        DrawWorldSprite(canvas, sprite, x + sprite.Origin.X, y + sprite.Origin.Y);
                         rendered = true;
                     }
                 }
@@ -813,7 +814,7 @@ public sealed partial class MainForm
                 continue;
             }
             if (HiddenByFog(effect.Position) || WorldFrame(fileName, frame) is not { } sprite) continue;
-            canvas.Draw(sprite.Image, effect.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + sprite.Origin.Y);
+            DrawWorldSprite(canvas, sprite, effect.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + sprite.Origin.Y);
         }
     }
 
@@ -829,7 +830,7 @@ public sealed partial class MainForm
         var fileName = FinFileName(candidate.FinPath);
         var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, (ulong)((projectile.BurnSubsteps ?? 0) / ScenarioSimulation.NativeProjectileSubstepsPerTick));
         if (WorldFrame(fileName, frame) is not { } sprite) return;
-        canvas.Draw(sprite.Image, projectile.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(projectile.Position.ZRaw) - _cameraY + sprite.Origin.Y);
+        DrawWorldSprite(canvas, sprite, projectile.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(projectile.Position.ZRaw) - _cameraY + sprite.Origin.Y);
     }
 
     private void DrawGameplayTransportEffects(Graphics graphics, GameCanvas canvas)
@@ -845,7 +846,7 @@ public sealed partial class MainForm
             var fileName = FinFileName(candidate.FinPath);
             var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, _world.TickCount);
             if (WorldFrame(fileName, frame) is not { } sprite) continue;
-            canvas.Draw(sprite.Image,
+            DrawWorldSprite(canvas, sprite,
                 transport.Position.XRaw / 8 - _cameraX + sprite.Origin.X,
                 WorldPixelY(transport.Position.ZRaw) - transport.HeightRaw / 8 - _cameraY + sprite.Origin.Y);
             if (!_showAssetNames) continue;
@@ -880,7 +881,7 @@ public sealed partial class MainForm
                 continue;
             }
             if (HiddenByFog(effect.Position) || WorldFrame(fileName, frame) is not { } sprite) continue;
-            canvas.Draw(sprite.Image, effect.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + sprite.Origin.Y);
+            DrawWorldSprite(canvas, sprite, effect.Position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(effect.Position.ZRaw) - _cameraY + sprite.Origin.Y);
         }
     }
 
