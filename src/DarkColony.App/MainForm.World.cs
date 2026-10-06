@@ -102,7 +102,7 @@ public sealed partial class MainForm
         if (_minimapPreview is not null && stamp != _minimapPreviewStamp) DisposeGameplayMinimapPreview();
         _minimapPreviewStamp = stamp;
         _minimapPreview ??= BuildGameplayMinimap(_gameplayMap, _gameplayTileset,
-            simulation is null ? null : cell => simulation.IsCellExploredByTeam(_localPlayerTeam, cell));
+            simulation is null ? null : cell => simulation.ViewBrightness(_localPlayerTeam, cell));
         var state = graphics.Save();
         graphics.SetClip(GameplayMinimapBounds);
         if (_activeCanvas is { } canvas)
@@ -112,8 +112,7 @@ public sealed partial class MainForm
 
         if (_scenarioSimulation is not null)
         {
-            foreach (var actor in _scenarioSimulation.Actors.Where(actor => !actor.IsDestroyed)
-                         .Where(actor => _revealMap || actor.Seed.Team == _localPlayerTeam || _scenarioSimulation.IsActorVisibleToTeam(_localPlayerTeam, actor)))
+            foreach (var actor in _scenarioSimulation.Actors.Where(actor => !actor.IsDestroyed && !HiddenByFog(actor)))
             {
                 var position = RenderActorPosition(actor.Seed.InstanceId, actor.Movement.VisualPosition);
                 var x = GameplayMinimapBounds.X + position.XRaw / 256d / _gameplayMap.Width * GameplayMinimapBounds.Width;
@@ -146,11 +145,13 @@ public sealed partial class MainForm
         graphics.Restore(state);
     }
 
-    /// <param name="explored">
-    /// The local team's explored memory; cells it has never seen stay black,
-    /// as the native minimap (0x439FF8) draws them.
+    /// <param name="brightness">
+    /// The local team's view of each cell (<see cref="ScenarioSimulation.ViewBrightness"/>).
+    /// The native minimap (<c>0x439FF8</c>) draws cells never seen black and
+    /// cells out of sight from a second copy of its picture whose channels
+    /// are 2/3 of the first (<c>0x43A468</c>).
     /// </param>
-    private static Bitmap BuildGameplayMinimap(TerrainMap map, BtsTileset tileset, Func<CellCoordinate, bool>? explored)
+    private static Bitmap BuildGameplayMinimap(TerrainMap map, BtsTileset tileset, Func<CellCoordinate, int>? brightness)
     {
         var image = new Bitmap(ClassicMinimapBounds.Width, ClassicMinimapBounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         for (var y = 0; y < image.Height; y++)
@@ -160,7 +161,8 @@ public sealed partial class MainForm
             // inversion maps world Z; MAP rows are already in screen order.
             var mapX = Math.Min(map.Width - 1, ((x * 2 + 1) * map.Width) / (image.Width * 2));
             var mapY = Math.Min(map.Height - 1, ((y * 2 + 1) * map.Height) / (image.Height * 2));
-            if (explored is not null && !explored(new CellCoordinate(mapX, map.Height - 1 - mapY)))
+            var view = brightness?.Invoke(new CellCoordinate(mapX, map.Height - 1 - mapY)) ?? FogShading.InSight;
+            if (view == FogShading.Unexplored)
             {
                 image.SetPixel(x, y, Color.Black);
                 continue;
@@ -170,7 +172,10 @@ public sealed partial class MainForm
             if (!tileset.TilesById.TryGetValue(tileId, out var tile)) continue;
             var paletteIndex = tile.PaletteIndices[16 * TerrainTile.Width + 16];
             var color = tileset.Palette[paletteIndex];
-            image.SetPixel(x, y, Color.FromArgb(color.Red, color.Green, color.Blue));
+            var (red, green, blue) = view == FogShading.InSight
+                ? (color.Red, color.Green, color.Blue)
+                : (color.Red * 2 / 3, color.Green * 2 / 3, color.Blue * 2 / 3);
+            image.SetPixel(x, y, Color.FromArgb(red, green, blue));
         }
         return image;
     }
@@ -222,6 +227,7 @@ public sealed partial class MainForm
             _bailOutcome = null;
             _missionStartedAtMilliseconds = Environment.TickCount64;
             _previousActorRenderPositions.Clear();
+            _rememberedCitySlots.Clear();
             _groundOccupancy = _scenarioSimulation.GroundOccupancy;
             _alternateOccupancy = _scenarioSimulation.AlternateOccupancy;
             _autonomousEntities = _scenarioSimulation.Actors
@@ -325,29 +331,61 @@ public sealed partial class MainForm
         graphics.Restore(state);
     }
 
+    // Fog tiles by their corner brightnesses, five bits each.
+    private readonly Dictionary<int, Bitmap> _fogTiles = [];
+
+    /// <summary>
+    /// The fog of war over the terrain, before anything stands on it
+    /// (<see cref="FogShading"/>): ground in sight stays as it is, ground
+    /// explored but out of sight darkens to 10/16, and ground never seen is
+    /// black, each tile blending between its corners. A tile at brightness b
+    /// is covered with black at opacity 1 - b/16, which leaves b/16 of it.
+    /// </summary>
     private void DrawGameplayFogOfWar(Graphics graphics)
     {
-        if (_scenarioSimulation is null || _gameplayMap is null || _revealMap) return;
-        // The original leaves map space no stamp has reached black (grid bit 31,
-        // explored memory). Hostile units outside current sight are hidden by
-        // the actor pass, not here.
-        var state = _activeCanvas is null ? graphics.Save() : null;
-        if (_activeCanvas is null) graphics.SetClip(new Rectangle(Point.Empty, GameplayWorldArea));
-        using var unseen = _activeCanvas is null ? new SolidBrush(Color.Black) : null;
+        if (_scenarioSimulation is not { } simulation || _gameplayMap is null || _revealMap) return;
         var firstX = Math.Max(0, _cameraX / 32);
         var firstRow = Math.Max(0, _cameraY / 32);
         var lastX = Math.Min(_gameplayMap.Width - 1, (_cameraX + GameplayWorldArea.Width - 1) / 32);
         var lastRow = Math.Min(_gameplayMap.Height - 1, (_cameraY + GameplayWorldArea.Height - 1) / 32);
-        for (var row = firstRow; row <= lastRow; row++)
-        for (var x = firstX; x <= lastX; x++)
+        // The view's cells and a one-cell margin, in screen rows.
+        var columns = lastX - firstX + 3;
+        var rows = lastRow - firstRow + 3;
+        var cells = new int[rows, columns];
+        for (var row = 0; row < rows; row++)
+        for (var column = 0; column < columns; column++)
+            cells[row, column] = simulation.ViewBrightness(_localPlayerTeam,
+                new CellCoordinate(firstX + column - 1, _gameplayMap.Height - 1 - (firstRow + row - 1)));
+        var state = _activeCanvas is null ? graphics.Save() : null;
+        if (_activeCanvas is null) graphics.SetClip(new Rectangle(Point.Empty, GameplayWorldArea));
+        for (var row = 1; row < rows - 1; row++)
+        for (var column = 1; column < columns - 1; column++)
         {
-            var z = _gameplayMap.Height - 1 - row;
-            if (_scenarioSimulation.IsCellExploredByTeam(_localPlayerTeam, new CellCoordinate(x, z))) continue;
-            var bounds = new Rectangle(x * 32 - _cameraX, row * 32 - _cameraY, 32, 32);
-            if (_activeCanvas is { } canvas) canvas.Fill(bounds, Color.Black);
-            else graphics.FillRectangle(unseen!, bounds);
+            // The corner at the top left of the cell (row + down, column + right).
+            int Corner(int down, int right) => FogShading.Corner(
+                cells[row + down - 1, column + right - 1], cells[row + down - 1, column + right],
+                cells[row + down, column + right - 1], cells[row + down, column + right]);
+            var (topLeft, topRight, bottomLeft, bottomRight) = (Corner(0, 0), Corner(0, 1), Corner(1, 0), Corner(1, 1));
+            if (topLeft + topRight + bottomLeft + bottomRight == 4 * FogShading.InSight) continue;
+            var key = topLeft | topRight << 5 | bottomLeft << 10 | bottomRight << 15;
+            if (!_fogTiles.TryGetValue(key, out var tile)) _fogTiles[key] = tile = FogTile(topLeft, topRight, bottomLeft, bottomRight);
+            var x = (firstX + column - 1) * 32 - _cameraX;
+            var y = (firstRow + row - 1) * 32 - _cameraY;
+            if (_activeCanvas is { } canvas) canvas.Draw(GpuBitmap(tile), x, y);
+            else graphics.DrawImageUnscaled(tile, x, y);
         }
         if (state is not null) graphics.Restore(state);
+    }
+
+    private static Bitmap FogTile(int topLeft, int topRight, int bottomLeft, int bottomRight)
+    {
+        Span<byte> brightness = stackalloc byte[FogShading.TileSize * FogShading.TileSize];
+        FogShading.Fill(brightness, topLeft, topRight, bottomLeft, bottomRight);
+        var tile = new Bitmap(FogShading.TileSize, FogShading.TileSize, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        for (var y = 0; y < FogShading.TileSize; y++)
+        for (var x = 0; x < FogShading.TileSize; x++)
+            tile.SetPixel(x, y, Color.FromArgb((FogShading.InSight - brightness[y * FogShading.TileSize + x]) * 255 / FogShading.InSight, 0, 0, 0));
+        return tile;
     }
 
     private void DrawBuildingPlacementPreview(Graphics graphics)
@@ -497,19 +535,32 @@ public sealed partial class MainForm
         return _drawnActorVisuals;
     }
 
+    // The city slots the local player has seen a building in (player + 0xC20).
+    private readonly HashSet<(int Team, int Slot)> _rememberedCitySlots = [];
+
     /// <summary>
-    /// The fog of war: another team's unit that the local player does not
-    /// see now is not drawn, hovered or clicked. Sight is the team's last
-    /// visibility picture (rebuilt every 16 updates, vision.md), which also
-    /// holds the players it shares vision with. Structures stay drawn on
-    /// explored ground; the original's remembered overlays (grid bits 10-17)
-    /// are not decoded. <c>--reveal-map</c> (Ctrl+F12) shows everything.
+    /// The fog of war, as the main view tests each actor (<c>0x4395D4</c>):
+    /// another team's actor that the local player does not see now is not
+    /// drawn, hovered or clicked. Sight is the team's last visibility
+    /// picture (rebuilt every 16 updates, vision.md), which also holds the
+    /// players it shares vision with. A city building is seen when any cell
+    /// of its slot is, and stays drawn out of sight once seen; the original
+    /// then draws the building it remembers, the port the one standing now.
+    /// <c>--reveal-map</c> (Ctrl+F12) shows everything.
     /// </summary>
-    private bool HiddenByFog(WorldEntity entity)
+    private bool HiddenByFog(WorldEntity entity) =>
+        _scenarioSimulation?.Actor(entity.InstanceId) is { } actor && HiddenByFog(actor);
+
+    private bool HiddenByFog(SimulatedActor actor)
     {
-        if (_revealMap || entity.Team == _localPlayerTeam || _scenarioSimulation is not { } simulation ||
-            simulation.Actor(entity.InstanceId) is not { } actor || actor.Definition.MovementSpeed <= 0) return false;
-        return !simulation.IsActorVisibleToTeam(_localPlayerTeam, actor);
+        if (_revealMap || actor.Seed.Team == _localPlayerTeam || _scenarioSimulation is not { } simulation) return false;
+        var slot = simulation.CitySlotOf(actor);
+        if (simulation.IsActorVisibleToTeam(_localPlayerTeam, actor))
+        {
+            if (slot is { } seen) _rememberedCitySlots.Add(seen);
+            return false;
+        }
+        return slot is not { } remembered || !_rememberedCitySlots.Contains(remembered);
     }
 
     /// <summary>Whether a shot, explosion or death at the position lies outside the local player's current sight.</summary>

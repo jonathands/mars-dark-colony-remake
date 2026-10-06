@@ -64,9 +64,42 @@ public sealed partial class ScenarioSimulation
         return teamExplored![teamId][cell.Z * path.Width + cell.X];
     }
 
-    /// <summary>Visibility of a live actor at its authoritative occupied cell.</summary>
-    public bool IsActorVisibleToTeam(int teamId, SimulatedActor actor) =>
-        !actor.IsDestroyed && IsCellVisibleToTeam(teamId, actor.Movement.OccupiedCell);
+    /// <summary>
+    /// The brightness the terrain pass (<c>0x453B94</c>) gives a cell of the
+    /// team's view, out of 16: 16 in sight, 10 explored but out of sight, 0
+    /// never seen. Cells outside the map read the nearest edge cell.
+    /// </summary>
+    public int ViewBrightness(int teamId, CellCoordinate cell)
+    {
+        cell = new CellCoordinate(Math.Clamp(cell.X, 0, path.Width - 1), Math.Clamp(cell.Z, 0, path.Height - 1));
+        if (IsCellVisibleToTeam(teamId, cell)) return FogShading.InSight;
+        return IsCellExploredByTeam(teamId, cell) ? FogShading.OutOfSight : FogShading.Unexplored;
+    }
+
+    /// <summary>
+    /// Whether the team sees the live actor now, as the main view tests it
+    /// before drawing (<c>0x4395D4</c>): a city building when any cell of its
+    /// slot is in sight (<c>0x444C80</c>), any other actor when the cell of its
+    /// position is (<c>0x4396F1</c>). Another team's mine also needs a
+    /// detector of the team to have revealed it (<c>0x43970F</c>).
+    /// </summary>
+    public bool IsActorVisibleToTeam(int teamId, SimulatedActor actor)
+    {
+        if (actor.IsDestroyed) return false;
+        if (CitySlotOf(actor) is var (team, slot) && footprints is not null && cityOrigins.TryGetValue(team, out var origin))
+            return footprints.CitySlotCells(origin, slot).Any(cell => IsCellVisibleToTeam(teamId, cell));
+        if (EffectiveDefinition(actor).UsesNativeMineLayer && actor.Seed.Team != teamId &&
+            (teamId is < 0 or > 7 || (actor.RevealedTeamMask & (1 << teamId)) == 0)) return false;
+        return IsCellVisibleToTeam(teamId, actor.Movement.VisualPosition.Cell);
+    }
+
+    /// <summary>The team and city slot (0-5) the actor fills, if it is a city building.</summary>
+    public (int Team, int Slot)? CitySlotOf(SimulatedActor actor)
+    {
+        foreach (var (key, instanceId) in cityBuildings)
+            if (instanceId == actor.Seed.InstanceId) return key;
+        return null;
+    }
 
     private bool IsCellVisibleForScan(int team, CellCoordinate cell) => IsCellVisibleToTeam(team, cell);
 

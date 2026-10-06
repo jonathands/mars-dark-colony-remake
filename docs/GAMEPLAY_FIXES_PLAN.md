@@ -31,6 +31,9 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 23 | Some shots and explosions ignore transparency | done: FIN draw types 4 and 5 are blend tables from the tileset's `.rmp` (haze darkens the ground; fire, sparks, smoke and flashes glow over it). The port fits each table row to `colour + m * ground` and blends it on the GPU; before, they drew as grey and white blobs (`fin-layers.md`) |
 | 24 | A War's Storage Cells and Artifacts options do nothing | done: the loader scatters each position's FUEL/FILL cells (`0x41C6B4`), and the map's artifact sites open only with Artifacts on (`0x41C5C0`); the triggers already filled them |
 | 25 | The VTOL's build animation shows two VTOLs for a moment | done: the second one was its shadow. FIN draw type 2 is a shadow (each opaque pixel darkens the ground to 9/16 through the first blend table, `0x4603A7`); the port drew it as a sprite. The Gray saucer, the Drop Ship and the transports had the same fault (`fin-layers.md`) |
+| 26 | The fog of war hides things without a dark shadow, and hides things right in front of units | done: the terrain pass (0x453B94) shades ground out of sight to 10/16 and unexplored ground to black, blending each tile between corner means; the minimap draws ground out of sight at 2/3. Actors follow the native draw test (0x4395D4): city buildings by their slot's cells (and stay drawn once seen), anything else by the cell of its position, mines only once detected. Units are hidden when outside their sight radius, which is short for some (a Gray soldier sees 4 cells by day); the shading now shows where that ends (`vision.md`) |
+| 27 | The Sarge's walk slides | open |
+| 28 | A War should be won by destroying all buildings (the user's rule, replacing item 13's reading) | open |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

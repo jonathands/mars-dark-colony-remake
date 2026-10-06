@@ -111,6 +111,13 @@ internal static class VisionChecks
             // Explored memory (bit 31) takes every reached cell, shaded or not.
             Equal(true, simulation.IsCellExploredByTeam(0, farShade));
             Equal(false, simulation.IsCellExploredByTeam(0, new CellCoordinate(viewer.X + hidden[0].DeltaX, viewer.Z + hidden[0].DeltaZ)));
+            // The view shades them 16 (in sight), 10 (explored) and 0 (never seen).
+            Equal((16, 10, 0), (simulation.ViewBrightness(0, nearShade), simulation.ViewBrightness(0, farShade),
+                simulation.ViewBrightness(0, new CellCoordinate(viewer.X + hidden[0].DeltaX, viewer.Z + hidden[0].DeltaZ))));
+            // Outside the map it reads the nearest edge cell.
+            Equal(simulation.ViewBrightness(0, new CellCoordinate(0, viewer.Z)), simulation.ViewBrightness(0, new CellCoordinate(-1, viewer.Z)));
+            // An actor is seen by the cell of its position.
+            Equal(true, simulation.IsActorVisibleToTeam(0, scout));
 
             // Night begins next update and is fully dark one update later (night
             // sight 8), but the stamps only refresh on update 16.
@@ -121,6 +128,40 @@ internal static class VisionChecks
             Equal(false, simulation.IsCellVisibleToTeam(0, far));
             simulation.Step([]);
             Equal(true, simulation.IsCellVisibleToTeam(0, far));
+        }, CheckTags.Data);
+
+        Check("fog of war: the terrain pass's brightnesses, corners and ramps", () =>
+        {
+            // 0x453B94: out-of-sight cells 10 (mov edx, 0xA), in sight 16
+            // (mov edi, 0x10), the cell word tested against the player's mask
+            // (test [esi], edi) and against bit 31 (test byte [..+3], 0x80),
+            // and each corner the four cells' sum >> 2 (sar edi, 2).
+            var image = PeImage.Load(GameInstallation.Open(dataPath).ExecutablePath);
+            string Bytes(uint address, int length) => string.Join(' ', image.AtVirtualAddress(address, length).ToArray().Select(value => value.ToString("x2")));
+            Equal("ba 0a 00 00 00", Bytes(0x453BAE, 5));
+            Equal("bf 10 00 00 00", Bytes(0x453CEF, 5));
+            Equal("85 3e", Bytes(0x453D62, 2));
+            Equal("f6 44 b0 03 80", Bytes(0x453D79, 5));
+            Equal("c1 ff 02", Bytes(0x453E31, 3));
+            // 0x4539F0 builds the 17 x 17 ramps over 32 steps, dividing by 31.
+            Equal("ba 1f 00 00 00", Bytes(0x453A68, 5));
+            Equal("83 f9 11", Bytes(0x453AA6, 3));
+            Equal((FogShading.InSight, FogShading.OutOfSight, FogShading.Unexplored), (16, 10, 0));
+
+            // A corner where three cells in sight meet one out of sight: 58 >> 2.
+            Equal(14, FogShading.Corner(16, 16, 16, 10));
+            Equal(0, FogShading.Corner(0, 0, 0, 0));
+            var tile = new byte[FogShading.TileSize * FogShading.TileSize];
+            FogShading.Fill(tile, 16, 16, 16, 16);
+            Equal(true, tile.All(value => value == 16));
+            // Dark on the left, lit on the right: each row ramps 0 to 16, rounded down.
+            FogShading.Fill(tile, 0, 16, 0, 16);
+            Equal((0, 7, 16), (tile[0], tile[15], tile[31]));
+            Equal((0, 16), (tile[31 * 32], tile[31 * 32 + 31]));
+            // Edges first, top to bottom, then each row: the bottom-right corner alone.
+            FogShading.Fill(tile, 0, 0, 0, 16);
+            Equal((0, 0, 16), (tile[31], tile[31 * 32], tile[31 * 32 + 31]));
+            Equal(FogShading.Ramp(FogShading.Ramp(0, 0, 16), FogShading.Ramp(0, 16, 16), 16), (int)tile[16 * 32 + 16]);
         }, CheckTags.Data);
     }
 }

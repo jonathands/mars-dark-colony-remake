@@ -515,11 +515,11 @@ public sealed partial class MainForm : Form
         if (_screen == MenuScreenId.Gameplay)
         {
             DrawGameplayTerrain(canvas);
+            DrawGameplayFogOfWar(graphics);
             DrawGameplayPathRegions(graphics);
             DrawGameplayVents(graphics);
             DrawBuildingPlacementPreview(graphics);
             DrawGameplayActors(graphics, canvas);
-            DrawGameplayFogOfWar(graphics);
             if (background is not null) DrawGameplayHud(graphics, background);
             DrawGameplayMinimap(graphics);
             DrawGameplayUnitHud(graphics);
