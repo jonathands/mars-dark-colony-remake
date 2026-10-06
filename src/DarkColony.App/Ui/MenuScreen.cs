@@ -19,4 +19,5 @@ public sealed record MenuButton(
     string Label,
     Action Action,
     bool Selected = false,
-    string? ArtName = null);
+    string? ArtName = null,
+    int? NativeId = null);

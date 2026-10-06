@@ -47,6 +47,7 @@ Each note gives addresses, what is confirmed, and what the port implements.
 | [gameplay-ui-dispatch.md](reverse-engineering/gameplay-ui-dispatch.md) | From UI events to HUD controls |
 | [game-options.md](reverse-engineering/game-options.md) | The in-game OPTIONS popup |
 | [interface-text.md](reverse-engineering/interface-text.md) | Font colour remap and the credits teletype |
+| [interface-widgets.md](reverse-engineering/interface-widgets.md) | Menu definitions: buttons, lists, scroll bars, gadgets, the new campaign screen |
 | [fin-layers.md](reverse-engineering/fin-layers.md) | FIN draw layers: mirroring, lights, draw types |
 | [cd-music.md](reverse-engineering/cd-music.md) | The CD soundtrack schedule |
 | [video.md](reverse-engineering/video.md) | When and how the Cinepak videos play |

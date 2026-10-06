@@ -4,6 +4,7 @@ using DarkColony.App.Rendering;
 using DarkColony.Engine.Assets;
 using DarkColony.Engine.Combat;
 using DarkColony.Engine.Data;
+using DarkColony.Engine.Interface;
 using DarkColony.Engine.Economy;
 using DarkColony.Engine.Simulation;
 using DarkColony.Engine.Terrain;
@@ -72,15 +73,15 @@ public sealed partial class MainForm
             }
             LeaveNetwork();
             ShowScreen(MenuScreenId.NetworkOptions);
-        }),
+        }, nativeId: 132),
         Button(1, 530, 452, 90, 26, "READY", () =>
         {
             if (InNetworkLobby) PressNetworkReady();
             else StartSinglePlayerWar();
-        }),
-        // In a network lobby the map belongs to the host.
-        Button(2, 588, 194, 26, 26, "", () => { if (!InNetworkLobby || IsNetworkHost) SelectSinglePlayerMap(-1); }, artName: "UP"),
-        Button(3, 588, 294, 26, 26, "", () => { if (!InNetworkLobby || IsNetworkHost) SelectSinglePlayerMap(1); }, artName: "DOWN"),
+        }, nativeId: 133),
+        // multie push buttons 28 and 29 scroll the map list.
+        Button(2, 588, 194, 26, 26, "", () => ScrollSinglePlayerMapList(-1), artName: "UP", nativeId: 28),
+        Button(3, 588, 294, 26, 26, "", () => ScrollSinglePlayerMapList(1), artName: "DOWN", nativeId: 29),
     ];
 
     private IReadOnlyList<MenuButton> NetworkButtons() =>
@@ -161,8 +162,9 @@ public sealed partial class MainForm
         string label,
         Action action,
         bool selected = false,
-        string? artName = null) =>
-        new(id, new Rectangle(x, y, width, height), label, action, selected, artName);
+        string? artName = null,
+        int? nativeId = null) =>
+        new(id, new Rectangle(x, y, width, height), label, action, selected, artName, nativeId);
 
     private void OpenNewGame(bool training)
     {
@@ -277,6 +279,13 @@ public sealed partial class MainForm
         }
     }
 
+    /// <summary>The interface definition and palette of a menu screen whose buttons draw natively.</summary>
+    private static (string Name, string Palette)? NativeMenuScreen(MenuScreenId screen) => screen switch
+    {
+        MenuScreenId.SinglePlayer => (WarLobbyScreen, WarLobbyPalette),
+        _ => null,
+    };
+
     private int MenuTextWidth(string text) => _menuFont?.Measure(text) ?? text.Length * 7;
 
     private void DrawButton(Graphics graphics, MenuButton button, int sequenceIndex)
@@ -285,6 +294,13 @@ public sealed partial class MainForm
         if (button.ArtName == string.Empty) return;
         var hovered = _hoveredButton == button.Id;
         var pressed = _pressedButton == button.Id;
+        if (button.NativeId is { } nativeId && NativeMenuScreen(_screen) is { } native && NativeScreen(native.Name) is { } screen &&
+            screen.Widget(nativeId) is { Kind: NativeWidgetKind.PushButton or NativeWidgetKind.CheckButton } widget)
+        {
+            DrawNativeButton(graphics, screen, native.Palette, widget, button.Selected || pressed && hovered, hovered,
+                button.Label.Length == 0 ? null : button.Label);
+            return;
+        }
         var bright = button.Selected || hovered;
         var artName = button.ArtName ?? (button.Bounds.Width >= 170 ? "LARGEBUTTON" : "MEDBUTTON");
         var art = Animation("knobe.fin", artName);

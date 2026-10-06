@@ -448,5 +448,111 @@ internal static class InterfaceChecks
                 if (frame.Width <= 1 || frame.Height <= 1) throw new InvalidOperationException($"{animationName} composed empty.");
             }
         }, CheckTags.Data);
+        Check("every intrface definition reads as widget.c reads it", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var directory = Path.GetDirectoryName(install.DataFile("intrface", "multie"))!;
+            var names = Directory.GetFiles(directory).Select(Path.GetFileName).OfType<string>()
+                .Where(name => !name.Contains('.') && name.EndsWith("e", StringComparison.OrdinalIgnoreCase) && !name.Equals("makefile", StringComparison.OrdinalIgnoreCase)).ToArray();
+            Equal(true, names.Length >= 25);
+            foreach (var name in names)
+            {
+                try { NativeScreenDefinition.Load(Path.Combine(directory, name)); }
+                catch (FormatException error) { throw new InvalidOperationException($"{name}: {error.Message}"); }
+            }
+
+            var multie = NativeScreenDefinition.Load(install.DataFile("intrface", "multie"));
+            Equal(("intrface/tcpwait", "intrface/knobe", 8, 4), (multie.Background, multie.Pictures, multie.BrightPushed, multie.BrightHighlight));
+            // list 27 0 29 200 535 114 scroll 30 selbg cyan - bg erase
+            var list = multie.Widget(27)!;
+            Equal((NativeWidgetKind.List, new InterfaceRectangle(29, 200, 535, 114), 30, "cyan", "erase"),
+                (list.Kind, list.Bounds, list.LinkedScroll, list.SelectionBackground, list.Background));
+            // pushb 28 ... -11 13 list 27 -1 - bg erase; scroll 30 ... list 27
+            var up = multie.Widget(28)!;
+            Equal((NativeWidgetKind.PushButton, -11, 13, 27, -1), (up.Kind, up.FirstPicture, up.SecondPicture, up.LinkedList, up.ListStep));
+            Equal((NativeWidgetKind.Scroll, 27, (string?)null), (multie.Widget(30)!.Kind, multie.Widget(30)!.LinkedList, multie.Widget(30)!.Foreground));
+            // checkb 105 ... -11 58 label centre 20 0 - remap 0
+            var off = multie.Widget(105)!;
+            Equal((NativeWidgetKind.CheckButton, 58, NativeTextAlign.Centre, 20, 0, "OFF"),
+                (off.Kind, off.SecondPicture, off.Align, off.Message!.Value, off.Remap, multie.Message(off.Message)));
+            // A label is left-aligned with remap 4 here; in_text counts cells.
+            Equal((NativeWidgetKind.Label, NativeTextAlign.Left, 4, "Storage Cells"),
+                (multie.Widget(104)!.Kind, multie.Widget(104)!.Align, multie.Widget(104)!.Remap, multie.Message(multie.Widget(104)!.Message)));
+            Equal((NativeWidgetKind.InputText, 6, 1, NativeTextAlign.Centre), (multie.Widget(72)!.Kind, multie.Widget(72)!.Columns, multie.Widget(72)!.Rows, multie.Widget(72)!.Align));
+            // banim 176 0 2 2 134 135 132 133
+            Equal("134,135|132,133", $"{string.Join(',', multie.Widget(176)!.Gadgets)}|{string.Join(',', multie.Widget(176)!.Buttons)}");
+
+            var newgame = NativeScreenDefinition.Load(install.DataFile("intrface", "newgamee"));
+            var portrait = newgame.Widget(21)!;
+            Equal((NativeWidgetKind.Gadget, "HREZIN", GadgetAnimationMode.Stopped, false, "erase"),
+                (portrait.Kind, portrait.Animation, portrait.Mode, portrait.Masked, portrait.Background));
+            Equal((GadgetAnimationMode.OneOff, true), (newgame.Widget(6)!.Mode, newgame.Widget(6)!.Masked));
+            Equal("6,7,9,10|0,1,2,3,4", $"{string.Join(',', newgame.Widget(28)!.Gadgets)}|{string.Join(',', newgame.Widget(28)!.Buttons)}");
+            Equal("Type in a name for your leader", newgame.Message(7) ?? string.Empty);
+        }, CheckTags.Data);
+
+        Check("buttons, text, lists and scroll bars follow button.c and list.c", () =>
+        {
+            NativeWidget Button(int first, int second) => new() { Kind = NativeWidgetKind.PushButton, Id = 0, FirstPicture = first, SecondPicture = second };
+            // "-11 2": picture 2 at 11, 11 + highlight 4, pushed 8 + 16.
+            var medium = Button(-11, 2);
+            Equal(((2, 11), (2, 15), (2, 24)), (NativeWidgetRules.ButtonLook(medium, false, false, 8, 4),
+                NativeWidgetRules.ButtonLook(medium, false, true, 8, 4), NativeWidgetRules.ButtonLook(medium, true, false, 8, 4)));
+            // "9 8" (Ready): picture 9 at 16 up, picture 8 at 24 down.
+            Equal(((9, 16), (8, 24)), (NativeWidgetRules.ButtonLook(Button(9, 8), false, false, 8, 4), NativeWidgetRules.ButtonLook(Button(9, 8), true, false, 8, 4)));
+            // "62 -24": the first picture both ways, brighter when down; the result stays below 32.
+            Equal(((62, 16), (62, 31)), (NativeWidgetRules.ButtonLook(Button(62, -24), false, false, 8, 4), NativeWidgetRules.ButtonLook(Button(62, -24), true, false, 8, 4)));
+
+            // The map list's bar: 8 of 56 rows from the top fill 61 * 8 / 56 pixels.
+            var bar = new InterfaceRectangle(596, 227, 10, 61);
+            Equal(new InterfaceRectangle(596, 227, 10, 8), NativeWidgetRules.ScrollThumb(bar, 56, 0, 8)!.Value);
+            Equal(new InterfaceRectangle(596, 230, 10, 8), NativeWidgetRules.ScrollThumb(bar, 56, 3, 11)!.Value);
+            Equal(false, NativeWidgetRules.ScrollThumb(bar, 0, 0, 8).HasValue);
+
+            // "MENU" in mfonto5 (7 x 14 cells) centred on 430,452 90x26; labels start one cell in.
+            Equal((463, 458), NativeWidgetRules.TextOrigin(new InterfaceRectangle(430, 452, 90, 26), NativeTextAlign.Centre, 4, 7, 14));
+            Equal((339, 328), NativeWidgetRules.TextOrigin(new InterfaceRectangle(332, 326, 124, 18), NativeTextAlign.Left, 13, 7, 14));
+            Equal((489, 458), NativeWidgetRules.TextOrigin(new InterfaceRectangle(430, 452, 90, 26), NativeTextAlign.Right, 4, 7, 14));
+
+            // list.c: a press selects the row under it; "list 27 1" moves the
+            // rows shown, up to the row count; the bar drag centres the span.
+            var view = new NativeListView(8);
+            view.SetCount(56);
+            Equal((8, -1), (view.VisibleRows, view.Selected));
+            view.Select(view.RowAt(3 * 14 + 5, 14));
+            Equal(3, view.Selected);
+            view.Step(1);
+            view.Step(1);
+            Equal((2, 3, (56, 2, 10)), (view.Top, view.Selected, view.ScrollSpan));
+            Equal(5, view.RowAt(3 * 14, 14));
+            view.Step(-5);
+            Equal(0, view.Top);
+            view.Step(100);
+            Equal((56, -1), (view.Top, view.RowAt(0, 14)));
+            view.Drag(30, 61);
+            Equal(23, view.Top);
+            view.Drag(0, 61);
+            Equal(0, view.Top);
+            view.Select(56);
+            Equal(-1, view.Selected);
+        });
+
+        Check("interface colours come from dc.exe and show as the nearest screen palette entry", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var colours = NativeInterfaceColours.Load(install.ExecutablePath);
+            Equal("erase 164,164,255|ui 194,35,7|ui_highlight 192,64,64|ui_active 255,0,0|textfg 255,255,255",
+                string.Join('|', colours.Defaults.Select(colour => $"{colour.Name} {colour.Red},{colour.Green},{colour.Blue}")));
+            var multie = NativeScreenDefinition.Load(install.DataFile("intrface", "multie"));
+            var table = colours.For(multie);
+            // multie overrides erase and adds cyan after the five defaults.
+            Equal(("erase", (byte)0, "cyan", 6), (table[0].Name, table[0].Red, table[5].Name, table.Count));
+            Equal(((byte)0, (byte)255, (byte)255), NativeInterfaceColours.Resolve(table, "cyan", 1));
+            Equal(((byte)194, (byte)35, (byte)7), NativeInterfaceColours.Resolve(table, null, 1));
+            // The captured lobby's scroll bar is palette entry 97, (203, 23, 23).
+            var palette = GifPalette.Load(install.DataFile("intrface", "tcpwait.gif"));
+            Equal((97, new VgaColor(203, 23, 23)), (NativeInterfaceColours.Nearest(palette, (194, 35, 7)), palette[97]));
+            Equal(new VgaColor(0, 255, 255), palette[NativeInterfaceColours.Nearest(palette, (0, 255, 255))]);
+        }, CheckTags.Data);
     }
 }

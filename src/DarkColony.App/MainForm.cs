@@ -74,6 +74,7 @@ public sealed partial class MainForm : Form
     private readonly Dictionary<string, GpuImage> _gpuBackgrounds = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, GpuImage> _gpuColorKeyImages = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Bitmap, GpuImage> _gpuBitmaps = [];
+    private readonly Dictionary<(Bitmap Bitmap, float Opacity), GpuImage> _translucentGpuBitmaps = [];
     private readonly Dictionary<string, AnimationDefinition> _animationDefinitions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Bitmap> _animationFrames = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Point> _animationOrigins = new(StringComparer.OrdinalIgnoreCase);

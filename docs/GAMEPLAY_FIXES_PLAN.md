@@ -25,6 +25,11 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 17 | Selecting units makes the game hang, and the later game hangs | done: box selection and the cursor no longer read pixels through GDI+ or compose every actor again; the frame is one sprite batch from atlas pages, paced by the swap chain instead of a WinForms timer; the per-frame garbage is a tenth (`docs/PERFORMANCE.md`) |
 | 18 | Add an option to hide the debugging guides (P7 markers, path traces) | done: DEBUG GUIDES in the Video panel (`--guides on\|off`), off by default. It hides the P7 vent markers, the move path and target, the waypoints, the attacked-actor boxes and the drop label |
 | 19 | The game has fog of war: units outside a friendly unit's line of sight should be hidden | done: another team's units outside the local player's current sight (rebuilt every 16 updates, as `dc.exe`) are no longer drawn, hovered or clicked, nor are shots, explosions and deaths on unseen cells; the port used to black out only unexplored ground. Structures stay drawn on explored ground |
+| 20 | A War's map cannot be chosen | done: the list worked but drew its selection with GDI, which the GPU frame drops, and re-centred under the pointer. It is now `multie` list 27 as `list.c` draws it: a cyan row with black text, scroll bar 30, and arrows 28/29 that scroll the rows shown |
+| 21 | Some menu elements are missing or wrong (the encyclopedia among them) | open: the War lobby's buttons, check boxes, arrows and labels now draw from `knobe.spr` at the native brightness; the other menus are next |
+| 22 | Choosing a race in the new campaign played an animation and a sound | open: decoded (`newgamee` gadgets 21-26 and REZIN.WAV, see `interface-widgets.md`) |
+| 23 | Some shots and explosions ignore transparency | open |
+| 24 | A War's Storage Cells and Artifacts options do nothing | done: the loader scatters each position's FUEL/FILL cells (`0x41C6B4`), and the map's artifact sites open only with Artifacts on (`0x41C5C0`); the triggers already filled them |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

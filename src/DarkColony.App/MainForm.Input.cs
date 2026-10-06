@@ -256,7 +256,7 @@ public sealed partial class MainForm
         }
         if (_screen == MenuScreenId.SinglePlayer && _singlePlayerScrollDragging && eventArgs.Button.HasFlag(MouseButtons.Left))
         {
-            SelectSinglePlayerMapFromScroll(eventArgs.Location);
+            ScrollSinglePlayerMaps(eventArgs.Location);
             _surface.Invalidate();
             return;
         }
@@ -292,11 +292,11 @@ public sealed partial class MainForm
             if (eventArgs.Button == MouseButtons.Left) HandleQuitConfirmClick(Unshift(eventArgs.Location, PopupOffset));
             return;
         }
-        if (_screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left && (!InNetworkLobby || IsNetworkHost) &&
+        if (_screen == MenuScreenId.SinglePlayer && eventArgs.Button == MouseButtons.Left &&
             new Rectangle(596, 227, 10, 61).Contains(eventArgs.Location))
         {
+            // 0x42AB01: a press takes the scroll bar; only a drag moves it.
             _singlePlayerScrollDragging = true;
-            SelectSinglePlayerMapFromScroll(eventArgs.Location);
             _surface.Capture = true;
             _pressedButton = null;
             _surface.Invalidate();
@@ -422,7 +422,8 @@ public sealed partial class MainForm
                 _surface.Invalidate();
                 return;
             }
-            SelectSinglePlayerMapAt(eventArgs.Location);
+            // In a network lobby the map belongs to the host.
+            if (!InNetworkLobby || IsNetworkHost) SelectSinglePlayerMapAt(eventArgs.Location);
         }
         _surface.Invalidate();
     }

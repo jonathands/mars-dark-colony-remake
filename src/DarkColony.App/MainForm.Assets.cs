@@ -119,6 +119,18 @@ public sealed partial class MainForm
         }
     }
 
+    /// <summary>A bitmap's texture with every pixel's alpha scaled by <paramref name="opacity"/>.</summary>
+    private GpuImage TranslucentGpuBitmap(Bitmap bitmap, float opacity)
+    {
+        if (_translucentGpuBitmaps.TryGetValue((bitmap, opacity), out var cached)) return cached;
+        var source = GpuBitmap(bitmap);
+        var rgba = (byte[])source.Rgba.Clone();
+        for (var pixel = 3; pixel < rgba.Length; pixel += 4) rgba[pixel] = (byte)(rgba[pixel] * opacity);
+        cached = new GpuImage(source.Width, source.Height, rgba);
+        _translucentGpuBitmaps[(bitmap, opacity)] = cached;
+        return cached;
+    }
+
     private GpuImage GpuBitmap(Bitmap bitmap)
     {
         if (_gpuBitmaps.TryGetValue(bitmap, out var cached)) return cached;
@@ -275,6 +287,8 @@ public sealed partial class MainForm
         // must not be applied a second time here.
         if (opacity >= 1f && _activeCanvas is { } canvas)
             canvas.DrawForeground(GpuBitmap(bitmap), x, y);
+        else if (_activeCanvas is { } translucentCanvas)
+            translucentCanvas.DrawForeground(TranslucentGpuBitmap(bitmap, opacity), x, y);
         else if (opacity >= 1f) graphics.DrawImageUnscaled(bitmap, x, y);
         else
         {

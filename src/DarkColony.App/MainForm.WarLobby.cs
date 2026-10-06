@@ -4,6 +4,7 @@ using DarkColony.App.Rendering;
 using DarkColony.Engine.Assets;
 using DarkColony.Engine.Combat;
 using DarkColony.Engine.Data;
+using DarkColony.Engine.Interface;
 using DarkColony.Engine.Economy;
 using DarkColony.Engine.Simulation;
 using DarkColony.Engine.Terrain;
@@ -82,13 +83,10 @@ public sealed partial class MainForm
         _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, Math.Max(0, _singlePlayerMaps.Count - 1));
     }
 
-    private void SelectSinglePlayerMap(int delta)
+    /// <summary>multie push buttons 28 and 29 (<c>list 27 -1</c>, <c>list 27 1</c>) move the rows shown, not the choice.</summary>
+    private void ScrollSinglePlayerMapList(int step)
     {
-        EnsureSinglePlayerMaps();
-        var maps = _singlePlayerMaps;
-        if (maps.Count == 0) return;
-        _singlePlayerMapIndex = (_singlePlayerMapIndex + delta + maps.Count) % maps.Count;
-            _status = $"Single Player War map: {maps[_singlePlayerMapIndex].Stem.ToUpperInvariant()}.";
+        WarMapList()?.Step(step);
         _surface.Invalidate();
     }
 
@@ -118,9 +116,38 @@ public sealed partial class MainForm
         }
     }
 
+    // The free-war lobby is intrface/multie over the tcpwait picture.
+    private const string WarLobbyScreen = "multie";
+    private const string WarLobbyPalette = "tcpwait";
+    private const int WarMapListId = 27;
+    private const int WarMapScrollId = 30;
+    // The captured lobby starts each map's description at x 373, cell 43 of the list.
+    private const int WarMapDescriptionCell = 43;
+
+    private NativeListView? _warMapList;
+
+    /// <summary>The map list (multie list 27), its selection following the chosen map.</summary>
+    private NativeListView? WarMapList()
+    {
+        EnsureSinglePlayerMaps();
+        if (NativeScreen(WarLobbyScreen) is not { } screen || screen.Widget(WarMapListId) is not { } list ||
+            NativeFont(screen, list.Font) is not { } font) return null;
+        if (_warMapList is null)
+        {
+            _warMapList = new NativeListView(list.Bounds.Height / font.Sprite.Frames[0].Height);
+            _warMapList.SetCount(_singlePlayerMaps.Count);
+            // The port opens the lobby on the chosen map, so it starts in view.
+            if (_singlePlayerMapIndex >= _warMapList.VisibleRows) _warMapList.SetTop(_singlePlayerMapIndex);
+        }
+        _warMapList.SetCount(_singlePlayerMaps.Count);
+        _warMapList.Select(_singlePlayerMapIndex);
+        return _warMapList;
+    }
+
     private void DrawSinglePlayerMapSelection(Graphics graphics)
     {
         EnsureSinglePlayerMaps();
+        if (NativeScreen(WarLobbyScreen) is not { } screen) return;
         var maps = _singlePlayerMaps;
         if (maps.Count == 0)
         {
@@ -128,51 +155,35 @@ public sealed partial class MainForm
             return;
         }
 
-        const int rowHeight = 14;
-        const int visibleRows = 8;
-        const int listTop = 200;
-        const int listHeight = 114;
         _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, maps.Count - 1);
-        var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, maps.Count - visibleRows));
-        var listBounds = new Rectangle(29, listTop, 535, listHeight);
-        var state = graphics.Save();
-        graphics.SetClip(listBounds);
-        for (var row = 0; row < visibleRows && first + row < maps.Count; row++)
+        if (WarMapList() is { } view && screen.Widget(WarMapListId) is { } list)
         {
-            var index = first + row;
-            var bounds = new Rectangle(29, listTop + row * rowHeight, 535, rowHeight);
-            if (index == _singlePlayerMapIndex)
-            {
-                using var highlight = new SolidBrush(Color.FromArgb(85, 0, 255, 255));
-                graphics.FillRectangle(highlight, bounds);
-            }
-            DrawMenuText(graphics, maps[index].DisplayName, new Rectangle(29, bounds.Y, 280, rowHeight), center: false);
-            DrawMenuText(graphics, WarMapDescription(maps[index].Stem), new Rectangle(373, bounds.Y, 190, rowHeight), center: false);
+            DrawNativeList(graphics, screen, WarLobbyPalette, list, view,
+                row => $"{maps[row].DisplayName.PadRight(WarMapDescriptionCell)}{WarMapDescription(maps[row].Stem)}");
+            if (screen.Widget(WarMapScrollId) is { } scroll) DrawNativeScroll(graphics, screen, WarLobbyPalette, scroll, view.ScrollSpan);
         }
-        graphics.Restore(state);
-
-        DrawSinglePlayerScrollThumb(graphics, maps.Count, first, visibleRows);
-        DrawWarLobbyPlayers(graphics);
-        DrawWarLobbyOptions(graphics);
+        DrawWarLobbyPlayers(graphics, screen);
+        DrawWarLobbyOptions(graphics, screen);
     }
 
-    private static void DrawSinglePlayerScrollThumb(Graphics graphics, int mapCount, int first, int visibleRows)
+    /// <summary>A multie push or check button, highlighted under the pointer.</summary>
+    private void DrawWarLobbyButton(Graphics graphics, NativeScreenDefinition screen, int id, bool selected = false, string? label = null)
     {
-        var track = new Rectangle(596, 227, 10, 61); // multie scroll 30
-        var maximumFirst = Math.Max(0, mapCount - visibleRows);
-        var thumbHeight = Math.Clamp(track.Height * visibleRows / Math.Max(visibleRows, mapCount), 10, track.Height);
-        var travel = track.Height - thumbHeight;
-        var top = track.Y + (maximumFirst == 0 ? 0 : travel * first / maximumFirst);
-        using var fill = new SolidBrush(Color.FromArgb(190, 235, 25, 25));
-        using var edge = new Pen(Color.FromArgb(230, 245, 80, 80));
-        graphics.FillRectangle(fill, track.X + 1, top, track.Width - 2, thumbHeight);
-        graphics.DrawRectangle(edge, track.X, top, track.Width - 1, thumbHeight - 1);
+        if (screen.Widget(id) is not { } button) return;
+        var down = button.Kind == NativeWidgetKind.CheckButton ? selected : PressedOver(button.Bounds);
+        DrawNativeButton(graphics, screen, WarLobbyPalette, button, down, PointerOver(button.Bounds), label);
     }
 
-    private void DrawWarLobbyPlayers(Graphics graphics)
+    private void DrawWarLobbyLabel(Graphics graphics, NativeScreenDefinition screen, int id)
     {
-        var headings = new[] { ("Type", 36, 102), ("Race", 141, 102), ("Name", 246, 160), ("Color", 409, 84), ("Team", 496, 84), ("Ready", 577, 60) };
-        foreach (var (label, x, width) in headings) DrawMenuText(graphics, label, new Rectangle(x, 3, width, 12), center: false);
+        if (screen.Widget(id) is not { Message: not null } label || screen.Message(label.Message) is not { } text) return;
+        DrawNativeText(graphics, screen, WarLobbyPalette, label.Bounds, label.Align, text, label.Font, label.Remap, label.Intensity);
+    }
+
+    private void DrawWarLobbyPlayers(Graphics graphics, NativeScreenDefinition screen)
+    {
+        // Column headings: labels 136-141.
+        for (var id = 136; id <= 141; id++) DrawWarLobbyLabel(graphics, screen, id);
         var warGreen = Color.FromArgb(91, 203, 0);
         for (var index = 0; index < _warLobbyPlayers.Length; index++)
         {
@@ -192,77 +203,40 @@ public sealed partial class MainForm
             if (colors is not null) DrawAnimationFrame(graphics, "knobe.fin", colors.FirstFrame + player.Color, 425, y + 2, opacity);
             var teams = Animation("knobe.fin", "TEAMS");
             if (teams is not null) DrawAnimationFrame(graphics, "knobe.fin", teams.FirstFrame + player.Team, 512, y + 2, opacity);
-            DrawWarReadyCheckbox(graphics, new Rectangle(610, y - 3, 27, 17), player.Ready, opacity);
+            // Colour and team wheels: push buttons 32-47 and 150-165.
+            DrawWarLobbyButton(graphics, screen, 32 + index);
+            DrawWarLobbyButton(graphics, screen, 40 + index);
+            DrawWarLobbyButton(graphics, screen, 150 + index);
+            DrawWarLobbyButton(graphics, screen, 158 + index);
+            // Ready: check buttons 16-23. The captured lobby shows the box on
+            // the human row only.
+            if (player.Type == WarLobbyPlayerType.Human) DrawWarLobbyButton(graphics, screen, 16 + index, player.Ready);
         }
     }
 
-    private void DrawWarReadyCheckbox(Graphics graphics, Rectangle bounds, bool selected, float opacity)
+    private void DrawWarLobbyOptions(Graphics graphics, NativeScreenDefinition screen)
     {
-        // `multie` declares checkb 16-23 at these bounds. It is a distinct
-        // widget from the player-row CHAB masks, so model the checkbox itself
-        // rather than treating readiness as a floating text glyph.
-        using var fill = new SolidBrush(Color.FromArgb((int)(opacity * 255), 0, 0, 0));
-        using var edge = new Pen(Color.FromArgb((int)(opacity * 255), 65, 65, 65));
-        using var inset = new Pen(Color.FromArgb((int)(opacity * 255), selected ? 175 : 35, selected ? 11 : 35, selected ? 15 : 35));
-        graphics.FillRectangle(fill, bounds);
-        graphics.DrawRectangle(edge, bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
-        var marker = new Rectangle(bounds.X + 8, bounds.Y + 3, 11, 11);
-        graphics.DrawRectangle(inset, marker.X, marker.Y, marker.Width - 1, marker.Height - 1);
-        if (selected) DrawMenuText(graphics, "✓", marker, remap: Color.FromArgb(255, 31, 31));
-    }
-
-    private void DrawWarLobbyOptions(Graphics graphics)
-    {
-        DrawOptionRow(graphics, "Storage Cells", 326, _warStorageCells, ["OFF", "LOW", "MED", "HIGH"]);
-        DrawOptionRow(graphics, "Artifacts", 344, _warArtifacts, ["OFF", "LOW", "MED", "HIGH"]);
-        DrawOptionRow(graphics, "Erupting Vents", 362, _warEruptingVents ? 1 : 0, ["OFF", "ON"], 538);
-        DrawOptionRow(graphics, "Renewable Vents", 380, _warRenewableVents ? 1 : 0, ["OFF", "ON"], 538);
-        DrawMultiplierRow(graphics, "P7 Quantity Multiplier", 400, _warP7QuantityMultiplier);
-        DrawMultiplierRow(graphics, "P7 Flow Multiplier", 418, _warP7FlowMultiplier);
+        // Labels 104-128 and the check buttons after each: storage cells
+        // 105-108, artifacts 110-113, erupting 115/116, renewable 118/119.
+        foreach (var id in (int[])[104, 109, 114, 117, 120, 124, 128]) DrawWarLobbyLabel(graphics, screen, id);
+        for (var value = 0; value < 4; value++)
+        {
+            DrawWarLobbyButton(graphics, screen, 105 + value, _warStorageCells == value);
+            DrawWarLobbyButton(graphics, screen, 110 + value, _warArtifacts == value);
+        }
+        DrawWarLobbyButton(graphics, screen, 115, !_warEruptingVents);
+        DrawWarLobbyButton(graphics, screen, 116, _warEruptingVents);
+        DrawWarLobbyButton(graphics, screen, 118, !_warRenewableVents);
+        DrawWarLobbyButton(graphics, screen, 119, _warRenewableVents);
+        // P7 quantity, P7 flow and commander rank: in_text 121/125/129
+        // between push buttons 122/123, 126/127 and 130/131.
+        DrawMenuText(graphics, $"{_warP7QuantityMultiplier}%", new Rectangle(539, 400, 64, 18));
+        DrawMenuText(graphics, $"{_warP7FlowMultiplier}%", new Rectangle(539, 418, 64, 18));
         var rank = _warLobbyPlayers.FirstOrDefault(player => player.Type == WarLobbyPlayerType.Human)?.Gray == true
             ? new[] { "XIMAL.", "IDRAC.", "SITRUC.", "REGLIA." }[_warCommanderRank]
             : new[] { "LEUT.", "CAPT.", "MAJ.", "COL." }[_warCommanderRank];
-        DrawMenuText(graphics, "Commander Rank", new Rectangle(332, 435, 207, 18), center: false, remap: Color.FromArgb(91, 203, 0));
         DrawMenuText(graphics, rank, new Rectangle(539, 436, 64, 16));
-        DrawLobbyArrow(graphics, "LEFT", 521, 435);
-        DrawLobbyArrow(graphics, "RIGHT", 603, 435);
-    }
-
-    private void DrawOptionRow(Graphics graphics, string label, int y, int selected, string[] values, int start = 456)
-    {
-        var labelColor = Color.FromArgb(91, 203, 0);
-        var valueColor = Color.FromArgb(255, 31, 31);
-        DrawMenuText(graphics, label, new Rectangle(332, y, start - 332, 18), center: false, remap: labelColor);
-        for (var index = 0; index < values.Length; index++)
-        {
-            var bounds = new Rectangle(start + index * 41, y, 41, 18);
-            var button = Animation("knobe.fin", "BUTTON");
-            if (button is not null)
-                DrawAnimationFrame(
-                    graphics,
-                    "knobe.fin",
-                    index == selected ? LastVisibleFrame(button) : button.FirstFrame,
-                    bounds.X,
-                    bounds.Y,
-                    remapWarControlPalette: true);
-            DrawMenuText(graphics, values[index], bounds, remap: valueColor);
-        }
-    }
-
-    private void DrawMultiplierRow(Graphics graphics, string label, int y, int value)
-    {
-        DrawMenuText(graphics, label, new Rectangle(332, y, 207, 18), center: false, remap: Color.FromArgb(91, 203, 0));
-        DrawMenuText(graphics, $"{value}%", new Rectangle(539, y, 64, 18));
-        DrawLobbyArrow(graphics, "LEFT", 521, y);
-        DrawLobbyArrow(graphics, "RIGHT", 603, y);
-    }
-
-    private void DrawLobbyArrow(Graphics graphics, string animationName, int x, int y)
-    {
-        var animation = Animation("knobe.fin", animationName);
-        if (animation is not null && DrawAnimationFrame(
-            graphics, "knobe.fin", animation.FirstFrame, x, y, remapWarControlPalette: true)) return;
-        DrawMenuText(graphics, animationName == "LEFT" ? "<" : ">", new Rectangle(x, y, 41, 18));
+        foreach (var id in (int[])[122, 123, 126, 127, 130, 131]) DrawWarLobbyButton(graphics, screen, id);
     }
 
     private static string WarMapDescription(string stem)
@@ -281,29 +255,20 @@ public sealed partial class MainForm
 
     private void SelectSinglePlayerMapAt(Point point)
     {
-        const int rowHeight = 14;
-        const int visibleRows = 8;
-        const int listTop = 200;
-        const int listHeight = 114;
-        var maps = _singlePlayerMaps;
-        if (point.X is < 29 or >= 564 || point.Y is < listTop or >= listTop + listHeight || maps.Count == 0) return;
-        _singlePlayerMapIndex = Math.Clamp(_singlePlayerMapIndex, 0, maps.Count - 1);
-        var first = Math.Clamp(_singlePlayerMapIndex - visibleRows / 2, 0, Math.Max(0, maps.Count - visibleRows));
-        var index = first + (point.Y - listTop) / rowHeight;
-        if (index >= maps.Count) return;
-        _singlePlayerMapIndex = index;
-        _status = $"Single Player War map: {maps[index].DisplayName}.";
+        if (NativeScreen(WarLobbyScreen) is not { } screen || screen.Widget(WarMapListId) is not { } list ||
+            !ToRectangle(list.Bounds).Contains(point) || WarMapList() is not { } view || NativeFont(screen, list.Font) is not { } font) return;
+        var row = view.RowAt(point.Y - list.Bounds.Y, font.Sprite.Frames[0].Height);
+        if (row < 0) return;
+        _singlePlayerMapIndex = row;
+        view.Select(row);
+        _status = $"Single Player War map: {_singlePlayerMaps[row].DisplayName}.";
     }
 
-    private void SelectSinglePlayerMapFromScroll(Point point)
+    /// <summary>A drag on the map list's scroll bar (multie scroll 30) moves the rows shown.</summary>
+    private void ScrollSinglePlayerMaps(Point point)
     {
-        var maps = _singlePlayerMaps;
-        if (maps.Count == 0) return;
-        const int top = 227;
-        const int height = 61;
-        var fraction = Math.Clamp(point.Y - top, 0, height - 1) / (double)(height - 1);
-        _singlePlayerMapIndex = (int)Math.Round(fraction * (maps.Count - 1));
-        _status = $"Single Player War map: {maps[_singlePlayerMapIndex].DisplayName}.";
+        if (NativeScreen(WarLobbyScreen)?.Widget(WarMapScrollId) is not { } scroll || WarMapList() is not { } view) return;
+        view.Drag(point.Y - scroll.Bounds.Y, scroll.Bounds.Height);
     }
 
     private static string WarLobbyTypeLabel(WarLobbyPlayerType type) => type switch
@@ -355,7 +320,7 @@ public sealed partial class MainForm
                 player.Team = (player.Team + 1) % 16;
                 return true;
             }
-            if (new Rectangle(610, y, 27, 17).Contains(point))
+            if (player.Type == WarLobbyPlayerType.Human && new Rectangle(610, y, 27, 17).Contains(point))
             {
                 player.Ready = !player.Ready;
                 return true;
