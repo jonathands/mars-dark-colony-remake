@@ -49,14 +49,15 @@ public sealed partial class MainForm
             var firstCellY = Math.Max(0, _cameraY / TerrainRasterizer.TileSize);
             var lastCellX = Math.Min(_gameplayMap.Width - 1, (_cameraX + GameplayWorldArea.Width - 1) / TerrainRasterizer.TileSize);
             var lastCellY = Math.Min(_gameplayMap.Height - 1, (_cameraY + GameplayWorldArea.Height - 1) / TerrainRasterizer.TileSize);
+            var colour = TerrainNightColour();
             for (var cellY = firstCellY; cellY <= lastCellY; cellY++)
             {
                 for (var cellX = firstCellX; cellX <= lastCellX; cellX++)
                 {
                     var cell = _gameplayMap[cellX, cellY];
-                    DrawGameplayTerrainTile(canvas, cell.BaseTileId, cellX, cellY, cell.FlipBaseHorizontally, transparentZero: false);
+                    DrawGameplayTerrainTile(canvas, cell.BaseTileId, cellX, cellY, cell.FlipBaseHorizontally, transparentZero: false, colour);
                     if (cell.OverlayTileId != 0)
-                        DrawGameplayTerrainTile(canvas, cell.OverlayTileId, cellX, cellY, cell.FlipOverlayHorizontally, transparentZero: true);
+                        DrawGameplayTerrainTile(canvas, cell.OverlayTileId, cellX, cellY, cell.FlipOverlayHorizontally, transparentZero: true, colour);
                 }
             }
         }
@@ -66,10 +67,20 @@ public sealed partial class MainForm
         }
     }
 
-    private void DrawGameplayTerrainTile(GameCanvas canvas, ushort tileId, int cellX, int cellY, bool flipHorizontally, bool transparentZero)
+    /// <summary>
+    /// The day/night tint of the ground (<see cref="DayNightPresentation.TerrainColour"/>):
+    /// 0 by day, rising to 7 as night falls. Without the tileset's tables there is none.
+    /// </summary>
+    private int TerrainNightColour() => _worldBlendTables is null || _scenarioSimulation is not { } simulation
+        ? 0
+        : DayNightPresentation.TerrainColour(simulation.DayNight.LightingLevel);
+
+    /// <param name="colour">The night tint: each pixel reads the tileset's remap at brightness 16 and this colour.</param>
+    private void DrawGameplayTerrainTile(GameCanvas canvas, ushort tileId, int cellX, int cellY, bool flipHorizontally, bool transparentZero, int colour)
     {
         if (_gameplayTileset is null || !_gameplayTileset.TilesById.TryGetValue(tileId, out var tile)) return;
-        var key = (tile.FrameId, flipHorizontally, transparentZero);
+        var remap = colour == 0 ? null : _worldBlendTables;
+        var key = (tile.FrameId, flipHorizontally, transparentZero, remap is null ? 0 : colour);
         if (!_terrainGpuTiles.TryGetValue(key, out var image))
         {
             var rgba = new byte[TerrainTile.Width * TerrainTile.Height * 4];
@@ -80,7 +91,7 @@ public sealed partial class MainForm
                 var paletteIndex = tile.PaletteIndices[y * TerrainTile.Width + sourceX];
                 var destination = (y * TerrainTile.Width + x) * 4;
                 if (transparentZero && paletteIndex == 0) continue;
-                var color = _gameplayTileset.Palette[paletteIndex];
+                var color = _gameplayTileset.Palette[remap?.Remap(FogShading.InSight, colour, paletteIndex) ?? paletteIndex];
                 rgba[destination] = color.Red;
                 rgba[destination + 1] = color.Green;
                 rgba[destination + 2] = color.Blue;
@@ -228,6 +239,7 @@ public sealed partial class MainForm
             _missionStartedAtMilliseconds = Environment.TickCount64;
             _previousActorRenderPositions.Clear();
             _rememberedCitySlots.Clear();
+            _pendingLights.Clear();
             _groundOccupancy = _scenarioSimulation.GroundOccupancy;
             _alternateOccupancy = _scenarioSimulation.AlternateOccupancy;
             _autonomousEntities = _scenarioSimulation.Actors
@@ -331,19 +343,33 @@ public sealed partial class MainForm
         graphics.Restore(state);
     }
 
-    // Fog tiles by their corner brightnesses, five bits each.
+    // Fog tiles by their corner brightnesses, five bits each, as overlays
+    // and as brightness per pixel.
     private readonly Dictionary<int, Bitmap> _fogTiles = [];
+    private readonly Dictionary<int, byte[]> _fogTileBrightness = [];
+    // The lights the last frame drew, which this frame lays on the ground.
+    private readonly List<(int X, int Y, WorldLight Light)> _frameLights = [];
+    private byte[] _lightBuffer = [];
 
     /// <summary>
-    /// The fog of war over the terrain, before anything stands on it
-    /// (<see cref="FogShading"/>): ground in sight stays as it is, ground
-    /// explored but out of sight darkens to 10/16, and ground never seen is
-    /// black, each tile blending between its corners. A tile at brightness b
-    /// is covered with black at opacity 1 - b/16, which leaves b/16 of it.
+    /// The terrain's brightness, before anything stands on it, as the terrain
+    /// pass builds it (<c>0x453B94</c>, <see cref="FogShading"/>). Ground in
+    /// sight stays as it is, ground explored but out of sight darkens to
+    /// 10/16, and ground never seen is black, each tile blending between its
+    /// corners. At GAME DETAIL medium or high the frame's light layers then
+    /// add to it, up to 31, nearly twice as bright (<c>0x4621A0</c>).
+    /// A tile without light at brightness b is covered with black at opacity
+    /// 1 - b/16. Where lights fall, the brightness of each pixel is drawn
+    /// as a grey of b/32 with <see cref="SpriteBlend.Light"/>, which scales
+    /// the ground by b/16. The lights are the ones the previous frame drew,
+    /// since sprites come after the ground.
     /// </summary>
     private void DrawGameplayFogOfWar(Graphics graphics)
     {
-        if (_scenarioSimulation is not { } simulation || _gameplayMap is null || _revealMap) return;
+        _frameLights.Clear();
+        _frameLights.AddRange(_pendingLights);
+        _pendingLights.Clear();
+        if (_scenarioSimulation is not { } simulation || _gameplayMap is null) return;
         var firstX = Math.Max(0, _cameraX / 32);
         var firstRow = Math.Max(0, _cameraY / 32);
         var lastX = Math.Min(_gameplayMap.Width - 1, (_cameraX + GameplayWorldArea.Width - 1) / 32);
@@ -354,10 +380,37 @@ public sealed partial class MainForm
         var cells = new int[rows, columns];
         for (var row = 0; row < rows; row++)
         for (var column = 0; column < columns; column++)
-            cells[row, column] = simulation.ViewBrightness(_localPlayerTeam,
+            cells[row, column] = _revealMap ? FogShading.InSight : simulation.ViewBrightness(_localPlayerTeam,
                 new CellCoordinate(firstX + column - 1, _gameplayMap.Height - 1 - (firstRow + row - 1)));
+
+        // The lights in view, and the whole tiles they touch, in screen pixels.
+        var view = new Rectangle(Point.Empty, GameplayWorldArea);
+        var lit = Rectangle.Empty;
+        if (_activeCanvas is not null && CurrentGameOptions().Detail >= 1)
+            foreach (var (x, y, light) in _frameLights)
+            {
+                var bounds = Rectangle.Intersect(view, new Rectangle(x - _cameraX, y - _cameraY, light.Width, light.Height));
+                if (!bounds.IsEmpty) lit = lit.IsEmpty ? bounds : Rectangle.Union(lit, bounds);
+            }
+        var tileLeft = firstX * 32 - _cameraX;
+        var tileTop = firstRow * 32 - _cameraY;
+        if (!lit.IsEmpty)
+        {
+            var left = tileLeft + (lit.Left - tileLeft) / 32 * 32;
+            var top = tileTop + (lit.Top - tileTop) / 32 * 32;
+            var right = tileLeft + (lit.Right - tileLeft + 31) / 32 * 32;
+            var bottom = tileTop + (lit.Bottom - tileTop + 31) / 32 * 32;
+            lit = Rectangle.Intersect(view, Rectangle.FromLTRB(left, top, right, bottom));
+        }
+
         var state = _activeCanvas is null ? graphics.Save() : null;
-        if (_activeCanvas is null) graphics.SetClip(new Rectangle(Point.Empty, GameplayWorldArea));
+        if (_activeCanvas is null) graphics.SetClip(view);
+        if (!lit.IsEmpty)
+        {
+            if (_lightBuffer.Length < lit.Width * lit.Height) _lightBuffer = new byte[lit.Width * lit.Height];
+            // Off the map's tiles the ground is left as it is.
+            _lightBuffer.AsSpan(0, lit.Width * lit.Height).Fill(FogShading.InSight);
+        }
         for (var row = 1; row < rows - 1; row++)
         for (var column = 1; column < columns - 1; column++)
         {
@@ -366,13 +419,54 @@ public sealed partial class MainForm
                 cells[row + down - 1, column + right - 1], cells[row + down - 1, column + right],
                 cells[row + down, column + right - 1], cells[row + down, column + right]);
             var (topLeft, topRight, bottomLeft, bottomRight) = (Corner(0, 0), Corner(0, 1), Corner(1, 0), Corner(1, 1));
-            if (topLeft + topRight + bottomLeft + bottomRight == 4 * FogShading.InSight) continue;
             var key = topLeft | topRight << 5 | bottomLeft << 10 | bottomRight << 15;
-            if (!_fogTiles.TryGetValue(key, out var tile)) _fogTiles[key] = tile = FogTile(topLeft, topRight, bottomLeft, bottomRight);
             var x = (firstX + column - 1) * 32 - _cameraX;
             var y = (firstRow + row - 1) * 32 - _cameraY;
+            var tileBounds = new Rectangle(x, y, 32, 32);
+            if (lit.IntersectsWith(tileBounds))
+            {
+                // Copy the tile's brightness into the lit area's buffer.
+                if (!_fogTileBrightness.TryGetValue(key, out var brightness))
+                {
+                    brightness = new byte[FogShading.TileSize * FogShading.TileSize];
+                    FogShading.Fill(brightness, topLeft, topRight, bottomLeft, bottomRight);
+                    _fogTileBrightness[key] = brightness;
+                }
+                var part = Rectangle.Intersect(lit, tileBounds);
+                for (var py = part.Top; py < part.Bottom; py++)
+                    brightness.AsSpan((py - y) * 32 + part.Left - x, part.Width)
+                        .CopyTo(_lightBuffer.AsSpan((py - lit.Top) * lit.Width + part.Left - lit.Left));
+                continue;
+            }
+            if (topLeft + topRight + bottomLeft + bottomRight == 4 * FogShading.InSight) continue;
+            if (!_fogTiles.TryGetValue(key, out var tile)) _fogTiles[key] = tile = FogTile(topLeft, topRight, bottomLeft, bottomRight);
             if (_activeCanvas is { } canvas) canvas.Draw(GpuBitmap(tile), x, y);
             else graphics.DrawImageUnscaled(tile, x, y);
+        }
+        if (!lit.IsEmpty && _activeCanvas is { } lightCanvas)
+        {
+            foreach (var (worldX, worldY, light) in _frameLights)
+            {
+                var x0 = worldX - _cameraX;
+                var y0 = worldY - _cameraY;
+                var part = Rectangle.Intersect(lit, new Rectangle(x0, y0, light.Width, light.Height));
+                for (var py = part.Top; py < part.Bottom; py++)
+                for (var px = part.Left; px < part.Right; px++)
+                {
+                    var pixel = light.Pixels[(py - y0) * light.Width + px - x0];
+                    if (pixel == 0) continue;
+                    ref var value = ref _lightBuffer[(py - lit.Top) * lit.Width + px - lit.Left];
+                    value = (byte)FogShading.AddLight(value, pixel);
+                }
+            }
+            var rgba = new byte[lit.Width * lit.Height * 4];
+            for (var pixel = 0; pixel < lit.Width * lit.Height; pixel++)
+            {
+                var grey = (byte)(_lightBuffer[pixel] * 8);
+                rgba[pixel * 4] = rgba[pixel * 4 + 1] = rgba[pixel * 4 + 2] = grey;
+                rgba[pixel * 4 + 3] = 255;
+            }
+            lightCanvas.Draw(new GpuImage(lit.Width, lit.Height, rgba, transient: true), lit.X, lit.Y, SpriteBlend.Light);
         }
         if (state is not null) graphics.Restore(state);
     }

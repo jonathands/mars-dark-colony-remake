@@ -33,6 +33,12 @@ public enum SpriteBlend
     /// translucent FIN draw types (<see cref="DarkColony.Engine.Assets.NativeBlendTables"/>).
     /// </summary>
     Modulate,
+
+    /// <summary>
+    /// The frame becomes <c>2 * sprite * frame</c>: a grey of b / 32 scales it
+    /// by b / 16, the terrain brightness of the fog and the light map.
+    /// </summary>
+    Light,
 }
 
 public readonly record struct SpriteCommand(GpuImage Image, Rectangle Destination, SpriteBlend Blend = SpriteBlend.Alpha);

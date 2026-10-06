@@ -158,17 +158,20 @@ public sealed class AnimationDefinition
     /// <c>0x4399AD</c> queues each layer at the actor's position plus its
     /// FIN offsets); the frame's own Y is only its place on the artist's
     /// canvas. The world blit also leaves out light layers
-    /// (<see cref="DrawLayer.IsLight"/>), since the port draws no light map.
+    /// (<see cref="DrawLayer.IsLight"/>), which brighten the ground instead;
+    /// <c>lights</c> composes them alone.
     /// Otherwise the frame's Y is added to the layer's, which is how the
     /// interface art is laid out.
     /// </summary>
     /// <param name="includeLayer">Composes only the layers it accepts (all when null).</param>
+    /// <param name="lights">Composes only the light layers, laid out as the world blit lays out the rest.</param>
     public CompositeFrame Compose(int frameIndex, Func<string, Sprite> spriteLoader, bool bottomAnchored = false,
-        IReadOnlyList<VgaColor>? palette = null, Func<DrawLayer, bool>? includeLayer = null)
+        IReadOnlyList<VgaColor>? palette = null, Func<DrawLayer, bool>? includeLayer = null, bool lights = false)
     {
         ArgumentNullException.ThrowIfNull(spriteLoader);
         var logical = LogicalFrames[frameIndex];
-        var layers = logical.Layers.Where(layer => (includeLayer is null || includeLayer(layer)) && !(bottomAnchored && layer.IsLight)).ToArray();
+        var layers = logical.Layers.Where(layer => (includeLayer is null || includeLayer(layer)) &&
+            (lights ? layer.IsLight : !(bottomAnchored && layer.IsLight))).ToArray();
         if (layers.Length == 0) return new CompositeFrame(0, 0, 1, 1, new byte[4]);
         var sources = layers.Select(layer =>
         {

@@ -57,6 +57,7 @@ public sealed class Direct3DSurface : Control
     private ID3D11SamplerState? _linearSampler;
     private ID3D11BlendState? _alphaBlend;
     private ID3D11BlendState? _modulateBlend;
+    private ID3D11BlendState? _lightBlend;
     private const int AtlasPageSize = 2048;
     private const int LargestAtlasImage = 256;
     private readonly AtlasPacker _atlas = new(AtlasPageSize, LargestAtlasImage);
@@ -353,6 +354,15 @@ public sealed class Direct3DSurface : Control
             RenderTargetWriteMask = ColorWriteEnable.All,
         };
         _modulateBlend = device.CreateBlendState(modulate);
+        // SpriteBlend.Light: colour = 2 * source * destination, so a source of
+        // b / 32 scales the frame by b / 16, brighter as well as darker.
+        var light = new BlendDescription();
+        light.RenderTarget[0] = modulate.RenderTarget[0] with
+        {
+            SourceBlend = Blend.DestinationColor,
+            DestinationBlend = Blend.SourceColor,
+        };
+        _lightBlend = device.CreateBlendState(light);
     }
 
     /// <summary>
@@ -516,7 +526,12 @@ public sealed class Direct3DSurface : Control
             if (runBlend != blend)
             {
                 blend = runBlend;
-                context.OMSetBlendState(blend == SpriteBlend.Modulate ? _modulateBlend : _alphaBlend, null, uint.MaxValue);
+                context.OMSetBlendState(blend switch
+                {
+                    SpriteBlend.Modulate => _modulateBlend,
+                    SpriteBlend.Light => _lightBlend,
+                    _ => _alphaBlend,
+                }, null, uint.MaxValue);
             }
             context.PSSetShaderResource(0, view);
             context.DrawIndexed((uint)(quadCount * 6), (uint)(firstQuad * 6), 0);
@@ -700,6 +715,7 @@ public sealed class Direct3DSurface : Control
         _transientGpuImages.Clear();
         _alphaBlend?.Dispose();
         _modulateBlend?.Dispose();
+        _lightBlend?.Dispose();
         _linearSampler?.Dispose();
         _pointSampler?.Dispose();
         _inputLayout?.Dispose();
@@ -729,6 +745,7 @@ public sealed class Direct3DSurface : Control
         _linearSampler = null;
         _alphaBlend = null;
         _modulateBlend = null;
+        _lightBlend = null;
         _inputLayout = null;
         _pixelShader = null;
         _sharpPixelShader = null;

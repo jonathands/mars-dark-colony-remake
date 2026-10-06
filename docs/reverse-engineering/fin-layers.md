@@ -58,10 +58,11 @@ The type-3 layers are:
 - the `blaz` flash of Gray and marine fire;
 - `llll` and `side` in the light animations.
 
-The port draws no light map. It therefore leaves type-3 layers out of world
-sprites (`DrawLayer.IsLight`, `AnimationDefinition.Compose` with
-`bottomAnchored`). Before this, each explosion showed an opaque grey ellipse
-over the ground.
+The port leaves type-3 layers out of world sprites (`DrawLayer.IsLight`,
+`AnimationDefinition.Compose` with `bottomAnchored`). Before 2026-10-05 each
+explosion showed an opaque grey ellipse over the ground. Since 2026-10-06
+they are composed apart (`lights: true`) and brighten the ground as the
+original's brightness buffer does (`day-night.md`).
 
 ## Draw types 1 and 2: shadows
 

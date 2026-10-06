@@ -317,6 +317,9 @@ public sealed partial class MainForm
         /// <summary>The frame's shadow and translucent layers (draw types 2, 4 and 5), drawn after it with <see cref="SpriteBlend.Modulate"/>.</summary>
         public IReadOnlyList<(GpuImage Image, Point Origin)> Blends { get; init; } = [];
 
+        /// <summary>The frame's light layers (draw type 3), which brighten the ground under it.</summary>
+        public WorldLight? Light { get; init; }
+
         public int Width => Image.Width;
         public int Height => Image.Height;
 
@@ -354,12 +357,41 @@ public sealed partial class MainForm
         }
     }
 
-    /// <summary>A world sprite with its image's top-left at (x, y), then its translucent layers over it.</summary>
-    private static void DrawWorldSprite(GameCanvas canvas, WorldSprite sprite, int x, int y)
+    /// <summary>
+    /// A world sprite with its image's top-left at (x, y), then its
+    /// translucent layers over it. Its light layers go to the light map,
+    /// which the next frame lays on the ground (<see cref="DrawGameplayFogOfWar"/>).
+    /// </summary>
+    private void DrawWorldSprite(GameCanvas canvas, WorldSprite sprite, int x, int y)
     {
         canvas.Draw(sprite.Image, x, y);
         foreach (var (image, origin) in sprite.Blends)
             canvas.Draw(image, x - sprite.Origin.X + origin.X, y - sprite.Origin.Y + origin.Y, SpriteBlend.Modulate);
+        if (sprite.Light is { } light)
+            _pendingLights.Add((x - sprite.Origin.X + light.Origin.X + _cameraX, y - sprite.Origin.Y + light.Origin.Y + _cameraY, light));
+    }
+
+    /// <summary>
+    /// A frame's light layers (FIN draw type 3) as their sprite pixels (0 where
+    /// there is none); each adds pixel / 8 to the ground's brightness (<see cref="FogShading.AddLight"/>).
+    /// </summary>
+    private sealed record WorldLight(int Width, int Height, Point Origin, byte[] Pixels);
+
+    // Lights drawn this frame, in world pixels; the next frame shades the ground with them.
+    private readonly List<(int X, int Y, WorldLight Light)> _pendingLights = [];
+
+    private static readonly VgaColor[] IndexPalette =
+        [.. Enumerable.Range(0, 256).Select(index => new VgaColor((byte)index, (byte)index, (byte)index))];
+
+    private WorldLight? ComposeLightLayer(AnimationDefinition definition, int frameIndex)
+    {
+        if (!definition.LogicalFrames[frameIndex].Layers.Any(layer => layer.IsLight)) return null;
+        var composite = definition.Compose(frameIndex, LoadSprite, bottomAnchored: true, palette: IndexPalette, lights: true);
+        if (composite.Width <= 0 || composite.Height <= 0) return null;
+        var pixels = new byte[composite.Width * composite.Height];
+        for (var pixel = 0; pixel < pixels.Length; pixel++)
+            if (composite.Rgba[pixel * 4 + 3] != 0) pixels[pixel] = composite.Rgba[pixel * 4];
+        return new WorldLight(composite.Width, composite.Height, new Point(composite.X, composite.Y), pixels);
     }
     private readonly Dictionary<string, string> _finFileNames = new(StringComparer.Ordinal);
 
@@ -404,6 +436,7 @@ public sealed partial class MainForm
             sprite = new WorldSprite(image, new Point(composite.X, composite.Y), OpaqueBounds(image))
             {
                 Blends = blends is null || shipOnly ? [] : ComposeBlendLayers(definition, frameIndex, blends),
+                Light = shipOnly ? null : ComposeLightLayer(definition, frameIndex),
             };
         }
         catch (Exception error) when (error is IOException or InvalidDataException or ArgumentOutOfRangeException)

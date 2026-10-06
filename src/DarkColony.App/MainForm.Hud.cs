@@ -110,6 +110,7 @@ public sealed partial class MainForm
             // 0x43abb0 formats it with "%3.3d" ("000"); remap 0 draws it red.
             DrawMenuText(graphics, _scenarioSimulation.DayNight.CompletedDays.ToString("000", CultureInfo.InvariantCulture),
                 _gameplayScreen.Anchor(new Rectangle(604, 427, 30, 14)), remap: Color.FromArgb(255, 31, 31));
+            DrawGameplayClock(graphics, _scenarioSimulation.DayNight);
         }
         var inspected = SelectedInspectableGameplayEntities().ToArray();
         var selected = inspected.Where(IsLocallyControllable).ToArray();
@@ -623,6 +624,22 @@ public sealed partial class MainForm
     {
         if (_gameplayPointer is not { } pointer) return null;
         return buttons.FirstOrDefault(button => button.Bounds.Contains(pointer))?.Label;
+    }
+
+    /// <summary>
+    /// The HUD clock (<c>0x43A9F8</c>): a frame of <c>sprites/cloc.spr</c> at
+    /// (608, 450), its hand going round once by day and once by night
+    /// (<see cref="DayNightPresentation.ClockFrame"/>).
+    /// </summary>
+    private void DrawGameplayClock(Graphics graphics, DayNightCycle cycle)
+    {
+        int frames;
+        try { frames = LoadSprite("cloc").Frames.Count; }
+        catch (Exception error) when (error is IOException or InvalidDataException or InvalidOperationException) { return; }
+        if (frames < 2 || SpriteFrameBitmap("cloc", DayNightPresentation.ClockFrame(cycle, frames)) is not { } bitmap) return;
+        var bounds = _gameplayScreen.Anchor(new Rectangle(608, 450, bitmap.Width, bitmap.Height));
+        if (_activeCanvas is { } canvas) canvas.DrawForeground(GpuBitmap(bitmap), bounds.X, bounds.Y);
+        else graphics.DrawImageUnscaled(bitmap, bounds.Location);
     }
 
     private void DrawGameplayIconButton(Graphics graphics, Rectangle bounds, int frame, bool selected, bool available)

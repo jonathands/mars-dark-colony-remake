@@ -85,7 +85,7 @@ public sealed partial class MainForm : Form
     private EncyclopediaCatalog? _encyclopedia;
     private int _encyclopediaCategory = 1;
     private int _encyclopediaEntry;
-    private readonly Dictionary<(uint FrameId, bool FlipHorizontally, bool TransparentZero), GpuImage> _terrainGpuTiles = [];
+    private readonly Dictionary<(uint FrameId, bool FlipHorizontally, bool TransparentZero, int Colour), GpuImage> _terrainGpuTiles = [];
     private Bitmap? _minimapPreview;
     // The simulation tick / 16 the minimap's explored mask was built at
     // (vision is rebuilt every 16 updates); -1 when it shows the whole map.

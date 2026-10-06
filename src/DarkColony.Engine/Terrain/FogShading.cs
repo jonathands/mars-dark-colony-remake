@@ -24,6 +24,18 @@ public static class FogShading
 
     public const int TileSize = 32;
 
+    /// <summary>The brightest the remap goes (about 1.9 times the ground).</summary>
+    public const int Brightest = 31;
+
+    /// <summary>
+    /// A light pixel over a brightness: FIN draw type 3 (<c>0x4621A0</c>)
+    /// adds its sprite pixel to the buffer byte <c>brightness * 8 + colour</c>,
+    /// and a carry sets the top five bits (<c>0x45C5DD</c>). The shipped light
+    /// sprites (<c>spot</c>, <c>smsp</c>, <c>blaz</c>, <c>llll</c>, <c>side</c>) use
+    /// multiples of 8, so each adds <c>pixel / 8</c> to the brightness, up to 31.
+    /// </summary>
+    public static int AddLight(int brightness, byte light) => Math.Min(Brightest, brightness + (light >> 3));
+
     /// <summary>A tile corner from the four cells that meet there.</summary>
     public static int Corner(int a, int b, int c, int d) => (a + b + c + d) >> 2;
 

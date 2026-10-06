@@ -31,6 +31,7 @@ Each note gives addresses, what is confirmed, and what the port implements.
 | Note | Subject |
 | --- | --- |
 | [vision.md](reverse-engineering/vision.md) | Sight trees, the 16-update rebuild, explored memory, fog of war |
+| [day-night.md](reverse-engineering/day-night.md) | The night tint of the ground, lights, the HUD clock |
 | [target-acquisition.md](reverse-engineering/target-acquisition.md) | How idle and moving units pick targets |
 | [combat-range.md](reverse-engineering/combat-range.md) | Weapon range rings and chasing |
 | [combat-damage.md](reverse-engineering/combat-damage.md) | Damage arithmetic, armour, splash, the dying state |

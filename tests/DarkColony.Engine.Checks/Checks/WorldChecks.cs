@@ -55,6 +55,79 @@ internal static class WorldChecks
             Equal(256, cycle.LightingLevel);
         });
 
+        Check("night greys the ground, the HUD clock turns, and lights brighten the ground", () =>
+        {
+            var install = GameInstallation.Open(suite.DataPath);
+            var image = PeImage.Load(install.ExecutablePath);
+            string Bytes(uint address, int length) => string.Join(' ', image.AtVirtualAddress(address, length).ToArray().Select(value => value.ToString("x2")));
+
+            // 0x40AC6F: the terrain pass's colour is (lighting * 7) >> 8.
+            Equal("8b 92 40 05 00 00", Bytes(0x40AC6F, 6));
+            Equal("8d 04 d5 00 00 00 00 29 d0", Bytes(0x40AC75, 9));
+            Equal("c1 f8 08", Bytes(0x40AC88, 3));
+            Equal((0, 3, 7), (DayNightPresentation.TerrainColour(0), DayNightPresentation.TerrainColour(128), DayNightPresentation.TerrainColour(256)));
+
+            // The jungle remap at brightness 16 keeps the ground's colours at
+            // colour 0 and greys them at colour 7, without darkening them.
+            var scenario = ScenarioDefinition.Load(install.DataFile("scenario", "alien", "alien07.scn"));
+            var tileset = BtsTileset.Load(install.DataFile("scenario", scenario.Tileset));
+            var name = Path.GetFileNameWithoutExtension(scenario.Tileset);
+            var gif = GifPalette.Load(install.DataFile($"{name}.gif"));
+            // The terrain reads the remap with the tileset's own colours, which
+            // are the .gif's but for the 6- to 8-bit expansion. Index 0 is
+            // transparent, and 138-143 (the interface font ramp) and 255 differ.
+            Equal(true, Enumerable.Range(1, 254).Where(index => index is < 138 or > 143).All(index =>
+                Math.Abs(tileset.Palette[index].Red - gif[index].Red) <= 3 &&
+                Math.Abs(tileset.Palette[index].Green - gif[index].Green) <= 3 &&
+                Math.Abs(tileset.Palette[index].Blue - gif[index].Blue) <= 3));
+            var tables = NativeBlendTables.Load(install.DataFile($"{name}.rmp"), gif);
+            (double Saturation, double Light) Remapped(int colour)
+            {
+                var saturation = new List<double>();
+                var light = new List<double>();
+                for (var index = 1; index < 256; index++)
+                {
+                    var (before, after) = (gif[index], gif[tables.Remap(FogShading.InSight, colour, (byte)index)]);
+                    int Spread(VgaColor c) => Math.Max(c.Red, Math.Max(c.Green, c.Blue)) - Math.Min(c.Red, Math.Min(c.Green, c.Blue));
+                    if (Spread(before) > 30) saturation.Add(Spread(after) / (double)Spread(before));
+                    if (before.Red + before.Green + before.Blue > 60) light.Add((after.Red + after.Green + after.Blue) / (double)(before.Red + before.Green + before.Blue));
+                }
+                return (saturation.Average(), light.Average());
+            }
+            var (day, night) = (Remapped(0), Remapped(7));
+            Equal(true, day.Saturation > 0.95 && night.Saturation < 0.4);
+            Equal(true, Math.Abs(day.Light - 1) < 0.05 && Math.Abs(night.Light - 1) < 0.1);
+
+            // 0x43A9F8: the clock reads the night flag (+0x53C), the phase
+            // ticks (+0x530) and the cycle limit (+0x534), and truncates (0x42B63A).
+            Equal("83 ba 3c 05 00 00 00", Bytes(0x43AA05, 7));
+            Equal("db 82 30 05 00 00", Bytes(0x43AA0E, 6));
+            Equal("db 86 34 05 00 00", Bytes(0x43A9D3, 6));
+            Equal("c6 44 24 01 1f", Bytes(0x42B643, 5));
+            Equal("sprites/cloc", System.Text.Encoding.ASCII.GetString(image.AtVirtualAddress(0x47637C, 12)));
+            Equal(36, Sprite.Load(install.DataFile("sprites", "cloc.spr")).Frames.Count);
+            int Clock(int phase, int tick) => DayNightPresentation.ClockFrame(DayNightCycle.FromNativeScenario(new ScenarioDayNight(phase, 6750, tick, 75)), 36);
+            // 6750 / 18 = 375 ticks a frame; the last tick of a phase is held back.
+            Equal((0, 0, 1, 17), (Clock(0, 0), Clock(0, 374), Clock(0, 375), Clock(0, 6750)));
+            Equal((18, 25, 35), (Clock(1, 0), Clock(1, 2700), Clock(1, 6750)));
+
+            // Lights add pixel / 8 to the brightness, up to 31.
+            Equal((31, 11, 16), (FogShading.AddLight(16, 160), FogShading.AddLight(10, 8), FogShading.AddLight(16, 0)));
+            // NUKE lays a spot under its fire: its light layer alone holds
+            // multiples of 8 up to 160, and the world composite leaves it out.
+            Sprite Load(string sprite) => Sprite.Load(File.Exists(install.DataFile("sprites", sprite + ".spr"))
+                ? install.DataFile("sprites", sprite + ".spr") : install.DataFile("intrface", sprite + ".spr"));
+            var nuke = AnimationDefinition.Load(install.DataFile("animate", "nuke.fin"));
+            var range = nuke.Animations.First(animation => animation.Name == "NUKE");
+            var lit = Enumerable.Range(range.FirstFrame, range.LastFrame - range.FirstFrame + 1).First(frame => nuke.LogicalFrames[frame].Layers.Any(layer => layer.IsLight));
+            var indices = Enumerable.Range(0, 256).Select(index => new VgaColor((byte)index, (byte)index, (byte)index)).ToArray();
+            var light = nuke.Compose(lit, Load, bottomAnchored: true, palette: indices, lights: true);
+            var pixels = Enumerable.Range(0, light.Width * light.Height).Where(pixel => light.Rgba[pixel * 4 + 3] != 0).Select(pixel => light.Rgba[pixel * 4]).ToArray();
+            Equal(true, pixels.Length > 100 && pixels.All(value => value % 8 == 0 && value <= 160));
+            var spot = Load("spot").Frames[0];
+            Equal(true, light.Width >= spot.Width && light.Height >= spot.Height);
+        }, CheckTags.Data);
+
         Check("8.8 positions preserve cell centers", () =>
         {
             var position = FixedPointPosition.AtCellCenter(new CellCoordinate(12, -3));

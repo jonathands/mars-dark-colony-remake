@@ -37,8 +37,13 @@ public sealed class NativeBlendTables
     public const int ShadowRow = 0x48;
     public const int FileSize = 3 * TableSize;
     private readonly NativeBlend[][] _rows;
+    private readonly byte[] _remap;
 
-    private NativeBlendTables(NativeBlend[][] rows) => _rows = rows;
+    private NativeBlendTables(NativeBlend[][] rows, byte[] remap)
+    {
+        _rows = rows;
+        _remap = remap;
+    }
 
     public static NativeBlendTables Load(string rmpPath, IReadOnlyList<VgaColor> palette) =>
         FromTables(File.ReadAllBytes(rmpPath), palette);
@@ -55,7 +60,19 @@ public sealed class NativeBlendTables
             for (var sprite = 0; sprite < 256; sprite++)
                 rows[table][sprite] = Fit(tables.Slice(table * TableSize + sprite * 256, 256), palette);
         }
-        return new NativeBlendTables(rows);
+        return new NativeBlendTables(rows, tables[..TableSize].ToArray());
+    }
+
+    /// <summary>
+    /// The palette index the first table gives a pixel at a brightness (0-31,
+    /// 16 leaves it) and colour (0-7, the day/night tint): the terrain blit
+    /// reads <c>table[(brightness * 8 + colour) * 256 + index]</c>.
+    /// </summary>
+    public byte Remap(int brightness, int colour, byte index)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)brightness, 31u, nameof(brightness));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)colour, 7u, nameof(colour));
+        return _remap[(brightness * 8 + colour) * 256 + index];
     }
 
     /// <summary>Whether a FIN draw type blends with the screen instead of covering it: the shadow (2) and the translucent types (4, 5).</summary>
