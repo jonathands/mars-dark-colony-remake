@@ -18,7 +18,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 10 | Some commands, attack-move among them, do not work | done: Move & Attack is the original's checked pair, and the original mouse buttons are the default (MOUSE option) |
 | 11 | A marine hit by a Gray beyond its own range does not respond | open: the plain case works (new Acquisition check: it fires back 4 updates later); needs the failing situation |
 | 12 | Esc in a game should ask for confirmation | done: the original's lqce dialog, also for QUIT and Q |
-| 13 | A Single Player War is never won after destroying everything | done: the native War end (0x40DEAC); units and empty positions' placed units count |
+| 13 | A Single Player War is never won after destroying everything | done: the native War end (0x40DEAC); units and empty positions' placed units counted until item 28 |
 | 14 | P7 multipliers in Single Player War (and probably multiplayer) do not work as intended | done: all six lobby options reach players 1-6 stat 0 (0x40183B) |
 | 15 | The Barrage's long-range attack does not animate correctly | done: the shell ends in its boom template's NUKE or GASY explosion, leaves the barrel at its muzzle frame, and the fire animation plays on the native clock |
 | 16 | Is the Napalm attack working? | it fired and its research gate worked, but it hit once at the impact. Now it burns as in the original: 14 hits over ~211 updates, its empty cells blocked, the NAPALM animation looping (Disease alike) |
@@ -33,7 +33,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 25 | The VTOL's build animation shows two VTOLs for a moment | done: the second one was its shadow. FIN draw type 2 is a shadow (each opaque pixel darkens the ground to 9/16 through the first blend table, `0x4603A7`); the port drew it as a sprite. The Gray saucer, the Drop Ship and the transports had the same fault (`fin-layers.md`) |
 | 26 | The fog of war hides things without a dark shadow, and hides things right in front of units | done: the terrain pass (0x453B94) shades ground out of sight to 10/16 and unexplored ground to black, blending each tile between corner means; the minimap draws ground out of sight at 2/3. Actors follow the native draw test (0x4395D4): city buildings by their slot's cells (and stay drawn once seen), anything else by the cell of its position, mines only once detected. Units are hidden when outside their sight radius, which is short for some (a Gray soldier sees 4 cells by day); the shading now shows where that ends (`vision.md`) |
 | 27 | The Sarge's walk slides | open |
-| 28 | A War should be won by destroying all buildings (the user's rule, replacing item 13's reading) | open |
+| 28 | A War should be won by destroying all buildings (the user's rule, replacing item 13's reading) | done: a player with a city is in the game only while a city building in slots 0-4 stands, so units alone no longer keep it in and empty positions are out from the start. This departs from 0x40DE20, which counts any live actor (`war-session.md`) |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

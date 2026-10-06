@@ -386,7 +386,7 @@ internal static class WarChecks
             Equal(true, high.ArtifactContainers.SelectMany(container => container.Items).All(item => item is >= 0x3f and <= 0x43));
         }, CheckTags.Data);
 
-        Check("a War ends once every player still in it is allied both ways with the first, units and empty positions included", () =>
+        Check("a War ends once every player still in it is allied both ways with the first; losing every building puts a player out", () =>
         {
             var install = GameInstallation.Open(dataPath);
             var rules = SimulationRules.Load(install);
@@ -402,27 +402,32 @@ internal static class WarChecks
             var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
             var simulation = ScenarioSimulation.Create(launch.ApplyTo(ScenarioDefinition.Load(file)),
                 PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height), rules, MissionScript.LoadForScenario(file), map);
-            // The human is team 3 and the computer team 1; 0 and 2 are empty positions.
+            // The human is team 3 and the computer team 1. Teams 0 and 2 are
+            // empty positions: their placed units stand, but they have no
+            // buildings, so they are out from the start.
+            Equal(true, simulation.Actors.Any(actor => actor.Seed.Team is 0 or 2 && !actor.IsDestroyed));
+            Equal((false, true, false, true), (simulation.IsPlayerInGame(0), simulation.IsPlayerInGame(1), simulation.IsPlayerInGame(2), simulation.IsPlayerInGame(3)));
             Equal(false, simulation.IsWarOver());
-
-            // Everything of teams 0-2 dies but one placed actor of an empty position (0x40DE20).
-            var destroyed = new List<DestroyedActorEvent>();
-            var others = simulation.Actors.Where(actor => actor.Seed.Team is 0 or 1 or 2 && !actor.IsDestroyed).ToArray();
-            var holdout = others.FirstOrDefault(actor => actor.Seed.Team is 0 or 2)
-                ?? throw new InvalidOperationException("j4play01's empty positions place no actors.");
-            foreach (var actor in others.Where(actor => actor != holdout)) simulation.Kill(actor, 3, destroyed);
-            Equal((false, true, true, false), (simulation.IsPlayerInGame(1), simulation.IsPlayerInGame(holdout.Seed.Team), simulation.IsPlayerInGame(3), simulation.IsWarOver()));
 
             // One-way alliance is not enough (0x41E820); both ways ends it.
-            simulation.SetAllianceBit(holdout.Seed.Team, 3, true);
+            simulation.SetAllianceBit(1, 3, true);
             Equal(false, simulation.IsWarOver());
-            simulation.SetAllianceBit(3, holdout.Seed.Team, true);
+            simulation.SetAllianceBit(3, 1, true);
             Equal(true, simulation.IsWarOver());
-            simulation.SetAllianceBit(3, holdout.Seed.Team, false);
+            simulation.SetAllianceBit(3, 1, false);
 
-            // A lone survivor wins.
-            simulation.Kill(holdout, 3, destroyed);
-            Equal((false, true), (simulation.IsPlayerInGame(holdout.Seed.Team), simulation.IsWarOver()));
+            // The computer loses every building in slots 0-4 but keeps its units
+            // and the slot-5 pylon: it is out, and the human wins.
+            var destroyed = new List<DestroyedActorEvent>();
+            var buildings = Enumerable.Range(0, ScenarioSimulation.UncountedCitySlot)
+                .Select(slot => simulation.CityBuilding(1, slot)).OfType<SimulatedActor>().ToArray();
+            Equal(true, buildings.Length > 0);
+            foreach (var building in buildings[..^1]) simulation.Kill(building, 3, destroyed);
+            Equal((true, false), (simulation.IsPlayerInGame(1), simulation.IsWarOver()));
+            simulation.Kill(buildings[^1], 3, destroyed);
+            Equal(true, simulation.Actors.Any(actor => actor.Seed.Team == 1 && !actor.IsDestroyed && actor.Definition.MovementSpeed > 0));
+            Equal(true, simulation.CityBuilding(1, ScenarioSimulation.UncountedCitySlot) is not null);
+            Equal((false, true), (simulation.IsPlayerInGame(1), simulation.IsWarOver()));
         }, CheckTags.Data);
     }
 }

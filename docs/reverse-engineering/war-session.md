@@ -69,7 +69,12 @@ loop, for game types 1 and 2 (settings `+0x14A0`):
     "Kills"/"Losses".
 
 The port checks this after every update (`MainForm.CheckWarEnd`, with
-`ScenarioSimulation.IsPlayerInGame` and `IsWarOver`). The result reuses
+`ScenarioSimulation.IsPlayerInGame` and `IsWarOver`), with one deliberate
+difference, the user's rule from playing the original (2026-10-06): a
+player with a city is in the game only while one of its city buildings in
+slots 0-4 stands. Losing every building puts it out, whatever units it has
+left, and an empty position, which has a city but no buildings, is out
+from the start. A player without a city keeps the native rule above. The result reuses
 the mission debrief screen, which says "Victory" or "Defeat"; the
 `multiwn` layout and its kill and loss counts are not drawn yet. When a
 player leaves the game, the port also writes "Team N is out of the game."

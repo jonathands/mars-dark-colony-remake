@@ -13,16 +13,25 @@ public sealed partial class ScenarioSimulation
     public const int UncountedCitySlot = 5;
 
     /// <summary>
-    /// <c>0x40DE20</c>: a player is in the game while one of its actors is
-    /// alive (state 1). City slot 5, deployed mobile towers (entities 41
-    /// and 42) and mines (45 and 46) do not count. Units count as well as
-    /// buildings, so do the placed units of an empty War position.
+    /// Whether a player is still in the War. The port keeps a player with a
+    /// city in the game while one of its city buildings in slots 0-4 stands:
+    /// losing every building puts it out, whatever units it has left (the
+    /// user's rule, 2026-10-06). An empty War position has a city with no
+    /// buildings, so it is out from the start.
+    /// <c>0x40DE20</c> differs: there any live actor (state 1) keeps the
+    /// player in, except city slot 5, deployed mobile towers (entities 41 and
+    /// 42) and mines (45 and 46), so units and an empty position's placed
+    /// units count too. A player without a city keeps that rule.
     /// </summary>
-    public bool IsPlayerInGame(int player) =>
-        (uint)player < PlayerCount && actors.Any(actor =>
+    public bool IsPlayerInGame(int player)
+    {
+        if ((uint)player >= PlayerCount) return false;
+        if (cityOrigins.ContainsKey(player))
+            return Enumerable.Range(0, UncountedCitySlot).Any(slot => CityBuilding(player, slot) is not null);
+        return actors.Any(actor =>
             !actor.IsDestroyed && actor.Seed.Team == player &&
-            EffectiveDefinition(actor).Id is not (41 or 42 or 45 or 46) &&
-            !(cityBuildings.TryGetValue((player, UncountedCitySlot), out var slotFive) && slotFive == actor.Seed.InstanceId));
+            EffectiveDefinition(actor).Id is not (41 or 42 or 45 or 46));
+    }
 
     /// <summary>
     /// <c>0x40DEAC</c>: every player still in the game is allied both ways

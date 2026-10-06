@@ -657,8 +657,9 @@ public sealed partial class MainForm : Form
     private int _warPlayersInGame = -1;
 
     /// <summary>
-    /// The War rules of the gameplay loop. Once the local player has nothing
-    /// left in the game (<c>0x40DE20</c>) it is told so (<c>maine</c> text 282)
+    /// The War rules of the gameplay loop. Once the local player is out of
+    /// the game (<see cref="ScenarioSimulation.IsPlayerInGame"/>: no building
+    /// left, the port's rule) it is told so (<c>maine</c> text 282)
     /// and watches. Once every player still in the game is allied
     /// (<c>0x40DEAC</c>) the game ends at once: a victory, or a defeat when the
     /// local player was already out (stat (0,0) = 8, <c>0x40A91E</c>).
