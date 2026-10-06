@@ -57,11 +57,12 @@ function Start-Peer([string] $role) {
 
 $input = Join-Path $PSScriptRoot 'Send-PortInput.ps1'
 $hostPeer = Start-Peer 'host'
-# Main menu MULTI PLAYER WAR, then netopte ACT AS SERVER.
-& $input -ProcessId $hostPeer.Id -Actions 'click:407,326', 'wait:800', 'click:543,389', 'wait:800'
+# Main menu MULTI PLAYER WAR, then netopte ACT AS SERVER. Each menu takes
+# input once its buttons have built up (about a second).
+& $input -ProcessId $hostPeer.Id -Actions 'click:407,326', 'wait:2000', 'click:543,389', 'wait:2000'
 $clientPeer = Start-Peer 'client'
 # MULTI PLAYER WAR, CONNECT TO SERVER, then getsvre CONNECT.
-& $input -ProcessId $clientPeer.Id -Actions 'click:407,326', 'wait:800', 'click:543,421', 'wait:800', 'click:337,347', 'wait:2000'
+& $input -ProcessId $clientPeer.Id -Actions 'click:407,326', 'wait:2000', 'click:543,421', 'wait:2000', 'click:337,347', 'wait:2000'
 # multie READY on the host.
 & $input -ProcessId $hostPeer.Id -Actions 'click:574,463', 'wait:2500'
 if ($HostActions.Count -gt 0) { & $input -ProcessId $hostPeer.Id -Actions $HostActions }

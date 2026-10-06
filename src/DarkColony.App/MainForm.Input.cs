@@ -4,6 +4,7 @@ using DarkColony.App.Rendering;
 using DarkColony.Engine.Assets;
 using DarkColony.Engine.Combat;
 using DarkColony.Engine.Data;
+using DarkColony.Engine.Interface;
 using DarkColony.Engine.Economy;
 using DarkColony.Engine.Simulation;
 using DarkColony.Engine.Terrain;
@@ -261,12 +262,15 @@ public sealed partial class MainForm
             return;
         }
         SetHover(_buttons.LastOrDefault(button => button.Bounds.Contains(eventArgs.Location))?.Id);
+        if (_screen == MenuScreenId.SinglePlayer) SetWarLobbyHover(eventArgs.Location);
     }
 
     private void SetHover(int? id)
     {
         if (_hoveredButton == id) return;
         _hoveredButton = id;
+        // 0x42426F: moving onto a push or check button plays HLIGHT.WAV.
+        if (id is not null && _screen != MenuScreenId.Gameplay) PlayInterfaceSound(ButtonHighlightSound);
         _surface.Invalidate();
     }
 
@@ -338,7 +342,11 @@ public sealed partial class MainForm
             _surface.Capture = true;
         }
         if (eventArgs.Button != MouseButtons.Left) return;
+        // A menu takes no input while its buttons build up (0x427BD4 runs before the event loop).
+        if (_screen != MenuScreenId.Gameplay && _nativeScreenState?.InButtonAnimation == true) return;
         _pressedButton = _buttons.LastOrDefault(button => button.Bounds.Contains(eventArgs.Location))?.Id;
+        // 0x426F78: a push button's press plays BUTTON.WAV.
+        if (_pressedButton is not null && _screen != MenuScreenId.Gameplay) PlayInterfaceSound(NativeWidgetRules.ButtonSound);
         _surface.Invalidate();
     }
 
@@ -347,6 +355,7 @@ public sealed partial class MainForm
         var popupPress = _popupPress;
         _popupPress = false;
         if (_video is not null || _optionsDraft is not null || VideoPanelOpen || _quitConfirmOpen || popupPress) return;
+        if (_screen != MenuScreenId.Gameplay && _nativeScreenState?.InButtonAnimation == true) return;
         var wasMapDrag = _mapDragged;
         var wasMinimapPress = _minimapPressed;
         var wasSinglePlayerScrollDrag = _singlePlayerScrollDragging;
@@ -419,6 +428,7 @@ public sealed partial class MainForm
             }
             if (HandleWarLobbyClick(eventArgs.Location))
             {
+                PlayInterfaceSound(NativeWidgetRules.ButtonSound);
                 _surface.Invalidate();
                 return;
             }

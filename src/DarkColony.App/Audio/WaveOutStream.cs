@@ -28,6 +28,7 @@ internal sealed partial class WaveOutStream : IDisposable
     private readonly Thread _thread;
     private volatile bool _stopping;
     private volatile bool _finished;
+    private bool _disposed;
     private long _playedBytes;
     private IntPtr _device;
     private int _volume = -1;
@@ -69,8 +70,11 @@ internal sealed partial class WaveOutStream : IDisposable
     /// <summary>Audio the device has finished playing, in seconds.</summary>
     public double PlayedSeconds => Interlocked.Read(ref _playedBytes) / (double)BytesPerSecond;
 
+    /// <summary>Stops the stream; later calls do nothing.</summary>
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _stopping = true;
         _bufferDone.Set();
         _thread.Join();

@@ -105,6 +105,9 @@ public sealed record NativeWidget
     /// <summary>A picture's frame of the screen's picture sheet.</summary>
     public int Frame { get; init; } = -1;
 
+    /// <summary>A <c>group</c>'s members, which start hidden (<c>0x422C26</c>).</summary>
+    public IReadOnlyList<int> Members { get; init; } = [];
+
     /// <summary>A <c>banim</c>'s gadgets, played in turn, and the buttons each one reveals.</summary>
     public IReadOnlyList<int> Gadgets { get; init; } = [];
     public IReadOnlyList<int> Buttons { get; init; } = [];
@@ -125,12 +128,13 @@ public sealed class NativeScreenDefinition
     private readonly Dictionary<int, NativeWidget> _widgets;
 
     private NativeScreenDefinition(
-        string? background, string? pictures, IReadOnlyDictionary<int, string> fonts,
+        string? background, string? pictures, string? animations, IReadOnlyDictionary<int, string> fonts,
         IReadOnlyList<(string Name, byte Red, byte Green, byte Blue)> colours, int brightPushed, int brightHighlight,
         Dictionary<int, NativeWidget> widgets, IReadOnlyDictionary<int, string> messages)
     {
         Background = background;
         Pictures = pictures;
+        Animations = animations;
         Fonts = fonts;
         DeclaredColours = colours;
         BrightPushed = brightPushed;
@@ -144,6 +148,13 @@ public sealed class NativeScreenDefinition
 
     /// <summary>The picture sheet buttons draw from, for example <c>intrface/knobe</c>.</summary>
     public string? Pictures { get; }
+
+    /// <summary>
+    /// The FIN list its gadgets play from when the definition names one
+    /// (<c>animation intrface/loadg.dat</c>); other screens' code loads the
+    /// list named after their background.
+    /// </summary>
+    public string? Animations { get; }
 
     public IReadOnlyDictionary<int, string> Fonts { get; }
 
@@ -170,7 +181,7 @@ public sealed class NativeScreenDefinition
     public static NativeScreenDefinition Parse(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        string? background = null, pictures = null;
+        string? background = null, pictures = null, animations = null;
         var fonts = new Dictionary<int, string>();
         var colours = new List<(string, byte, byte, byte)>();
         var brightPushed = 0;
@@ -190,9 +201,10 @@ public sealed class NativeScreenDefinition
             switch (keyword)
             {
                 case "end":
-                    return new NativeScreenDefinition(background, pictures, fonts, colours, brightPushed, brightHighlight, widgets, messages);
+                    return new NativeScreenDefinition(background, pictures, animations, fonts, colours, brightPushed, brightHighlight, widgets, messages);
                 case "background": background = reader.Word(); break;
                 case "pictures": pictures = reader.Word(); break;
+                case "animation": animations = reader.Word(); break;
                 case "font": fonts[reader.Int()] = reader.Word(); break;
                 case "bright_pushed": brightPushed = reader.Int(); break;
                 case "bright_highlight": brightHighlight = reader.Int(); break;
@@ -211,7 +223,7 @@ public sealed class NativeScreenDefinition
                     break;
             }
         }
-        return new NativeScreenDefinition(background, pictures, fonts, colours, brightPushed, brightHighlight, widgets, messages);
+        return new NativeScreenDefinition(background, pictures, animations, fonts, colours, brightPushed, brightHighlight, widgets, messages);
     }
 
     private static NativeWidget? ReadWidget(string keyword, WordReader reader)
@@ -229,11 +241,19 @@ public sealed class NativeScreenDefinition
             "gadget" => NativeWidgetKind.Gadget,
             "label" => NativeWidgetKind.Label,
             "banim" => NativeWidgetKind.ButtonAnimation,
+            "group" => NativeWidgetKind.Group,
             _ => null,
         };
         if (kind is not { } widgetKind) return null;
         var id = reader.Int();
         reader.Int(); // the description number
+        if (widgetKind == NativeWidgetKind.Group)
+        {
+            // "group 27 0 21 22 23 24 25 26": the rest are members.
+            var members = new List<int>();
+            while (reader.Peek() is not null) members.Add(reader.Int());
+            return new NativeWidget { Kind = widgetKind, Id = id, Members = members };
+        }
         if (widgetKind == NativeWidgetKind.ButtonAnimation)
         {
             // 0x427938: gadget count, button count, the gadgets, then the buttons.

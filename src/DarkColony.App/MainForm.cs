@@ -405,6 +405,8 @@ public sealed partial class MainForm : Form
             foreach (var image in _remappedFontGlyphs.Values) image.Dispose();
             foreach (var image in _nativeGlyphs.Values) image.Dispose();
             _teletypeBeep?.Dispose();
+            foreach (var image in _nativePictures.Values) image?.Dispose();
+            StopInterfaceSounds();
             StopCdMusic();
             LeaveNetwork();
             _minimapPreview?.Dispose();
@@ -466,12 +468,25 @@ public sealed partial class MainForm : Form
         }
         _resumeGameplayFromStory = false;
         RuntimeLog.Info($"Screen {_screen} -> {screen}");
+        var opened = screen != _screen;
         _screen = screen;
         _screenStartedAtTick = _world.TickCount;
         if (screen == MenuScreenId.Main) ResetCreditsTeletype();
         _hoveredButton = null;
         _pressedButton = null;
-        _buttons = screen switch
+        if (opened) OpenNativeScreen(screen);
+        RefreshButtons();
+        _surface.Cursor = screen == MenuScreenId.Gameplay ? Cursors.Cross : Cursors.Hand;
+        SetGameplayCursorVisibility(visible: screen != MenuScreenId.Gameplay);
+        UpdateCursorClip();
+        UpdateGameplayScreen();
+        _surface.Invalidate();
+    }
+
+    /// <summary>The current screen's buttons, rebuilt for their labels and selections.</summary>
+    private void RefreshButtons()
+    {
+        _buttons = _screen switch
         {
             MenuScreenId.Main => MainButtons(),
             MenuScreenId.NewGame => NewGameButtons(),
@@ -483,11 +498,6 @@ public sealed partial class MainForm : Form
             MenuScreenId.Story => StoryButtons(),
             _ => [],
         };
-        _surface.Cursor = screen == MenuScreenId.Gameplay ? Cursors.Cross : Cursors.Hand;
-        SetGameplayCursorVisibility(visible: screen != MenuScreenId.Gameplay);
-        UpdateCursorClip();
-        UpdateGameplayScreen();
-        _surface.Invalidate();
     }
 
     private void RenderFrame(Graphics graphics, GameCanvas canvas)
@@ -501,6 +511,7 @@ public sealed partial class MainForm : Form
             return;
         }
         var background = Background();
+        UpdateNativeScreen();
         if (_screen == MenuScreenId.Gameplay)
         {
             DrawGameplayTerrain(canvas);
@@ -537,6 +548,7 @@ public sealed partial class MainForm : Form
             DrawCreditsTeletype(graphics);
         }
         DrawInnerMenuAssets(graphics);
+        if (_screen != MenuScreenId.Gameplay) DrawNativeScreenWidgets(graphics);
         if (_screen == MenuScreenId.NewGame) DrawNewGameLeaderName(graphics);
         if (_screen == MenuScreenId.SinglePlayer) DrawSinglePlayerMapSelection(graphics);
         if (_screen == MenuScreenId.NetworkConnect) DrawNetworkConnect(graphics);

@@ -166,6 +166,27 @@ public sealed partial class MainForm
         DrawWarLobbyOptions(graphics, screen);
     }
 
+    private int? _warLobbyHover;
+
+    /// <summary>The lobby's own push and check buttons (player rows and options) play HLIGHT.WAV too.</summary>
+    private void SetWarLobbyHover(Point point)
+    {
+        int? hovered = null;
+        if (NativeScreen(WarLobbyScreen) is { } screen)
+        {
+            foreach (var widget in screen.Widgets)
+            {
+                if (widget.Kind is not (NativeWidgetKind.PushButton or NativeWidgetKind.CheckButton) || !ToRectangle(widget.Bounds).Contains(point)) continue;
+                if (widget.Id is >= 16 and <= 23 && _warLobbyPlayers[widget.Id - 16].Type != WarLobbyPlayerType.Human) continue;
+                if (_buttons.Any(button => button.NativeId == widget.Id)) continue;
+                hovered = widget.Id;
+            }
+        }
+        if (hovered == _warLobbyHover) return;
+        _warLobbyHover = hovered;
+        if (hovered is not null) PlayInterfaceSound(ButtonHighlightSound);
+    }
+
     /// <summary>A multie push or check button, highlighted under the pointer.</summary>
     private void DrawWarLobbyButton(Graphics graphics, NativeScreenDefinition screen, int id, bool selected = false, string? label = null)
     {

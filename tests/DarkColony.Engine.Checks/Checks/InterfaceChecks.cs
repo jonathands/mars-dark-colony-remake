@@ -554,5 +554,68 @@ internal static class InterfaceChecks
             Equal((97, new VgaColor(203, 23, 23)), (NativeInterfaceColours.Nearest(palette, (194, 35, 7)), palette[97]));
             Equal(new VgaColor(0, 255, 255), palette[NativeInterfaceColours.Nearest(palette, (0, 255, 255))]);
         }, CheckTags.Data);
+        Check("gadgets step on the animation clock and a banim builds the buttons up one by one", () =>
+        {
+            // A gadget's stepper matches NativeAnimationTiming: a loop wraps,
+            // a one-off keeps its last frame and finishes.
+            int[] ticks = [2, 1, 3, 2];
+            var loop = new GadgetAnimation(ticks, GadgetAnimationMode.Loop);
+            var once = new GadgetAnimation(ticks, GadgetAnimationMode.OneOff);
+            for (var step = 1UL; step <= 30; step++)
+            {
+                loop.Step();
+                once.Step();
+                Equal(NativeAnimationTiming.FrameAt(ticks, step), loop.Frame);
+                var expected = NativeAnimationTiming.FrameAt(ticks, step, NativeAnimationMode.Once);
+                Equal((expected < 0 ? ticks.Length - 1 : expected, expected < 0), (once.Frame, once.Finished));
+            }
+            var stopped = new GadgetAnimation(ticks, GadgetAnimationMode.Stopped);
+            stopped.Step();
+            Equal((0, true), (stopped.Frame, stopped.Finished));
+            once.Rewind();
+            once.Start(GadgetAnimationMode.OneOff);
+            once.Step();
+            Equal((1, false), (once.Frame, once.Finished));
+
+            var install = GameInstallation.Open(dataPath);
+            var newgame = NativeScreenDefinition.Load(install.DataFile("intrface", "newgamee"));
+            // Every gadget gets 12 frames of 2 ticks.
+            var state = new NativeScreenState(newgame, _ => Enumerable.Repeat(2, 12).ToArray());
+            // Group 27 hides the portraits and group 40 the two number fields; the banim's buttons wait.
+            Equal(false, Enumerable.Range(21, 6).Concat([19, 20]).Any(state.Shows));
+            Equal((true, true, false, false), (state.Shows(13), state.Shows(6), state.Shows(0), state.Shows(4)));
+            // A campaign hides START TRAINING (2); the banim then skips it.
+            state.Show(2, false);
+            var revealed = new List<int>();
+            var sounds = 0;
+            for (var now = 1000L; state.InButtonAnimation && now < 10_000; now += 5)
+            {
+                sounds += state.Update(now);
+                foreach (var button in (int[])[0, 1, 3, 4])
+                    if (state.Shows(button) && !revealed.Contains(button)) revealed.Add(button);
+            }
+            Equal(false, state.InButtonAnimation);
+            // One sound as it begins and one per later gadget; buttons in order.
+            Equal((4, "0,1,3,4"), (sounds, string.Join(',', revealed)));
+            Equal(false, ((int[])[6, 7, 9, 10]).Any(state.Shows));
+            Equal(false, state.Shows(2));
+
+            // After the build-up the poll steps visible gadgets once per 0x21 ms.
+            var decoration = state.Gadget(13)!;
+            state.Update(20_000);
+            decoration.Start(GadgetAnimationMode.Loop);
+            state.Update(20_033);
+            Equal(0, decoration.Frame);
+            state.Update(20_034);
+            Equal(1, decoration.Frame);
+            // Three more steps: frame 1's second tick, then frame 2's two.
+            state.Update(20_034 + 3 * 0x21);
+            Equal(2, decoration.Frame);
+            // A hidden gadget does not step.
+            var portrait = state.Gadget(21)!;
+            portrait.Start(GadgetAnimationMode.OneOff);
+            state.Update(30_000);
+            Equal(0, portrait.Frame);
+        }, CheckTags.Data);
     }
 }

@@ -52,7 +52,8 @@ public sealed partial class MainForm
     [
         Button(0, 193, 23, 90, 26, "HUMAN", () => SelectRace(false), !_grayRace),
         Button(1, 357, 23, 90, 26, "GRAY", () => SelectRace(true), _grayRace),
-        Button(2, 399, 349, 179, 26, _training ? "START TRAINING" : "START CAMPAIGN", StartCampaign),
+        Button(2, 399, 349, 179, 26, _training ? "START TRAINING" : "START CAMPAIGN", StartCampaign,
+            nativeId: _training ? StartTrainingButton : StartCampaignButton),
         Button(4, 521, 431, 90, 26, "BACK", () => ShowScreen(MenuScreenId.Main)),
     ];
 
@@ -166,16 +167,11 @@ public sealed partial class MainForm
         int? nativeId = null) =>
         new(id, new Rectangle(x, y, width, height), label, action, selected, artName, nativeId);
 
+    /// <summary>0x401E93: the new campaign screen always opens on the Human race.</summary>
     private void OpenNewGame(bool training)
     {
         _training = training;
-        ShowScreen(MenuScreenId.NewGame);
-    }
-
-    private void SelectRace(bool gray)
-    {
-        _grayRace = gray;
-        _singlePlayerMapIndex = 0;
+        _grayRace = false;
         ShowScreen(MenuScreenId.NewGame);
     }
 
@@ -262,14 +258,6 @@ public sealed partial class MainForm
     {
         switch (_screen)
         {
-            case MenuScreenId.NewGame:
-                // newgamee gadgets 21-26: both race portraits occupy their own
-                // 112x232 viewport. The source declares every listed portrait
-                // gadget anim_stopped; REZ ranges remain transition evidence.
-                DrawStoppedAnimation(graphics, "hcar.fin", "HLOOP", 27, 23);
-                DrawStoppedAnimation(graphics, "acar.fin", "ALOOP", 500, 23);
-                break;
-
             case MenuScreenId.SinglePlayer:
                 // The native free-war lobby is intrface/multie, over tcpwait,
                 // not shumane. CHAA supplies its structural foreground layer;
@@ -282,7 +270,13 @@ public sealed partial class MainForm
     /// <summary>The interface definition and palette of a menu screen whose buttons draw natively.</summary>
     private static (string Name, string Palette)? NativeMenuScreen(MenuScreenId screen) => screen switch
     {
+        MenuScreenId.NewGame => ("newgamee", "choo"),
+        MenuScreenId.LoadGame => ("loadge", "loader"),
         MenuScreenId.SinglePlayer => (WarLobbyScreen, WarLobbyPalette),
+        MenuScreenId.Encyclopedia => ("encycloe", "ency"),
+        MenuScreenId.NetworkOptions => ("netopte", "net"),
+        MenuScreenId.NetworkConnect => ("getsvre", "server"),
+        MenuScreenId.Story => ("storye", "story"),
         _ => null,
     };
 
@@ -290,17 +284,21 @@ public sealed partial class MainForm
 
     private void DrawButton(Graphics graphics, MenuButton button, int sequenceIndex)
     {
-        // An empty art name is a bare pushbutton: a hot zone over the background.
-        if (button.ArtName == string.Empty) return;
         var hovered = _hoveredButton == button.Id;
         var pressed = _pressedButton == button.Id;
-        if (button.NativeId is { } nativeId && NativeMenuScreen(_screen) is { } native && NativeScreen(native.Name) is { } screen &&
-            screen.Widget(nativeId) is { Kind: NativeWidgetKind.PushButton or NativeWidgetKind.CheckButton } widget)
+        // A menu with an intrface definition draws its push and check
+        // buttons from it, by the button's id unless it names another.
+        if (NativeMenuScreen(_screen) is { } native && NativeScreen(native.Name) is { } screen &&
+            screen.Widget(button.NativeId ?? button.Id) is { Kind: NativeWidgetKind.PushButton or NativeWidgetKind.CheckButton } widget)
         {
+            if (_nativeScreenState is { } state && !state.Shows(widget.Id)) return;
             DrawNativeButton(graphics, screen, native.Palette, widget, button.Selected || pressed && hovered, hovered,
                 button.Label.Length == 0 ? null : button.Label);
             return;
         }
+
+        // An empty art name is a bare pushbutton: a hot zone over the background.
+        if (button.ArtName == string.Empty) return;
         var bright = button.Selected || hovered;
         var artName = button.ArtName ?? (button.Bounds.Width >= 170 ? "LARGEBUTTON" : "MEDBUTTON");
         var art = Animation("knobe.fin", artName);
@@ -336,7 +334,6 @@ public sealed partial class MainForm
                 frame,
                 button.Bounds.X,
                 button.Bounds.Y,
-                remapWarControlPalette: _screen == MenuScreenId.SinglePlayer,
                 dimmed: dimmed);
         }
 
@@ -348,12 +345,10 @@ public sealed partial class MainForm
             graphics.DrawRectangle(border, button.Bounds.X, button.Bounds.Y, button.Bounds.Width - 1, button.Bounds.Height - 1);
         }
 
-        // Captured native text: War (159,19,19). The main menu labels are
-        // introe's `remap 0` at brightness 11, the same 11/16 as their
-        // buttons; dc16's RGB565 surface shows them as (140,12,8).
-        var warButtonText = _screen == MenuScreenId.SinglePlayer ? Color.FromArgb(159, 19, 19) : (Color?)null;
+        // The main menu labels are introe's `remap 0` at brightness 11, the
+        // same 11/16 as their buttons; dc16's RGB565 surface shows them as (140,12,8).
         (int, int)? nativeText = _screen == MenuScreenId.Main ? (0, 11) : null;
-        if (!DrawMenuText(graphics, button.Label, button.Bounds, remap: warButtonText, native: nativeText))
+        if (!DrawMenuText(graphics, button.Label, button.Bounds, native: nativeText))
         {
             using var font = new Font(FontFamily.GenericSansSerif, 10, FontStyle.Bold, GraphicsUnit.Pixel);
             using var brush = new SolidBrush(pressed ? Color.FromArgb(145, 170, 135) : Color.FromArgb(205, 226, 195));
@@ -450,6 +445,8 @@ public sealed partial class MainForm
         graphics.DrawString(text, font, brush, bounds, format);
     }
 
+    private const int BriefingVisibleLines = 25;
+
     private void DrawMissionBriefing(Graphics graphics)
     {
         // storye's scroll control is x=610/y=48/h=353. Its content area is
@@ -457,7 +454,7 @@ public sealed partial class MainForm
         var lines = MissionBriefingLines();
         const int firstY = 48;
         const int lineHeight = 14;
-        const int visibleLines = 25;
+        const int visibleLines = BriefingVisibleLines;
         for (var row = 0; row < visibleLines; row++)
         {
             var index = _briefingScrollLine + row;
@@ -501,10 +498,16 @@ public sealed partial class MainForm
         return lines;
     }
 
+    /// <summary>
+    /// newgamee in_text 5 (205, 308, 17 cells of font 0, remap 2, bg 1): the
+    /// leader's name, which shumane later shows in its own in_text 5.
+    /// </summary>
     private void DrawNewGameLeaderName(Graphics graphics)
     {
-        // newgamee in_text 5: 205,308, width 17. The source uses this same
-        // persistent leader value that shumane later shows in in_text 5.
-        DrawMenuText(graphics, _leaderName, new Rectangle(205, 308, 170, 18), center: false);
+        if (NativeScreen("newgamee") is not { } screen || screen.Widget(5) is not { } field || NativeFont(screen, field.Font) is not { } font) return;
+        var cell = font.Sprite.Frames[0];
+        FillNative(graphics, new Rectangle(field.Bounds.X, field.Bounds.Y, field.Columns * (cell.Width + 1), field.Rows * cell.Height),
+            NativeColour(screen, "choo", field.Background, 0));
+        DrawCellText(graphics, _leaderName, field.Bounds.X, field.Bounds.Y, font, field.Remap, field.Intensity, "choo");
     }
 }
