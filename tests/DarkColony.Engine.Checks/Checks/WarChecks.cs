@@ -337,6 +337,55 @@ internal static class WarChecks
             Equal(true, standard.PetraVents.Any(vent => vent.Rate > 0));
         }, CheckTags.Data);
 
+        Check("a War's Storage Cells and Artifacts options place pickups and open the map's artifact sites", () =>
+        {
+            var install = GameInstallation.Open(dataPath);
+            var rules = SimulationRules.Load(install);
+            var catalog = SinglePlayerWarCatalog.Load(install);
+            WarLobbyRow[] rows =
+            [
+                new(WarSeatKind.Human, 0, 0), new(WarSeatKind.Computer, 1),
+                new(WarSeatKind.None, 0), new(WarSeatKind.None, 1), new(WarSeatKind.None, 0),
+                new(WarSeatKind.None, 1), new(WarSeatKind.None, 0), new(WarSeatKind.None, 1),
+            ];
+            var file = install.DataFile("scenario", "mplayer", "j4play01.scn");
+            var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+            var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+            ScenarioSimulation Start(SinglePlayerWarSettings settings)
+            {
+                Equal(true, catalog.Scenarios.Single(war => war.Stem == "j4play01").TryCreateSession(rows, 0, settings, rules.RandomTable, out var launch));
+                return ScenarioSimulation.Create(launch.ApplyTo(ScenarioDefinition.Load(file)), path, rules, MissionScript.LoadForScenario(file), map);
+            }
+            static SimulatedActor[] Cells(ScenarioSimulation simulation) => simulation.Actors
+                .Where(actor => actor.Seed.EntityId is ScenarioSimulation.FuelStorageCellEntity or ScenarioSimulation.FillStorageCellEntity).ToArray();
+            static int Sites(ScenarioSimulation simulation) => simulation.Actors.Count(actor => actor.Seed.EntityId == ScenarioSimulation.ArtifactSiteEntity);
+
+            // Both options off: no cells, and 0x41C5C0 skips j4play01's four sites.
+            var off = Start(SinglePlayerWarSettings.Default);
+            Equal((0, 0, 0), (Cells(off).Length, Sites(off), off.ArtifactContainers.Count));
+
+            // 0x41C6B4: HIGH is three cells for each of the two positions in the
+            // session, team 9 pickups at their catalog health on PTH regions.
+            var high = Start(new SinglePlayerWarSettings(3, 1, false, false, 100, 100, 0));
+            var cells = Cells(high);
+            Equal(6, cells.Length);
+            foreach (var cell in cells)
+            {
+                Equal((AutonomousSpawnSeeder.InternalNeutralTeam, ContactRole.Pickup, rules.Entities[cell.Seed.EntityId].Health),
+                    (cell.Seed.Team, cell.ContactRole, cell.Health));
+                Equal(true, path.RegionAt(cell.Seed.SpawnCell) != 0);
+            }
+            Equal(6, cells.Select(cell => cell.Seed.SpawnCell).Distinct().Count());
+
+            // LOW artifacts open the four sites, and each site's s(6,0)==1
+            // trigger buries two artifacts (entity 0x3F + r % 5) there.
+            Equal((4, 4), (Sites(high), high.ArtifactContainers.Count));
+            // The norm triggers run every eighth update (0x419A4E).
+            for (var tick = 0; tick < 8; tick++) high.Step([]);
+            Equal("2 2 2 2", string.Join(' ', high.ArtifactContainers.Select(container => container.Items.Count)));
+            Equal(true, high.ArtifactContainers.SelectMany(container => container.Items).All(item => item is >= 0x3f and <= 0x43));
+        }, CheckTags.Data);
+
         Check("a War ends once every player still in it is allied both ways with the first, units and empty positions included", () =>
         {
             var install = GameInstallation.Open(dataPath);

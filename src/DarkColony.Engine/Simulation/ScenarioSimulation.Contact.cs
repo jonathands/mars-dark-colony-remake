@@ -20,11 +20,39 @@ public sealed partial class ScenarioSimulation
 {
     private const int ScriptWordCount = 8;
     private const int ContactRadius = 2;
+    /// <summary>The War Storage Cells: FUEL (85) on an odd draw, FILL, the psy-energy store (90), on an even one.</summary>
+    public const int FuelStorageCellEntity = 0x55;
+    public const int FillStorageCellEntity = 0x5a;
 
     /// <summary>The script array <c>u(0..7)</c> (dwords at <c>0x4FE04C</c>, zeroed at script load).</summary>
     private readonly int[] scriptWords = new int[ScriptWordCount];
 
     public IReadOnlyList<int> ScriptWords => scriptWords;
+
+    /// <summary>
+    /// The War's Storage Cells (<c>0x41C6B4</c>), after the SCN objects. For
+    /// each position in the session the loader makes player 5 stat 0 (the
+    /// lobby's Storage Cells, 0-3) cells. Each draws from the shared stream
+    /// (<c>0x411DB4</c>) its kind (odd: FUEL, even: FILL), then x = r % width
+    /// and z = r % height until the cell has a PTH region; it is created on
+    /// the first free cell of the square rings there (<c>0x41B4A0</c>) for
+    /// team 9 with its catalog health and contact flag 2, so the first unit
+    /// to come near takes its health as P7.
+    /// </summary>
+    private void ScatterWarStorageCells(int positions)
+    {
+        var count = positions * Math.Max(0, playerStats[5, 0]);
+        if (count == 0 || !path.Regions.Span.ContainsAnyExcept((byte)0)) return;
+        for (var index = 0; index < count; index++)
+        {
+            var entityId = NextNativeRandom() % 2 != 0 ? FuelStorageCellEntity : FillStorageCellEntity;
+            CellCoordinate origin;
+            do origin = new CellCoordinate((int)(NextNativeRandom() % (uint)path.Width), (int)(NextNativeRandom() % (uint)path.Height));
+            while (path.RegionAt(origin) == 0);
+            if (SpawnNativeUnit(entityId, AutonomousSpawnSeeder.InternalNeutralTeam, origin) is { } cell)
+                cell.ContactRole = ContactRole.Pickup;
+        }
+    }
 
     /// <summary>
     /// The idle command's branch for <c>+0xCB</c> 1 and 2 (<c>0x4148E2</c> ->

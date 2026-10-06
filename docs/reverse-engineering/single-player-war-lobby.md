@@ -104,6 +104,23 @@ The vent loader multiplies by the first two (see city-and-economy.md, "Vent
 rates"). The War maps' triggers test the others: for example, `j4play01`
 refills and re-rates its vents only while `s(3,0)==1` and `s(4,0)==1`.
 
+Two options act in the scenario loader (`0x41BC00`), not in the scripts:
+
+- **Storage Cells.** The loader counts the positions in the session (5 per
+  team whose `+0x1524` byte is set, divided by 5). After the SCN objects
+  (`0x41C6B4`) it makes s(5,0) cells for each position. Each one draws from
+  the shared stream: its kind (odd: FUEL, 85; even: FILL, the psy-energy
+  store, 90), then x = r % width and z = r % height until the cell's PTH
+  region is nonzero. It is created on the first free cell of the square
+  rings there (`0x41B4A0`) for team 9, with its catalog health and contact
+  flag 2, so the first unit to come near takes its health as P7. No War
+  script reads s(5,0).
+- **Artifacts.** In a War an SCN artifact site (POOP, 37) is created only
+  when s(6,0) > 0 (`0x41C5C0`); a campaign always creates it. The War
+  scripts then fill each site: `artifact x z` twice at LOW, `reinforce2 8 x
+  z` with one each of LENS, MAKT, LUNA, HYYK and TEKT (63-67) at MED, two
+  each at HIGH.
+
 The port carries the options as `WarSessionOptions`, which
 `SinglePlayerWarLaunch.ApplyTo` puts on the scenario. Single Player War,
 network War and saves all launch this way. The commander rank picks the

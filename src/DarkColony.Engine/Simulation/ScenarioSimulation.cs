@@ -254,8 +254,11 @@ public sealed partial class ScenarioSimulation
             if (entityId == ArtifactSiteEntity)
             {
                 // 0x41C5C0: an artifact site belongs to team 8 and opens a
-                // container at its cell. Network sessions skip it unless
-                // lobby option 6 is set; single player always creates it.
+                // container at its cell. A War (game type 1 or 2, with
+                // positions in the session) skips it unless the lobby's
+                // Artifacts option (player 6 stat 0) is on; a campaign
+                // always creates it.
+                if (scenario.WarOptions is { Artifacts: <= 0 }) continue;
                 team = ArtifactSiteTeam;
                 flag = 0;
                 AddArtifactContainer(artifactContainers, cell);
@@ -344,6 +347,8 @@ public sealed partial class ScenarioSimulation
         // cells and artifacts (0 by default).
         var session = scenario.WarOptions?.SessionStatistics ?? [256, 256, 0, 0, 0, 0];
         for (var player = 1; player <= session.Count; player++) simulation.playerStats[player, 0] = session[player - 1];
+        if (scenario.WarOptions is not null)
+            simulation.ScatterWarStorageCells(scenario.Teams.Count(team => team.Enabled && team.InWarSession && team.TeamId is >= 0 and < 8));
         // 0x41BDFD counts each team's starting money as earned P7 (stat 1).
         foreach (var (team, resource) in resources) simulation.RecordP7Earned(team, resource);
         simulation.InitializeMission(missionScript);
