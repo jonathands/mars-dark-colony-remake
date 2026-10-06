@@ -467,7 +467,17 @@ internal static class AssetsChecks
             // colour 0, about half the ground, untinted.
             var shade = tables.For(4, 64);
             Equal(true, shade.Multiplier is >= 110 and <= 135 && Math.Max(shade.Red, Math.Max(shade.Green, shade.Blue)) < 12);
-            Equal(false, NativeBlendTables.IsTranslucent(3));
+            Equal((false, true), (NativeBlendTables.IsBlended(3), NativeBlendTables.IsBlended(2)));
+            // Type 2 is a shadow: any opaque pixel reads row 0x48 (brightness 9 of colour 0).
+            Equal(tables.For(4, NativeBlendTables.ShadowRow), tables.For(2, 17));
+            Equal(true, tables.For(2, 200).Multiplier is >= 120 and <= 160);
+
+            // The VTOL's build animation ends with its body and, below it, its
+            // shadow: the same scgm frame with draw type 2.
+            var burn = AnimationDefinition.Load(install.DataFile("animate", "burn.fin"));
+            var build = burn.Animations.First(animation => animation.Name == "SCGMBUILD0");
+            Equal("0 2", string.Join(' ', burn.LogicalFrames[build.LastFrame].Layers
+                .Where(layer => layer.SpriteName == "scgm").Select(layer => layer.DrawType).Order()));
 
             // The explosions use them: NUKE and GASY draw their fire with draw type 5.
             foreach (var (file, name) in (ReadOnlySpan<(string, string)>)[("nuke.fin", "NUKE"), ("gasy.fin", "GASY")])

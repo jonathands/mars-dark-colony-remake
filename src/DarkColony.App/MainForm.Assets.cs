@@ -314,7 +314,7 @@ public sealed partial class MainForm
     /// </summary>
     private sealed record WorldSprite(GpuImage Image, Point Origin, Rectangle Opaque)
     {
-        /// <summary>The frame's translucent layers (draw types 4 and 5), drawn after it with <see cref="SpriteBlend.Modulate"/>.</summary>
+        /// <summary>The frame's shadow and translucent layers (draw types 2, 4 and 5), drawn after it with <see cref="SpriteBlend.Modulate"/>.</summary>
         public IReadOnlyList<(GpuImage Image, Point Origin)> Blends { get; init; } = [];
 
         public int Width => Image.Width;
@@ -393,10 +393,10 @@ public sealed partial class MainForm
                 definition = AnimationDefinition.Load(_installation.DataFile("animate", fileName));
                 _animationDefinitions[fileName] = definition;
             }
-            // Draw types 4 and 5 blend with the ground instead of covering it.
+            // Draw types 2 (shadow), 4 and 5 blend with the ground instead of covering it.
             var blends = _worldBlendTables;
             var composite = definition.Compose(frameIndex, LoadSprite, bottomAnchored: true,
-                includeLayer: layer => (blends is null || !NativeBlendTables.IsTranslucent(layer.DrawType)) &&
+                includeLayer: layer => (blends is null || !NativeBlendTables.IsBlended(layer.DrawType)) &&
                     (!shipOnly || layer.SpriteName.Equals("drop", StringComparison.OrdinalIgnoreCase) || layer.SpriteName.Equals("sauc", StringComparison.OrdinalIgnoreCase)));
             var image = composite.Width > 0 && composite.Height > 0
                 ? new GpuImage(composite.Width, composite.Height, composite.Rgba)
@@ -415,7 +415,7 @@ public sealed partial class MainForm
     }
 
     /// <summary>
-    /// A frame's draw-type 4 and 5 layers, one image per type, as
+    /// A frame's draw-type 2, 4 and 5 layers, one image per type, as
     /// <see cref="SpriteBlend.Modulate"/> applies them: each pixel holds its
     /// sprite colour's fitted blend (<see cref="NativeBlendTables"/>), and
     /// pixels no such layer covers leave the frame as it is.
@@ -423,7 +423,7 @@ public sealed partial class MainForm
     private IReadOnlyList<(GpuImage Image, Point Origin)> ComposeBlendLayers(AnimationDefinition definition, int frameIndex, NativeBlendTables blends)
     {
         var images = new List<(GpuImage, Point)>();
-        foreach (var drawType in (ReadOnlySpan<int>)[4, 5])
+        foreach (var drawType in (ReadOnlySpan<int>)[2, 4, 5])
         {
             if (!definition.LogicalFrames[frameIndex].Layers.Any(layer => layer.DrawType == drawType)) continue;
             var colours = new VgaColor[256];

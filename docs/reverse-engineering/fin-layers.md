@@ -63,6 +63,29 @@ sprites (`DrawLayer.IsLight`, `AnimationDefinition.Compose` with
 `bottomAnchored`). Before this, each explosion showed an opaque grey ellipse
 over the ground.
 
+## Draw types 1 and 2: shadows
+
+Type 2 (`0x454BCD`) only calls `0x4618C0`, or `0x461D14` when `[0x4891DC]` is
+set. That routine's span writer (`0x4603A7`) replaces each screen pixel under
+an opaque sprite pixel with `table[0x48 * 256 + screen]` (`mov ah, 0x48` at
+`0x460458`): row 0x48 of the first blend table below, colour 0 at brightness
+9. The sprite's shape darkens the ground to 9/16; it is a shadow. Type 1
+(`0x4549F6`) draws the same shadow and then the sprite, so a ground unit's
+shadow is hidden under it.
+
+Type-2 layers are the shadows of things in the air:
+
+- the VTOL's (`scgm`) in its build animation `SCGMBUILD0`, whose last frame
+  draws the craft at FIN y -35 and its shadow at y 37;
+- the Gray saucer's in `ORTUBUILDSTAND0`;
+- the Drop Ship's and the saucer transports';
+- some others (`fuel`, `gray`, `scou`, `towr`).
+
+The port drew them as ordinary sprites, so a VTOL leaving the factory
+looked like two. It now draws type 2 through the same blend as type 4 with
+that row. Type 1 still draws as an ordinary sprite: its shadow lies under the
+sprite.
+
 ## Draw types 4 and 5: blend tables
 
 Types 4 and 5 look up a table instead of writing the sprite pixel.

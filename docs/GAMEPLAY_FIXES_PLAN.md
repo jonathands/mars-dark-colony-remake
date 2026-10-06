@@ -30,6 +30,7 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 22 | Choosing a race in the new campaign played an animation and a sound | done: the Human portrait rezzes in with REZIN.WAV once the buttons are built; HUMAN/GRAY rez one race out and the other in, then loop it; "Type in a name for your leader" pulses (`interface-widgets.md`) |
 | 23 | Some shots and explosions ignore transparency | done: FIN draw types 4 and 5 are blend tables from the tileset's `.rmp` (haze darkens the ground; fire, sparks, smoke and flashes glow over it). The port fits each table row to `colour + m * ground` and blends it on the GPU; before, they drew as grey and white blobs (`fin-layers.md`) |
 | 24 | A War's Storage Cells and Artifacts options do nothing | done: the loader scatters each position's FUEL/FILL cells (`0x41C6B4`), and the map's artifact sites open only with Artifacts on (`0x41C5C0`); the triggers already filled them |
+| 25 | The VTOL's build animation shows two VTOLs for a moment | done: the second one was its shadow. FIN draw type 2 is a shadow (each opaque pixel darkens the ground to 9/16 through the first blend table, `0x4603A7`); the port drew it as a sprite. The Gray saucer, the Drop Ship and the transports had the same fault (`fin-layers.md`) |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

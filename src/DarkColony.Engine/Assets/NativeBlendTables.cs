@@ -11,14 +11,17 @@ public readonly record struct NativeBlend(byte Red, byte Green, byte Blue, byte 
 }
 
 /// <summary>
-/// The world blitter's translucent FIN draw types (<c>fin-layers.md</c>).
+/// The world blitter's shadow and translucent FIN draw types (<c>fin-layers.md</c>).
 /// Draw type 4 (<c>0x462468</c>) writes <c>table[sprite * 256 + screen]</c>
 /// from the first 64 KB table that <c>0x44F200</c> loads from the tileset's
 /// <c>.rmp</c> (the colour/brightness remap: brightness <c>sprite &gt;&gt; 3</c>,
 /// colour <c>sprite &amp; 7</c>, so it darkens). Draw type 5 (<c>0x462444</c>)
 /// adds 0x10000 to the table pointer first and reads the second table, whose
 /// rows 32-79 are glow ramps (32 leaves the screen, 33-47 whiten it, 48-75
-/// tint it red to yellow, 76-79 make it white).
+/// tint it red to yellow, 76-79 make it white). Draw type 2 is a shadow
+/// (<c>0x4618C0</c>/<c>0x461D14</c> via <c>0x4603A7</c>): every opaque pixel of the
+/// sprite reads row 0x48 of the first table, colour 0 at brightness 9, so the
+/// ground darkens to 9/16; type 1 draws that shadow and then the sprite.
 /// </summary>
 /// <remarks>
 /// The port's frame is RGB, not palette indices, so each row becomes the
@@ -29,6 +32,9 @@ public readonly record struct NativeBlend(byte Red, byte Green, byte Blue, byte 
 public sealed class NativeBlendTables
 {
     public const int TableSize = 0x10000;
+
+    /// <summary>The row of the first table a shadow pixel reads (<c>mov ah, 0x48</c> at <c>0x460458</c>).</summary>
+    public const int ShadowRow = 0x48;
     public const int FileSize = 3 * TableSize;
     private readonly NativeBlend[][] _rows;
 
@@ -52,14 +58,15 @@ public sealed class NativeBlendTables
         return new NativeBlendTables(rows);
     }
 
-    /// <summary>Whether a FIN draw type is one of the translucent ones.</summary>
-    public static bool IsTranslucent(int drawType) => drawType is 4 or 5;
+    /// <summary>Whether a FIN draw type blends with the screen instead of covering it: the shadow (2) and the translucent types (4, 5).</summary>
+    public static bool IsBlended(int drawType) => drawType is 2 or 4 or 5;
 
-    /// <summary>The blend a sprite colour of draw type 4 or 5 applies; index 0 is transparent.</summary>
+    /// <summary>The blend a sprite colour of draw type 2, 4 or 5 applies; index 0 is transparent.</summary>
     public NativeBlend For(int drawType, byte spriteIndex)
     {
-        if (!IsTranslucent(drawType)) throw new ArgumentOutOfRangeException(nameof(drawType), drawType, "Only draw types 4 and 5 blend.");
-        return spriteIndex == 0 ? NativeBlend.Identity : _rows[drawType - 4][spriteIndex];
+        if (!IsBlended(drawType)) throw new ArgumentOutOfRangeException(nameof(drawType), drawType, "Only draw types 2, 4 and 5 blend.");
+        if (spriteIndex == 0) return NativeBlend.Identity;
+        return drawType == 2 ? _rows[0][ShadowRow] : _rows[drawType - 4][spriteIndex];
     }
 
     private static NativeBlend Fit(ReadOnlySpan<byte> row, IReadOnlyList<VgaColor> palette)
