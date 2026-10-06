@@ -478,7 +478,10 @@ public sealed partial class MainForm
         if ((uint)renderEntityId >= (uint)_entityCatalog.Entities.Count) return false;
         var deploymentPresentation = ActiveFormDeploymentPresentation(entity, actorState);
         var combatPresentation = deploymentPresentation ?? ActiveCombatPresentation(entity, actorState);
-        var moveSelection = combatPresentation is null && actorState.Playback is not null && actorState.DeployedEntityId is null
+        // The step setup (0x412388) puts the MOVE animation on the walker, and
+        // it stays through a step that a new order lets finish.
+        var walking = actorState.Playback is not null || actorState.FinishingStep is not null;
+        var moveSelection = combatPresentation is null && walking && actorState.DeployedEntityId is null
             ? _entityAnimations.PreferredMove(renderEntityId, actorState.Facing.RenderSector16)
             : null;
         var candidate = combatPresentation?.Candidate ?? moveSelection?.Candidate ?? _entityAnimations.Preferred(renderEntityId);
