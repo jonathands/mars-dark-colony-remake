@@ -98,7 +98,48 @@ live tests that drive the real app.
   - walk animations facing the right way.
 
   A performance pass made late games smooth at 1920x1080 ([PERFORMANCE.md](PERFORMANCE.md)).
-  The README shows several of these fixes before and after.
+  Some of these fixes are shown below, before and after.
+
+## Some fixes, before and after
+
+Each pair comes from the same saved game or the same animation frames. The
+saved-game pairs were captured twice: once with a worktree of the commit
+before the fix, and once with the fixed build. The numbers are rows of
+[GAMEPLAY_FIXES_PLAN.md](GAMEPLAY_FIXES_PLAN.md).
+
+**Fog of war and night** (items 26 and 29). Before, unexplored ground was cut
+out in black squares and the night did not show. After, the ground fades
+into black, and the night greys it.
+
+| Before | After |
+| --- | --- |
+| ![Before: hard black squares, full colour at night](images/fix-fog-night-before.webp) | ![After: a soft edge and the night tint](images/fix-fog-night-after.webp) |
+
+**Ground out of sight** (item 26). Before, ground the player had explored
+stayed fully lit. After, ground outside every unit's sight darkens to 10/16,
+as the original shades it.
+
+| Before | After |
+| --- | --- |
+| ![Before: explored ground fully lit](images/fix-explored-before.webp) | ![After: ground out of sight darkened](images/fix-explored-after.webp) |
+
+**Explosions** (item 23). Two FIN draw types read blend tables from the
+tileset's `.rmp` instead of covering the ground. They were drawn as grey and
+white blobs (top); now they glow over the ground (bottom).
+
+![Explosions before (top) and after (bottom)](images/fix-explosions.webp)
+
+**A VTOL leaving the factory** (item 25). The last frames of its build
+animation hold the craft and its shadow, which the port drew as a second
+VTOL (top). Draw type 2 is a shadow that darkens the ground (bottom).
+
+![The VTOL before (top) and after (bottom)](images/fix-vtol.webp)
+
+**The Sarge's walk** (item 27). A table that turns a unit's facing into an
+animation had been misread, so a Sarge walking west showed a one-frame
+turning pose and slid (top). With the executable's values it walks (bottom).
+
+![The Sarge walking west, before (top) and after (bottom)](images/fix-sarge-walk.webp)
 
 ## How one rule gets in
 

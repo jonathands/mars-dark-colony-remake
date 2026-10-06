@@ -2,9 +2,11 @@
 
 This directory is the clean-room compiled port. It may read the user's adjacent
 original installation at runtime, but original game assets must not be copied
-into this repository. The only images taken from the game are the README's
+into this repository. The only images taken from the game are the
 screenshots in `docs/images` (lossless WebP), which the author chose to
 publish on 2026-10-06. Add to them only on request; never add asset files.
+The README may say that the port needs a copy of the original game, but not
+where to get one.
 
 Read `docs/PORT_CONTRACT.md` before changing architecture or adding a gameplay
 subsystem. It is the central statement of project shape and rules.

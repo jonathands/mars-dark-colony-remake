@@ -2,100 +2,133 @@
 
 A clean-room reimplementation of **Dark Colony**, the 1997 real-time
 strategy game published by Strategic Simulations, Inc., in C# on .NET 8 and
-Direct3D 11. Its rules come from reading the original `dc.exe`. The
-original's files stay on the player's disk: the port reads the installation
-at runtime, and no file from it is in this repository.
+Direct3D 11. Its rules come from reading the original `dc.exe`, so units,
+combat, the economy, the computer player and the mission scripts behave as
+they do in the original.
 
 It plays the Human and Gray campaigns, the training missions, and Single and
-Multi Player War. The computer player, mission scripts, day and night, the
-fog of war, music, videos and the encyclopedia are ported too.
+Multi Player War, with the original's music, videos and encyclopedia.
 
 How it was made: [docs/HOW_THE_PORT_WAS_MADE.md](docs/HOW_THE_PORT_WAS_MADE.md).
 
 ![A Single Player War in the port, in a 1280x720 view: the fog of war fades into the unexplored map](docs/images/port-expanded-view.webp)
 
+## The original game's files
+
+The port has no graphics, sounds, maps or game data of its own. It uses the
+original game's, read at start-up from a copy of Dark Colony installed on the
+player's disk:
+
+- the sprites and animations, maps, scenarios, mission scripts, unit
+  statistics and menu screens;
+- `dc.exe` itself, for tables such as the random stream, the sight areas and
+  the building footprints;
+- from the CD, if it is there, the soundtrack and the videos.
+
+Nothing is converted or copied: none of these files is in this repository,
+and none may be added. The only pictures from the game here are the
+screenshots below. To play, you need your own copy of the game; this
+repository does not say where to get one.
+
+The port looks for the installation in `--data <folder>`, then in the
+`DARKCOLONY_DATA` variable, then in `..\Dark Colony` next to this repository.
+The CD image (`DCUK.cue`/`.bin`) goes next to the installation.
+
+## Differences from the original
+
+The port aims to play exactly like the original. Where it does not, the
+difference is one of the following.
+
+### Rules changed on purpose
+
+The author decided these while play-testing, where the original felt wrong:
+
+- **Winning a War.** A player is out once the last building of its city
+  falls, whatever units it has left. The original keeps a player in while
+  any of its units lives ([war-session.md](docs/reverse-engineering/war-session.md)).
+- **A building destroyed while its ship lowers it** frees the player's next
+  delivery and its place in the city. In the original both stay blocked for
+  the rest of the game ([production-flow.md](docs/reverse-engineering/production-flow.md)).
+- The message strip says when a player is out of a War.
+
+### Added by the port
+
+None of these change how a game plays:
+
+- **Display.** The original runs only at 640x480. The port can also run in a
+  larger window or fullscreen, sharp at the monitor's DPI, with a larger
+  gameplay view; network games keep 640x480. At window scale 1 with the
+  classic view it draws the original's picture exactly ([DISPLAY.md](docs/DISPLAY.md)).
+- **Options.** The main menu has an OPTIONS button in its top-right corner,
+  and the in-game OPTIONS a VIDEO button. Both open the port's Video panel:
+  - window or fullscreen, size, scaling, gameplay view, vsync and pointer
+    lock;
+  - the intro video on or off, and a frame counter;
+  - MOUSE: the original buttons, or orders on the right button;
+  - DEBUG GUIDES: markers over the world for vents, move paths, waypoints
+    and attacked units.
+- **Saves and replays.** A save records the game's commands and replays them
+  up to the saved moment, so any save can also be watched as a replay. The
+  original's own save files cannot be loaded ([SAVE_GAMES.md](docs/SAVE_GAMES.md)).
+- **Multi Player War over TCP/IP** with the port's own lockstep protocol. The
+  original used DirectPlay, so the port cannot play against it, and IPX,
+  modem and serial are not offered ([NETWORK_AND_REPLAY.md](docs/NETWORK_AND_REPLAY.md)).
+- **Diagnostics.**
+  - F12 labels the units.
+  - Ctrl+F12 (`--reveal-map`) lifts the fog.
+  - Shift+F12 shows the path regions.
+  - `--perf` logs frame timings ([PERFORMANCE.md](docs/PERFORMANCE.md)).
+  - Each session writes a log to `%LOCALAPPDATA%\DarkColony.Port\logs\latest.log`.
+
+### Not yet like the original
+
+- **Fog of war.** The original keeps a marker for two kinds of objects on
+  ground out of sight; the port does not draw it. A city building seen
+  earlier shows as it stands now, not as the player last saw it
+  ([vision.md](docs/reverse-engineering/vision.md)).
+- **The end of a War** uses the campaign's debrief screen, not the
+  original's results screen with each player's kills and losses.
+- **Menus.**
+  - The main menu builds itself up with the port's own timing.
+  - Encyclopedia articles are laid out differently.
+  - The network screens' animated decorations stand still.
+- Smaller open items are in [docs/GAMEPLAY_FIXES_PLAN.md](docs/GAMEPLAY_FIXES_PLAN.md)
+  and in each reverse-engineering note's status table.
+
 ## Screenshots
 
-The pictures in [docs/images](docs/images) show the port, and the original
-for comparison, running on the author's own copy of the game. They are
-screenshots only; the game's files are not in the repository.
+These are screenshots of the port, and of the original for comparison, taken
+on the author's own copy of the game.
 
 ### The port
 
 | | |
 | --- | --- |
 | ![Main menu](docs/images/port-main-menu.webp) | ![New campaign: choosing a race](docs/images/port-new-campaign.webp) |
-| Main menu | New campaign: the race screen and its portraits |
+| Main menu | New campaign: choosing a race |
 | ![Single Player War lobby](docs/images/port-war-lobby.webp) | ![Encyclopedia](docs/images/port-encyclopedia.webp) |
 | Single Player War lobby | Encyclopedia |
 | ![A War by day](docs/images/port-war-day.webp) | ![The same War at night](docs/images/port-war-night.webp) |
-| A War by day | The same base at night: the ground greys, the units keep their colours |
+| A War by day | The same base at night |
 | ![A Gray Atril's ground attack at night](docs/images/port-night-explosion.webp) | |
-| A Gray Atril's ground attack at night: the blast lights the ground around it | |
+| An explosion lights the ground at night | |
 
 ### The original and the port
 
-The original pictures are captures of `dc16.exe`, Take 2's 16-bit-colour
-build, in a window. The scenes are alike, not identical.
+The original pictures are captures of `dc16.exe`, the original's
+16-bit-colour build, in a window. The scenes are alike, not identical.
 
 | Original | Port |
 | --- | --- |
 | ![The original's base at night](docs/images/original-night.webp) | ![The port's base at night](docs/images/port-war-night.webp) |
 | Night: grey ground, coloured units | The same rule, from `dc.exe`'s terrain pass ([day-night.md](docs/reverse-engineering/day-night.md)) |
 | ![The original's fog fading into black](docs/images/original-fog-edge.webp) | ![The port's fog fading into black](docs/images/port-war-day.webp) |
-| The explored ground fades into black over about a tile | The same fade, rebuilt from the corner ramps of `0x453B94` ([vision.md](docs/reverse-engineering/vision.md)) |
+| The explored ground fades into black over about a tile | The same fade, from the same pass ([vision.md](docs/reverse-engineering/vision.md)) |
 
-### How it got there: before and after
-
-Each fix came from a play-testing report, was traced in `dc.exe`, and went
-in with a check ([docs/GAMEPLAY_FIXES_PLAN.md](docs/GAMEPLAY_FIXES_PLAN.md)).
-These pairs come from the same saved game or the same animation frames,
-before and after the fix.
-
-**Fog of war and night** (items 26 and 29). Before, unexplored ground was cut
-out in black squares and the night did not show. After, the ground fades
-into black, and the night greys it.
-
-| Before | After |
-| --- | --- |
-| ![Before: hard black squares, full colour at night](docs/images/fix-fog-night-before.webp) | ![After: a soft edge and the night tint](docs/images/fix-fog-night-after.webp) |
-
-**Ground out of sight** (item 26). Before, ground the player had explored
-stayed fully lit. After, ground outside every unit's sight darkens to 10/16,
-as the original shades it.
-
-| Before | After |
-| --- | --- |
-| ![Before: explored ground fully lit](docs/images/fix-explored-before.webp) | ![After: ground out of sight darkened](docs/images/fix-explored-after.webp) |
-
-**Explosions** (item 23). Two FIN draw types read blend tables from the
-tileset's `.rmp` instead of covering the ground. They were drawn as grey and
-white blobs (top); now they glow over the ground (bottom).
-
-![Explosions before (top) and after (bottom)](docs/images/fix-explosions.webp)
-
-**A VTOL leaving the factory** (item 25). The last frames of its build
-animation hold the craft and its shadow, which the port drew as a second
-VTOL (top). Draw type 2 is a shadow that darkens the ground (bottom).
-
-![The VTOL before (top) and after (bottom)](docs/images/fix-vtol.webp)
-
-**The Sarge's walk** (item 27). A table that turns a unit's facing into an
-animation had been misread, so a Sarge walking west showed a one-frame
-turning pose and slid (top). With the executable's values it walks (bottom).
-
-![The Sarge walking west, before (top) and after (bottom)](docs/images/fix-sarge-walk.webp)
-
-## Requirements
+## Requirements and running
 
 - Windows 10 or later, and the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
-- An original installation (the folder with `dc.exe`, `gamestat`, `sprites`,
-  `scenario`). The port looks in `--data <folder>`, then `DARKCOLONY_DATA`,
-  then `..\Dark Colony` next to this repository.
-- Optional: the CD image (`DCUK.cue`/`.bin`) next to the installation, for
-  the soundtrack and the videos.
-
-## Run
+- An installed copy of the original game (see above).
 
 | How | What it does |
 | --- | --- |
@@ -113,8 +146,7 @@ dotnet publish src\DarkColony.App -c Release -r win-x64 --self-contained true -o
 ## Playing
 
 The original controls are the default: the left button selects and gives
-orders, and the right button deselects. The MOUSE option switches orders to
-the right button.
+orders, and the right button deselects.
 
 | Key | Action |
 | --- | --- |
@@ -126,22 +158,6 @@ the right button.
 | Esc, Q | Cancel, then "REALLY QUIT?" |
 | Alt+Enter | Window ↔ fullscreen |
 | F10 (main menu), VIDEO (in-game OPTIONS) | Video panel |
-
-## Beyond the original
-
-None of these change the simulation:
-
-- Display: window or fullscreen, native DPI, and larger gameplay views
-  (network games stay 640x480). See [docs/DISPLAY.md](docs/DISPLAY.md).
-- Saves and replays as command journals: [docs/SAVE_GAMES.md](docs/SAVE_GAMES.md).
-- Multi Player War over TCP/IP with lockstep: [docs/NETWORK_AND_REPLAY.md](docs/NETWORK_AND_REPLAY.md).
-- Diagnostics:
-  - F12 labels the actors.
-  - Ctrl+F12 (`--reveal-map`) lifts the fog.
-  - Shift+F12 shows the path regions.
-  - DEBUG GUIDES draws the P7 markers and paths.
-  - `--perf` logs frame timings ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
-- A session log in `%LOCALAPPDATA%\DarkColony.Port\logs\latest.log`.
 
 ## Verify
 
@@ -169,14 +185,3 @@ docs/                         design, testing, reverse-engineering notes (docs/R
 
 Rules for contributors (and coding agents) are in [AGENTS.md](AGENTS.md) and
 [docs/PORT_CONTRACT.md](docs/PORT_CONTRACT.md).
-
-## Known gaps
-
-- Fog of war: the original's remembered overlays (grid bits 10-17) are not
-  drawn, and a city building seen earlier is drawn as it stands now, not as
-  the player last saw it ([vision.md](docs/reverse-engineering/vision.md)).
-- A War is lost with the last building in the port. The original counts any
-  live unit; the change is the author's call ([war-session.md](docs/reverse-engineering/war-session.md)).
-- The original's own save files are not read.
-- Smaller items are open in [docs/GAMEPLAY_FIXES_PLAN.md](docs/GAMEPLAY_FIXES_PLAN.md)
-  and in each reverse-engineering note's status table.

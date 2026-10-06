@@ -4,8 +4,9 @@ Start with [HOW_THE_PORT_WAS_MADE.md](HOW_THE_PORT_WAS_MADE.md) for the story
 and the method. Read [PORT_CONTRACT.md](PORT_CONTRACT.md) before changing
 code.
 
-[images/](images/) holds the screenshots the main README shows: the port,
-the original for comparison, and fixes before and after.
+[images/](images/) holds the screenshots: the port and the original for
+comparison, which the main README shows, and fixes before and after, which
+[HOW_THE_PORT_WAS_MADE.md](HOW_THE_PORT_WAS_MADE.md) shows.
 
 ## Using the port
 
