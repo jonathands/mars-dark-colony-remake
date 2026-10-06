@@ -4,13 +4,87 @@ A clean-room reimplementation of **Dark Colony**, the 1997 real-time
 strategy game published by Strategic Simulations, Inc., in C# on .NET 8 and
 Direct3D 11. Its rules come from reading the original `dc.exe`. The
 original's files stay on the player's disk: the port reads the installation
-at runtime, and nothing from it is in this repository.
+at runtime, and no file from it is in this repository.
 
 It plays the Human and Gray campaigns, the training missions, and Single and
-Multi Player War. The computer player, mission scripts, music, videos and the
-encyclopedia are ported too.
+Multi Player War. The computer player, mission scripts, day and night, the
+fog of war, music, videos and the encyclopedia are ported too.
 
 How it was made: [docs/HOW_THE_PORT_WAS_MADE.md](docs/HOW_THE_PORT_WAS_MADE.md).
+
+![A Single Player War in the port, in a 1280x720 view: the fog of war fades into the unexplored map](docs/images/port-expanded-view.webp)
+
+## Screenshots
+
+The pictures in [docs/images](docs/images) show the port, and the original
+for comparison, running on the author's own copy of the game. They are
+screenshots only; the game's files are not in the repository.
+
+### The port
+
+| | |
+| --- | --- |
+| ![Main menu](docs/images/port-main-menu.webp) | ![New campaign: choosing a race](docs/images/port-new-campaign.webp) |
+| Main menu | New campaign: the race screen and its portraits |
+| ![Single Player War lobby](docs/images/port-war-lobby.webp) | ![Encyclopedia](docs/images/port-encyclopedia.webp) |
+| Single Player War lobby | Encyclopedia |
+| ![A War by day](docs/images/port-war-day.webp) | ![The same War at night](docs/images/port-war-night.webp) |
+| A War by day | The same base at night: the ground greys, the units keep their colours |
+| ![A Gray Atril's ground attack at night](docs/images/port-night-explosion.webp) | |
+| A Gray Atril's ground attack at night: the blast lights the ground around it | |
+
+### The original and the port
+
+The original pictures are captures of `dc16.exe`, Take 2's 16-bit-colour
+build, in a window. The scenes are alike, not identical.
+
+| Original | Port |
+| --- | --- |
+| ![The original's base at night](docs/images/original-night.webp) | ![The port's base at night](docs/images/port-war-night.webp) |
+| Night: grey ground, coloured units | The same rule, from `dc.exe`'s terrain pass ([day-night.md](docs/reverse-engineering/day-night.md)) |
+| ![The original's fog fading into black](docs/images/original-fog-edge.webp) | ![The port's fog fading into black](docs/images/port-war-day.webp) |
+| The explored ground fades into black over about a tile | The same fade, rebuilt from the corner ramps of `0x453B94` ([vision.md](docs/reverse-engineering/vision.md)) |
+
+### How it got there: before and after
+
+Each fix came from a play-testing report, was traced in `dc.exe`, and went
+in with a check ([docs/GAMEPLAY_FIXES_PLAN.md](docs/GAMEPLAY_FIXES_PLAN.md)).
+These pairs come from the same saved game or the same animation frames,
+before and after the fix.
+
+**Fog of war and night** (items 26 and 29). Before, unexplored ground was cut
+out in black squares and the night did not show. After, the ground fades
+into black, and the night greys it.
+
+| Before | After |
+| --- | --- |
+| ![Before: hard black squares, full colour at night](docs/images/fix-fog-night-before.webp) | ![After: a soft edge and the night tint](docs/images/fix-fog-night-after.webp) |
+
+**Ground out of sight** (item 26). Before, ground the player had explored
+stayed fully lit. After, ground outside every unit's sight darkens to 10/16,
+as the original shades it.
+
+| Before | After |
+| --- | --- |
+| ![Before: explored ground fully lit](docs/images/fix-explored-before.webp) | ![After: ground out of sight darkened](docs/images/fix-explored-after.webp) |
+
+**Explosions** (item 23). Two FIN draw types read blend tables from the
+tileset's `.rmp` instead of covering the ground. They were drawn as grey and
+white blobs (top); now they glow over the ground (bottom).
+
+![Explosions before (top) and after (bottom)](docs/images/fix-explosions.webp)
+
+**A VTOL leaving the factory** (item 25). The last frames of its build
+animation hold the craft and its shadow, which the port drew as a second
+VTOL (top). Draw type 2 is a shadow that darkens the ground (bottom).
+
+![The VTOL before (top) and after (bottom)](docs/images/fix-vtol.webp)
+
+**The Sarge's walk** (item 27). A table that turns a unit's facing into an
+animation had been misread, so a Sarge walking west showed a one-frame
+turning pose and slid (top). With the executable's values it walks (bottom).
+
+![The Sarge walking west, before (top) and after (bottom)](docs/images/fix-sarge-walk.webp)
 
 ## Requirements
 
@@ -98,11 +172,11 @@ Rules for contributors (and coding agents) are in [AGENTS.md](AGENTS.md) and
 
 ## Known gaps
 
-- Fog of war:
-  - enemy structures stay drawn on explored ground (the original's remembered
-    overlays are not decoded);
-  - the soft edge of unexplored ground is not reproduced.
-- FIN draw type 4 (glow layers such as GASY's `spon`) draws as an opaque blob.
+- Fog of war: the original's remembered overlays (grid bits 10-17) are not
+  drawn, and a city building seen earlier is drawn as it stands now, not as
+  the player last saw it ([vision.md](docs/reverse-engineering/vision.md)).
+- A War is lost with the last building in the port. The original counts any
+  live unit; the change is the author's call ([war-session.md](docs/reverse-engineering/war-session.md)).
 - The original's own save files are not read.
 - Smaller items are open in [docs/GAMEPLAY_FIXES_PLAN.md](docs/GAMEPLAY_FIXES_PLAN.md)
   and in each reverse-engineering note's status table.

@@ -78,7 +78,7 @@ After the roadmap came the test suite: a catalog sweep that builds, trains,
 researches and fights with every item of both races, a parallel runner, and
 live tests that drive the real app.
 
-**4. Display and play-testing (4-5 October 2026).** Two parts:
+**4. Display and play-testing (4-6 October 2026).** Two parts:
 
 - Display modes: native DPI, fullscreen, larger gameplay views, and the Video
   panel ([history/DISPLAY_MODES_PLAN.md](history/DISPLAY_MODES_PLAN.md)).
@@ -90,9 +90,15 @@ live tests that drive the real app.
   - the Barrage's shells;
   - Napalm burning;
   - the War victory rule;
-  - fog of war.
+  - menus driven by the original screen definitions, with their build-up
+    animations and sounds;
+  - translucent explosions and shadows through the tileset's blend tables;
+  - the fog of war's shading;
+  - day and night;
+  - walk animations facing the right way.
 
   A performance pass made late games smooth at 1920x1080 ([PERFORMANCE.md](PERFORMANCE.md)).
+  The README shows several of these fixes before and after.
 
 ## How one rule gets in
 
@@ -114,14 +120,18 @@ live tests that drive the real app.
    when behaviour is meant to change, and the commit says why.
 5. **Compare it with the original** where static reading is not enough:
    - side-by-side screenshots;
-   - the debugger (`cdb`) attached to a running `dc16.exe` to read live state.
+   - the debugger (`cdb`) attached to a running `dc16.exe` to read live state;
+   - a worktree of an older commit, run on the same saved game, to show a
+     fix before and after.
 
    When no evidence can settle a question, such as how the game should feel,
    the author decides. Those decisions are recorded with the rule:
    - the original mouse buttons are the default;
    - units outside sight are hidden;
    - a building destroyed during delivery frees its slot, which the original
-     does not.
+     does not;
+   - a War is lost with the last building, where the original also counts
+     units.
 
 ## Design choices that made it work
 
@@ -158,18 +168,24 @@ Wrong guesses were corrected as evidence arrived. Some examples:
 - Sprites, path regions and terrain were first placed in different frames.
 - The port was once said to have fog of war, when it only blacked out
   unexplored ground.
+- The table that picks an animation for a facing (`0x47950C`) was read as
+  `3, -2, 3, -2 ...` instead of `0, 1, -1, 2, -2 ...`. Units with 16
+  directions were drawn turned by one, and the Sarge slid while walking.
+- A FIN draw type was taken for a sprite when it is a shadow, so a VTOL
+  leaving the factory looked like two.
 
 Older notes stay in [history/](history/) as a record. Where they disagree with
 the code or with `reverse-engineering/`, the code and those notes win.
 
-## In numbers (5 October 2026)
+## In numbers (6 October 2026)
 
 | Part | Size |
 | --- | --- |
-| History | 170 commits, 1 August to 5 October 2026 |
-| Engine | about 16,400 lines |
-| App | about 9,900 lines |
+| History | 182 commits, 1 August to 6 October 2026 |
+| Engine | about 17,600 lines |
+| App | about 10,800 lines |
 | Presentation | about 1,000 lines |
-| Checks | about 7,900 lines; 216 checks, determinism goldens over installed scenarios |
-| Reverse-engineering notes | 20 |
+| Checks | about 8,300 lines; 224 checks, determinism goldens over installed scenarios |
+| Reverse-engineering notes | 22 |
+| Play-testing reports | 29; one (item 11) waits for a way to reproduce it |
 | Scenarios | all 101 installed load; the 44 campaign and training missions reach an outcome headless |
