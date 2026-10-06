@@ -123,3 +123,30 @@ an ordinary one now goes over it. Before this the port drew both types as
 ordinary sprites: grey and white blobs instead of fire.
 
 The first two trailing words remain unnamed.
+
+## Directional animations: which suffix a facing shows
+
+A unit's 8-bit facing (`+0x09`) picks its animation through a doubled
+selector: `0x43978D` takes `((facing + 8) & 0xFF) >> 4`, the 16-sector
+direction, and doubles it. `0x4260A8` loads a family such as `SARGMOVE`:
+
+1. For i = 0-15 it looks up the name with suffix `(12 - i) & 15`.
+2. It fills 32 selector slots. Slot s tries the offsets at `0x47950C` in
+   turn, `0, 1, -1, 2, -2 ... 15, -15, 16`, and takes the first loaded
+   entry `((s + offset) & 31) / 2`.
+
+So sector s shows suffix `(12 - s) & 15` when the FIN has it, and otherwise
+the nearest suffix, the lower-numbered sector first.
+
+Units walk in the eight path directions, the even sectors. Many families
+draw those with full walk cycles and the odd suffixes as single turning
+frames: `sarg.fin` has eight frames for `SARGMOVE0`, 2 ... 14 and one for
+`SARGMOVE1`, 3 ... 15. PSYC, REAP, SALY, GRUB and others are built the same
+way.
+
+Until 2026-10-06 the port had misread the offsets as `3, -2, 3, -2 ...`.
+Sector s then showed suffix `11 - s`: such units were turned a sector, and
+the Sarge slid through its one-frame poses while walking.
+`EntityAnimationCatalog` now holds the table, and a check compares it with
+the executable. Fire animations place projectile muzzles per direction
+(`NativeFireMuzzles`), so the determinism goldens changed with it.

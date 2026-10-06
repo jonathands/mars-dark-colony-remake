@@ -298,7 +298,7 @@ public sealed class EntityAnimationCatalog
                 // The lists are already in file preference order (see Build).
                 group => group.First().Candidate);
         var selector = sector * 2;
-        for (var attempt = 0; attempt < NativeDirectionalFallbackOffsets.Length; attempt++)
+        for (var attempt = 0; attempt < NativeDirectionalFallbackOffsets.Count; attempt++)
         {
             var candidateIndex = ((selector + NativeDirectionalFallbackOffsets[attempt]) & 0x1f) >> 1;
             var animationSector = (12 - candidateIndex) & 0x0f;
@@ -314,10 +314,16 @@ public sealed class EntityAnimationCatalog
         return new DirectionalAnimationSelection(baseCandidate, sector, 0, false, selector);
     }
 
-    // Executable dwords at 0x47950c, consumed in sequence by 0x42624a.
-    private static readonly int[] NativeDirectionalFallbackOffsets =
-    [3, -2, 3, -2, 3, -2, 3, 0, 0, -1, 0, -1, -1, 0, -1, 0,
-     0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, -1, -1, 0, -1, 0];
+    /// <summary>
+    /// The executable's dwords at <c>0x47950C</c>, which <c>0x42624A</c> tries
+    /// in turn: the selector itself, then ever farther neighbours, 1, -1, 2,
+    /// -2 ... 15, -15, 16. A direction the FIN names therefore always shows
+    /// its own animation. (Until 2026-10-06 the port had misread them as
+    /// 3, -2, 3, -2 ..., which turned 16-direction units a sector and showed
+    /// the Sarge's one-frame in-between directions while it walked.)
+    /// </summary>
+    public static IReadOnlyList<int> NativeDirectionalFallbackOffsets { get; } =
+        [0, .. Enumerable.Range(1, 15).SelectMany(step => new[] { step, -step }), 16];
 
     private static int FireVariantPriority(string entityCode, string animationName)
     {

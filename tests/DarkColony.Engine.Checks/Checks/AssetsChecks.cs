@@ -435,12 +435,26 @@ internal static class AssetsChecks
             Equal("TRSCFIREA12", trooperFire.Candidate.AnimationName);
             var grayHit = animations.PreferredHit(8, 0) ?? throw new InvalidOperationException("GRAY HIT family missing.");
             Equal("GRAYHITB12", grayHit.Candidate.AnimationName);
+            // Sector s shows suffix (12 - s) & 15 when the FIN names it. The
+            // trooper has only even suffixes: sector 1 (suffix 11) takes the
+            // first neighbour 0x47950C reaches, selector 2 - 1, which is 12.
             var trooperMove = animations.PreferredMove(0, 1) ?? throw new InvalidOperationException("TRSC MOVE family missing.");
-            Equal(true, trooperMove.ExactSector);
-            Equal(10, trooperMove.AnimationSector);
+            Equal((false, 12), (trooperMove.ExactSector, trooperMove.AnimationSector));
+            Equal("TRSCMOVE10", animations.PreferredMove(0, 2)!.Candidate.AnimationName);
             var lunaMove = animations.PreferredMove(65, 1) ?? throw new InvalidOperationException("LUNA MOVE family missing.");
             Equal(true, lunaMove.ExactSector);
-            Equal("LUNAMOVE10", lunaMove.Candidate.AnimationName);
+            Equal("LUNAMOVE11", lunaMove.Candidate.AnimationName);
+            // The Sarge walks in the eight path directions (even sectors) with
+            // its eight-frame walks; the odd suffixes are one-frame turns.
+            var sarge = entities.Entities.Single(entity => entity.Code == "SARG");
+            Equal("SARGMOVE12 SARGMOVE10 SARGMOVE8 SARGMOVE6 SARGMOVE4 SARGMOVE2 SARGMOVE0 SARGMOVE14",
+                string.Join(' ', Enumerable.Range(0, 8).Select(step => animations.PreferredMove(sarge.Id, step * 2)!.Candidate.AnimationName)));
+            Equal(true, Enumerable.Range(0, 8).All(step => animations.PreferredMove(sarge.Id, step * 2)!.Candidate is var walk && walk.LastFrame - walk.FirstFrame == 7));
+            Equal("SARGMOVE11", animations.PreferredMove(sarge.Id, 1)!.Candidate.AnimationName);
+            // The offsets are the executable's own.
+            var image = PeImage.Load(install.ExecutablePath);
+            Equal(string.Join(' ', EntityAnimationCatalog.NativeDirectionalFallbackOffsets),
+                string.Join(' ', Enumerable.Range(0, 32).Select(index => BinaryPrimitives.ReadInt32LittleEndian(image.AtVirtualAddress(0x47950C + (uint)index * 4, 4)))));
             var turretDeploy = animations.PreferredDeploy(1, 0) ?? throw new InvalidOperationException("TURR DEPLOY family missing.");
             Equal("TURRDEPLOY0", turretDeploy.Candidate.AnimationName);
             var xenoDeploy = animations.PreferredDeploy(9, 0) ?? throw new InvalidOperationException("XENO DEPLOY family missing.");
