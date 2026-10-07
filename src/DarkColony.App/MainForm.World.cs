@@ -872,23 +872,17 @@ public sealed partial class MainForm
                 }
                 var x = projectile.Position.XRaw / 8 - _cameraX;
                 var y = WorldPixelY(projectile.Position.ZRaw) - projectile.HeightRaw / 8 - _cameraY;
-                var candidate = _weaponEffects?.Bullet(projectile.WeaponId);
-                var rendered = false;
-                if (candidate is not null)
+                // A weapon without a <sprite>BULLET0 animation (0x43B84F) gives its
+                // projectiles none (0x441869), and the drawing loop skips them
+                // (0x439DC3): the shots of 38 of the 64 weapons, the marines' and
+                // warriors' among them, are seen only in the shooter's fire
+                // animation and the hit. The animation steps once per update from
+                // the shot's creation, looping (0x442998, mode 0 at 0x441862).
+                if (_weaponEffects?.Bullet(projectile.WeaponId) is { } candidate)
                 {
                     var fileName = FinFileName(candidate.FinPath);
-                    var span = candidate.LastFrame - candidate.FirstFrame + 1;
-                    var frame = candidate.FirstFrame + (ushort)(projectile.AnimationTicks % span);
-                    if (WorldFrame(fileName, frame) is { } sprite)
-                    {
-                        DrawWorldSprite(canvas, sprite, x + sprite.Origin.X, y + sprite.Origin.Y);
-                        rendered = true;
-                    }
-                }
-                if (!rendered)
-                {
-                    canvas.Ellipse(new Rectangle(x - 4, y - 4, 8, 8), Color.FromArgb(235, 255, 225, 95), filled: true);
-                    canvas.Ellipse(new Rectangle(x - 1, y - 1, 3, 3), Color.FromArgb(255, 255, 255, 215), filled: true);
+                    var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, (ulong)projectile.AnimationTicks);
+                    if (WorldFrame(fileName, frame) is { } sprite) DrawWorldSprite(canvas, sprite, x + sprite.Origin.X, y + sprite.Origin.Y);
                 }
                 if (_showAssetNames)
                 {

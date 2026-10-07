@@ -40,6 +40,8 @@ fixed from executable evidence where there is some, and the evidence goes in
 | 32 | Resolution changes in OPTIONS do not apply | open |
 | 33 | Vents erupt without the original's sound | open: not a FIN hotspot, and the vent update plays only the deploy sound; the trigger is not found yet |
 | 34 | Units of every team look alike, and the minimap marks allies as enemies (found while tracing item 31) | open: the original draws sprites through the owner's colour row (`+0xC98`, `0x435FCC`), which recolours the team ramp 138-143; the minimap takes the owner's colour (`0x4391F6`, table `0x4F01CC`), white for vents. The port draws every sprite in its own palette |
+| 35 | Some projectiles look different from the original | done: the weapon loader gives a projectile animation only to weapons with a `<sprite>BULLET0` (`0x43B84F`), and the drawing loop skips shots without one (`0x439DC3`). The port drew a yellow dot for the 38 weapons without, the marines' and warriors' guns among them; it now draws nothing for them, as the original does. Visible shots now step on the native clock from their creation (`0x442998`) instead of one frame per update (`combat-damage.md`). Not compared with a live capture of the original |
+| 36 | Mission intros and briefings are much richer in the original: animations, insignias, story (reference video: https://www.youtube.com/watch?v=AuirwU_O4Ek) | open |
 | — | The cursor was drawn 37 px below the pointer | fixed (`b120e3a`) |
 
 ## 1-3: the catalog and BUILD (`dc.exe`)

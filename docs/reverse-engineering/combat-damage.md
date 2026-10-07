@@ -117,6 +117,25 @@ in the same substep (`0x44244D`). It does not age while it waits. The
 drawing loop skips a projectile whose `+0x12` is not zero (`0x439DCB`), so
 the shot appears only when it leaves.
 
+**What a shot looks like.** The weapon loader (`0x43B84F`) gives a weapon a
+projectile animation (weapon `+0x2C`) only when an animation named
+`<sprite>BULLET0` exists. The constructor copies it to the projectile
+(`+0x20`, mode 0, looping; `0x441862`), or stores 0 (`0x441869`). The
+drawing loop (`0x439D88`) skips a projectile without one (`0x439DC3`).
+- **Invisible shots.** Thirty-eight of the 64 weapons have none: the 31
+  whose sprite is `weapons` (the marines' and warriors' guns among them),
+  `SMOK`'s 3 and `SPAK`'s 4. Their shots show only in the shooter's fire
+  animation and the hit.
+- **Visible shots.** The rest draw their animation's frame for the
+  direction `+0x1A >> 3`; every shipped one has only direction 0. The
+  layers take the owner's colour (`+0xE & 7`).
+- **Timing.** The projectile pass steps the animation once per update from
+  the shot's creation, on the actors' clock (`0x442998`, `0x4264C8`).
+
+Before 2026-10-07 the port drew a yellow dot for every shot without an
+animation, and stepped the others one frame per update, ignoring the frame
+delays.
+
 The shipped animations have at most one muzzle frame per animation (ATRIL
 FIREA, BARR FIREA, SCYT FIREB, TURR FIRE, and XENO XDEPLOYFIRE/XDEPLOYSTAND),
 so no shot fires more than one projectile. Some directions have none: BARR

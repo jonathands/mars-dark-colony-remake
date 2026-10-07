@@ -502,6 +502,13 @@ internal static class CombatChecks
                 loadOrder: EntityAnimationCatalog.LoadOrder(install.DataFile("anim.dat")));
             var barragerWeapon = weapons.Weapons.Values.First(weapon => weapon.Sprite.Equals("BARR", StringComparison.OrdinalIgnoreCase));
             Equal(true, effects.Bullet(barragerWeapon.Id) is not null);
+            // 0x43B84F gives a weapon a projectile animation only when
+            // <sprite>BULLET0 exists; the others' shots are not drawn (0x439DC3).
+            // That leaves the 31 "weapons" ones (the marines', the warriors'...),
+            // SMOK's 3 and SPAK's 4 without.
+            var unseen = weapons.Weapons.Values.Where(weapon => effects.Bullet(weapon.Id) is null).ToArray();
+            Equal(38, unseen.Length);
+            Equal(new[] { "SMOK", "SPAK", "weapons" }, unseen.Select(weapon => weapon.Sprite).Distinct().Order(StringComparer.Ordinal).ToArray());
             var spakWeapon = weapons.Weapons.Values.First(weapon => weapon.Sprite.Equals("SPAK", StringComparison.OrdinalIgnoreCase));
             Equal("SPAKEXPLODE0", effects.Explosion(spakWeapon.Id, 0)!.AnimationName);
             // The Barrage's shell ends in the Arty template's NUKE or GASY, from
