@@ -10,9 +10,13 @@ public sealed record ScenarioTeam(
     int? StartingResource,
     int? AiProfile,
     int? TeamColor,
-    IReadOnlyList<int> StartingDependencyFlags,
+    IReadOnlyList<int> DependencyItemIds,
     IReadOnlyList<int> AllianceFlags)
 {
+    // DependencyItemIds: the %Depend row, dependency item ids that the loader
+    // flags in player +0xDA4 (0x41BF38); the port does not use them yet.
+    // AllianceFlags: the %TeamAllies row, eight values; a nonzero value q sets
+    // the team's alliance bit for player q (0x41BF63).
     /// <summary>
     /// Second <c>%AISlots</c> pair: the team's city origin, which the SCN loader
     /// stores at player <c>+0xBC4/+0xBC8</c> (<c>0x41C07E</c>). Every built slot
@@ -215,9 +219,13 @@ public sealed class ScenarioDefinition
                 throw new InvalidDataException($"Invalid SCN team line: {lines[start]}");
             }
 
-            // SCN team blocks use postfix labels: the value immediately before
-            // %Race belongs to Race, and so on. Treating the following value as
-            // the field makes a 1,500 starting resource look like a race.
+            // The loader reads a team block by position: its line reader
+            // (0x41B864) skips blank lines and lines that start with '%'. The
+            // rows are race, money, AI, colour, the dependency list and the
+            // alliance flags, so each label follows its row, lists included.
+            // Treating the following row as the field makes a 1,500 starting
+            // resource look like a race, and read the AI slots' zeros as the
+            // alliances.
             teams.Add(new ScenarioTeam(
                 teamId,
                 enabled != 0,
@@ -225,8 +233,8 @@ public sealed class ScenarioDefinition
                 ValueBefore("Money"),
                 ValueBefore("AI"),
                 ValueBefore("TeamColour"),
-                ValuesAfter("Depend"),
-                ValuesAfter("TeamAllies"))
+                ValuesBefore("Depend"),
+                ValuesBefore("TeamAllies"))
             {
                 CityOrigin = PairAfter("AISlots", 2),
                 StartPoint = PairAfter("AISlots", 1) is { X: 0, Z: 0 } ? PairAfter("AISlots", 2) : PairAfter("AISlots", 1),
@@ -271,18 +279,13 @@ public sealed class ScenarioDefinition
                 return null;
             }
 
-            // Unlike the scalar postfix fields above, %Depend and
-            // %TeamAllies own following sentinel-terminated rows. The native
-            // availability checker stores state per dependency record, and its
-            // 10x10 hostile matrix has not yet been bridged to the 15-value
-            // alliance source row. Preserve both inputs instead of conflating
-            // either with completed tech or runtime team relations.
-            IReadOnlyList<int> ValuesAfter(string name)
+            // A row ends at its -1.
+            IReadOnlyList<int> ValuesBefore(string name)
             {
-                for (var index = start + 1; index < end - 1; index++)
+                for (var index = start + 2; index < end; index++)
                 {
                     if (!lines[index].Equals($"%{name}", StringComparison.OrdinalIgnoreCase)) continue;
-                    var values = Integers(lines[index + 1]);
+                    var values = Integers(lines[index - 1]);
                     var sentinel = Array.IndexOf(values, -1);
                     return sentinel >= 0 ? values[..sentinel] : values;
                 }

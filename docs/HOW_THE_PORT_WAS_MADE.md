@@ -204,7 +204,8 @@ play-tested, and made the calls evidence could not.
 Wrong guesses were corrected as evidence arrived. Some examples:
 
 - The SCN team fields are labelled *after* their values, so early readings
-  were shifted by one field.
+  were shifted by one field. The fix covered the single values but not the
+  lists, so until October every team started hostile, allies included.
 - The movement class is gamestat value 13, not the armour class.
 - Sprites, path regions and terrain were first placed in different frames.
 - The port was once said to have fog of war, when it only blacked out

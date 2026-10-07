@@ -207,9 +207,17 @@ when both players have set each other's bit. Each update writes relation
 [p][q] = mutual alliance for p, q < 8. It also sets the player's vision mask
 (`player + 0x19C0`) to its own bit plus every mutual vision bit. Writers:
 
-- the SCN loader (`0x41BF63`): a team's first eight `%TeamAllies` values set
-  its alliance bits, and its own bit is set in both matrices. Every shipped
-  SCN has all eight TEAM blocks and no alliance flags;
+- the SCN loader (`0x41BF63`): a team's eight `%TeamAllies` values set its
+  alliance bits, and its own bit is set in both matrices. The loader reads
+  a team block by position: its line reader (`0x41B864`) skips blank lines
+  and lines that start with `%`, so each label follows its row. The rows
+  are race, money, AI, colour, the `%Depend` item ids (`+0xDA4`) and the
+  alliance flags; the fifteen zeros after `%TeamAllies` are not the
+  alliances. Every shipped row has eight values. Most campaign and training
+  missions start with allies: human01's teams 0 and 1, alien08's commander
+  on team 6, allied with everyone until a trip ends it. Only j2play01 of
+  the War maps has any. Before 2026-10-07 the port read the row after the
+  label, so every team started hostile;
 - `ally a b v` (`0x43D9ED`): relation [a][b] = v, then both alliance bits;
 - `vision a b v`: both vision bits;
 - the Allies panel packet (`0x41D7B3`): one bit, in one direction, of either

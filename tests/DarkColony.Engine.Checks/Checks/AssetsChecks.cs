@@ -371,11 +371,26 @@ internal static class AssetsChecks
             Equal(1_500, scenario.Teams[0].StartingResource ?? -1);
             Equal(0, scenario.Teams[0].AiProfile ?? -1);
             Equal(0, scenario.Teams[0].TeamColor ?? -1);
-            Equal(8, scenario.Teams[0].StartingDependencyFlags.Count);
-            Equal(15, scenario.Teams[0].AllianceFlags.Count);
+            // Lists too: the row before %Depend and the eight values before
+            // %TeamAllies (0x41BF63), not the AI slots' fifteen zeros after it.
+            Equal(0, scenario.Teams[0].DependencyItemIds.Count);
+            Equal(new int[8], scenario.Teams[0].AllianceFlags.ToArray());
             Equal(1, scenario.Teams[1].Race ?? -1);
             Equal(0, scenario.EnabledTeamForRace(0)?.TeamId ?? -1);
             Equal(1, scenario.EnabledTeamForRace(1)?.TeamId ?? -1);
+
+            // human01 starts with teams 0 and 1 allied, each row naming the other.
+            var human01 = ScenarioDefinition.Load(install.DataFile("scenario", "human", "human01.scn"));
+            Equal(new[] { 0 }, human01.Teams[0].DependencyItemIds.ToArray());
+            Equal(new[] { 3, 5, 2, 4, 6 }, human01.Teams[1].DependencyItemIds.ToArray());
+            Equal(new[] { 0, 1, 0, 0, 0, 0, 0, 0 }, human01.Teams[0].AllianceFlags.ToArray());
+            Equal(new[] { 1, 0, 0, 0, 0, 0, 0, 0 }, human01.Teams[1].AllianceFlags.ToArray());
+            var file = install.DataFile("scenario", "human", "human01") + ".scn";
+            var map = TerrainMap.Load(Path.ChangeExtension(file, ".map"));
+            var path = PathRegionMap.Load(Path.ChangeExtension(file, ".pth"), map.Width, map.Height);
+            var simulation = ScenarioSimulation.Create(human01, path, SimulationRules.Load(install), terrain: map);
+            Equal((true, false), (simulation.AreAllied(0, 1), simulation.TeamRelations.IsHostile(0, 1)));
+            Equal((false, true), (simulation.AreAllied(0, 2), simulation.TeamRelations.IsHostile(0, 2)));
         }, CheckTags.Data);
 
         Check("installed scenarios create authoritative simulations", () =>

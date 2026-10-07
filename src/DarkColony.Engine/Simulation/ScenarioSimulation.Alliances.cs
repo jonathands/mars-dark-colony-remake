@@ -46,11 +46,12 @@ public sealed partial class ScenarioSimulation
         (uint)viewer < PlayerCount && (uint)owner < PlayerCount && (visionMasks[viewer] & (1 << owner)) != 0;
 
     /// <summary>
-    /// SCN loader (<c>0x41BF63</c>): a team's first eight <c>%TeamAllies</c>
-    /// values set its alliance bits; its own entry is set in both matrices.
-    /// Every shipped SCN has all eight TEAM blocks (and no alliance flags), so
-    /// the port sets every player's own bits, which also keeps fixtures
-    /// without TEAM blocks from turning a team against itself.
+    /// SCN loader (<c>0x41BF63</c>): a team's eight <c>%TeamAllies</c> values
+    /// set its alliance bits; its own entry is set in both matrices. Most
+    /// campaign and training missions start with allies (human01's teams 0
+    /// and 1, for one); a pair is allied when both rows name each other. Every shipped SCN has all eight TEAM blocks, but the port sets
+    /// every player's own bits, which also keeps fixtures without TEAM blocks
+    /// from turning a team against itself.
     /// </summary>
     private void LoadAlliances(ScenarioDefinition scenario)
     {

@@ -732,6 +732,7 @@ internal static class DeterminismCli
             var script = MissionScript.LoadForScenario(file);
             var simulation = ScenarioSimulation.Create(definition, path, rules, script, map);
             var tripCells = TripCells(script, path);
+            foreach (var slot in OtherTeamTrips(Path.ChangeExtension(file, ".tro"), 0)) tripCells.Remove(slot);
             var tripAttempts = new Dictionary<int, int>();
             var sweepTeams = VictoryTeams(Path.ChangeExtension(file, ".tro"));
             ulong tick = 0;
@@ -821,6 +822,26 @@ internal static class DeterminismCli
                 teams.Add(int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
         }
         return teams.Count == 0 ? null : teams;
+    }
+
+    /// <summary>
+    /// The trip triggers that only another team's units set off, such as
+    /// alien08's <c>14 trip 0 (S==6)</c>, where the human commander walking
+    /// into the area ends its alliance. The smoke sends no unit of the team to
+    /// them: parked there, they would only block the way.
+    /// </summary>
+    private static IEnumerable<int> OtherTeamTrips(string troPath, int team)
+    {
+        if (!File.Exists(troPath)) yield break;
+        foreach (var line in File.ReadLines(troPath, System.Text.Encoding.Latin1))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(line, @"^\s*(\d+)\s+trip\b");
+            if (!match.Success) continue;
+            var trippers = System.Text.RegularExpressions.Regex.Matches(line, @"S\s*==\s*(\d+)")
+                .Select(tripper => int.Parse(tripper.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            if (trippers.Length > 0 && !trippers.Contains(team))
+                yield return int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        }
     }
 
     /// <summary>The passable cells of each trip trigger's area in the mission's MTG.</summary>

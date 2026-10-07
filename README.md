@@ -82,6 +82,10 @@ None of these change how a game plays:
 
 ### Not yet like the original
 
+- **Team colours.** The original draws each player's units in that player's
+  colour, on the field and on the minimap. The port draws every unit in its
+  sprite's own colours, and the minimap marks the player's units cyan and
+  everyone else's red, allies included.
 - **Fog of war.** The original's minimap keeps marking vents once seen; the
   port's minimap marks no vents. A city building seen earlier shows as it
   stands now, not as the player last saw it
