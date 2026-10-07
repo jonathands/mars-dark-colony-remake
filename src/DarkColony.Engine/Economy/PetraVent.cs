@@ -13,7 +13,11 @@ public sealed class PetraVent
         InitialReservoir = Math.Max(0, initialReservoir);
         RemainingReservoir = InitialReservoir;
         Rate = initialState;
+        Erupting = Rate > 0;
     }
+
+    /// <summary>The VENT entity (gamestat 40) that every SCN vent record names; its art is <c>vent.fin</c>.</summary>
+    public const int EntityId = 40;
 
     public int Id { get; }
     public CellCoordinate Position { get; }
@@ -40,6 +44,17 @@ public sealed class PetraVent
     /// </summary>
     public int? PendingHarvesterInstanceId { get; internal set; }
     public int AttachTicksRemaining { get; internal set; }
+    /// <summary>
+    /// Whether the vent's animation plays: its mode (actor <c>+0x1A</c>) is
+    /// not 2. The vent's update (<c>0x413490</c>) stops it on its first frame
+    /// (<c>0x42630C</c> with mode 2) while the vent has no rate or a harvester
+    /// is deployed on it, and plays it again otherwise. The sprite pass draws
+    /// nothing for a stopped animation (<c>0x4397A7</c>), so only an erupting
+    /// vent shows its steam and yellow glow.
+    /// </summary>
+    public bool Erupting { get; internal set; }
+    /// <summary>The simulation tick count at which the vent last began to erupt, its animation's first frame.</summary>
+    public ulong EruptingSinceTick { get; internal set; }
 }
 
 /// <summary>

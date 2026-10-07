@@ -13,11 +13,16 @@ one "seen" bit per player: player p uses `0x40000000 >> p` (bits 30 down to
 the local player's stamps clear (`and 0xFFFC03FF`). `0x454DB8` writes it: for
 every live actor (not dying) on a cell the local player sees, whose runtime
 record has a class of 1-15 at `+0x78`, the cell gets `class << 3 | team`.
-Only two shipped entities have such a class. The overlay pass (`0x438A22`,
-and `0x439C0D` in the sprite pass) hands any non-zero value on a cell outside
-the local player's current sight to `0x4387B0`. That routine reads
-`value >> 3` through `0x454DAC` and `value & 7` as an index into 0xE30-byte
-records (`+0xC98`): a remembered overlay, not a brightness.
+Only two shipped entities have such a class. The minimap pass (`0x438A22`,
+also `0x439C0D`) hands any non-zero value on a cell outside the local
+player's current sight to `0x4387B0`, which queues a minimap point.
+`value >> 3` goes through the class table (`0x454DAC`, dwords at
+`0x516A50`) to an entity, and `value & 7` names the player whose colour
+(`+0xC98`) the point takes; entities 37 (`POOP`) and 40 (`VENT`) take
+colour 8 instead. `0x43A318` turns the colour into a palette index through
+the byte table at `0x4F01CC`. So the value is the minimap's memory of vents
+seen, not a terrain overlay. The writer skips a vent whose rate (`+0x32`)
+is 0 (`0x454E25`).
 
 The world update (`0x4196F4`) rebuilds the player bits in two places:
 
@@ -131,5 +136,5 @@ effects and shots only on cells in sight.
 | Explored memory (bit 31) for the display | implemented as cells the local team has ever seen; the view and the minimap draw the rest black |
 | Fog shading of the terrain (16 / 10 / 0, corner means, 32-step ramps) | implemented (`FogShading`, `ScenarioSimulation.ViewBrightness`). The port covers each tile with black at opacity 1 - b/16 after the terrain, instead of remapping the palette. Sprites are not shaded. The night tint and the lights are in `day-night.md` |
 | Minimap out of sight at 2/3 | implemented (`BuildGameplayMinimap`, rebuilt every 16 updates) |
-| Remembered overlays (bits 10-17) | not modelled |
+| Minimap memory of vents (bits 10-17) | not modelled: the port's minimap marks no vents |
 | Actors in sight (`0x4395D4`) | implemented (`IsActorVisibleToTeam`, `MainForm.HiddenByFog`). A city building is tested on its slot's cells, anything else on the cell of its position, and mines also need a detector. City buildings, once seen, stay drawn out of sight; the port draws the building standing now rather than the remembered one. The local team's own actors are always drawn; the original also tests them, but their own stamps nearly always cover them. Before 2026-10-06 the port tested a moving unit's occupied cell, never hid structures and drew no shading, only black on unexplored ground |

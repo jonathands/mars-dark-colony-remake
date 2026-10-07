@@ -311,6 +311,40 @@ public sealed partial class MainForm
         if (state is not null) graphics.Restore(state);
     }
 
+    /// <summary>
+    /// The erupting vents the local player sees, in painter's order. dc.exe
+    /// draws a vent as a team-8 actor playing its stand animation
+    /// (<c>VENTSTAND0</c>: steam, a yellow glow and a light). A stopped vent
+    /// draws nothing (<see cref="PetraVent.Erupting"/>), which leaves the map's
+    /// dark crater.
+    /// </summary>
+    private List<PetraVent> EruptingVentsInPaintersOrder()
+    {
+        if (_scenarioSimulation is null) return [];
+        return [.. _scenarioSimulation.PetraVents
+            .Where(vent => vent.Erupting && !HiddenByFog(VentPosition(vent)))
+            .OrderByDescending(vent => vent.Position.Z).ThenBy(vent => vent.Position.X)];
+    }
+
+    // A vent stands at its cell's centre, as every SCN placement does.
+    private static FixedPointPosition VentPosition(PetraVent vent) =>
+        new(vent.Position.X * FixedPointPosition.One + FixedPointPosition.Half,
+            vent.Position.Z * FixedPointPosition.One + FixedPointPosition.Half);
+
+    // Painter's order: higher on screen (larger Z) first, then left to right.
+    private static bool PaintsBefore(FixedPointPosition first, FixedPointPosition second) =>
+        first.ZRaw > second.ZRaw || first.ZRaw == second.ZRaw && first.XRaw <= second.XRaw;
+
+    private void DrawGameplayVent(GameCanvas canvas, PetraVent vent)
+    {
+        if (_scenarioSimulation is null || _entityAnimations?.Preferred(PetraVent.EntityId) is not { } candidate) return;
+        var fileName = FinFileName(candidate.FinPath);
+        var frame = NativeFrame(fileName, candidate.FirstFrame, candidate.LastFrame, _scenarioSimulation.TickCount - vent.EruptingSinceTick);
+        if (WorldFrame(fileName, (ushort)frame) is not { } sprite) return;
+        var position = VentPosition(vent);
+        DrawWorldSprite(canvas, sprite, position.XRaw / 8 - _cameraX + sprite.Origin.X, WorldPixelY(position.ZRaw) - _cameraY + sprite.Origin.Y);
+    }
+
     /// <summary>The P7 vent markers: a debugging guide (<see cref="DisplaySettings.ShowGuides"/>).</summary>
     private void DrawGameplayVents(Graphics graphics)
     {
@@ -754,6 +788,8 @@ public sealed partial class MainForm
                 .Where(actor => !actor.IsDestroyed && actor.AttackTargetInstanceId is not null)
                 .Select(actor => actor.AttackTargetInstanceId!.Value)
                 .ToHashSet();
+            var vents = EruptingVentsInPaintersOrder();
+            var nextVent = 0;
             foreach (var (entity, visual) in ActorVisualsInPaintersOrder(rebuild: true))
             {
                 var actorState = visual.Actor;
@@ -763,6 +799,9 @@ public sealed partial class MainForm
                 var moveSelection = visual.MoveSelection;
                 var fileName = visual.FileName;
                 var position = ActorPosition(entity);
+                // A vent paints before an actor on its own cell, such as a harvester.
+                for (; nextVent < vents.Count && PaintsBefore(VentPosition(vents[nextVent]), position); nextVent++)
+                    DrawGameplayVent(canvas, vents[nextVent]);
                 var worldX = position.XRaw / 8;
                 var worldY = WorldPixelY(position.ZRaw);
                 var opaque = visual.OpaqueBounds;
@@ -818,6 +857,7 @@ public sealed partial class MainForm
                     DrawMenuText(graphics, label, new Rectangle(labelX, labelY, 500, 14), center: false, remap: Color.FromArgb(245, 241, 200));
                 }
             }
+            for (; nextVent < vents.Count; nextVent++) DrawGameplayVent(canvas, vents[nextVent]);
             DrawGameplayImpactEffects(graphics, canvas);
             DrawGameplayTransportEffects(graphics, canvas);
             DrawGameplayDeathEffects(graphics, canvas);

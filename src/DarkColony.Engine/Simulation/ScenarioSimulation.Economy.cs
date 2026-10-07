@@ -44,7 +44,39 @@ public sealed partial class ScenarioSimulation
         return new HarvesterDeploymentEvent(entityInstanceId, ventId, HarvesterDeploymentOutcome.EnRoute);
     }
 
-    private void UpdateHarvesterDeploymentOrders(ICollection<HarvesterDeploymentEvent> events)
+    /// <summary>
+    /// The vents' own update (<c>0x413490</c>). A vent with no rate stops its
+    /// animation (<see cref="PetraVent.Erupting"/>) and runs no countdown, so a
+    /// harvester on it never deploys (<c>0x4134DD</c>). A stopped vent with a
+    /// rate plays again from its first frame when its cell is empty or holds
+    /// an undeployed harvester, and a waiting harvester's countdown starts
+    /// over at 50 (<c>0x41361E</c>). Under anything else, a deployed harvester
+    /// among them, it stays stopped.
+    /// </summary>
+    private void UpdateVents(ICollection<HarvesterDeploymentEvent> events)
+    {
+        var restarted = new HashSet<int>();
+        foreach (var vent in PetraVents)
+        {
+            if (vent.Rate == 0)
+            {
+                vent.Erupting = false;
+                continue;
+            }
+            if (vent.Erupting) continue;
+            if (GroundOccupancy.TryGetOwner(vent.Position, out var occupant) &&
+                (!actorsById.TryGetValue(occupant, out var actor) || EffectiveDefinition(actor).Code is not ("EXPL" or "SLUG")))
+                continue;
+            vent.Erupting = true;
+            vent.EruptingSinceTick = WorldUpdateCounter;
+            if (vent.PendingHarvesterInstanceId is null) continue;
+            vent.AttachTicksRemaining = NativeHarvesterAttachTicks;
+            restarted.Add(vent.Id);
+        }
+        UpdateHarvesterDeploymentOrders(events, restarted);
+    }
+
+    private void UpdateHarvesterDeploymentOrders(ICollection<HarvesterDeploymentEvent> events, IReadOnlySet<int> restartedVents)
     {
         foreach (var actor in Actors.Where(actor => !actor.IsDestroyed && actor.HarvestVentId is not null).OrderBy(actor => actor.Seed.InstanceId))
         {
@@ -77,6 +109,7 @@ public sealed partial class ScenarioSimulation
             if (events.Any(entry => entry.EntityInstanceId == actor.Seed.InstanceId &&
                     entry.VentId == vent.Id && entry.Outcome == HarvesterDeploymentOutcome.Preparing))
                 continue;
+            if (vent.Rate == 0 || restartedVents.Contains(vent.Id)) continue;
             if (vent.AttachTicksRemaining > 0) vent.AttachTicksRemaining--;
             if (vent.AttachTicksRemaining == 0) events.Add(AttachHarvester(actor, vent));
         }
@@ -136,6 +169,8 @@ public sealed partial class ScenarioSimulation
         vent.PendingHarvesterInstanceId = null;
         vent.AttachTicksRemaining = 0;
         vent.HarvesterInstanceId = actor.Seed.InstanceId;
+        // 0x4136F9: the deploying vent stops its own animation.
+        vent.Erupting = false;
         return new HarvesterDeploymentEvent(actor.Seed.InstanceId, vent.Id, HarvesterDeploymentOutcome.Attached);
     }
 

@@ -579,7 +579,7 @@ public sealed partial class ScenarioSimulation
         LastResearchCompletions = events.ResearchCompletions;
 
         UpdateActors(events);
-        UpdateHarvesterDeploymentOrders(events.HarvesterDeployments);
+        UpdateVents(events.HarvesterDeployments);
         // The vent producer (0x4139D7) runs in the vents' own actor updates,
         // after their attach handshake, gated on the phase counter +0x530.
         var ventIncome = ApplyVentIncome(nativeIncomeCadence ? (DayNight.PhaseTicks & 15) == 0 : syntheticPulse);

@@ -90,6 +90,22 @@ internal static class AssetsChecks
             Equal(true, nuke.Compose(5, Load, bottomAnchored: true).Width > 1);
         }, CheckTags.Data);
 
+        Check("an erupting vent plays VENTSTAND0: the hole, steam and glow, and a light", () =>
+        {
+            // The vent's stand animation (entity record +0x80, set by 0x413490).
+            // Its first two frames hold for 26; the steam then rises.
+            var install = GameInstallation.Open(dataPath);
+            var entities = EntityCatalog.Load(install.DataFile("gamestat", "gamestat.txt"));
+            var animations = EntityAnimationCatalog.Build(entities, install.DataFile("animate"), EntityAnimationCatalog.LoadOrder(install.DataFile("anim.dat")));
+            Equal("VENT", entities[PetraVent.EntityId].Code);
+            var stand = animations.Preferred(PetraVent.EntityId)!;
+            Equal(("vent.fin", "VENTSTAND0", 19, 38), (Path.GetFileName(stand.FinPath), stand.AnimationName, (int)stand.FirstFrame, (int)stand.LastFrame));
+            var vent = AnimationDefinition.Load(stand.FinPath);
+            Equal(new ushort[] { 26, 26, 0 }, vent.LogicalFrames.Skip(19).Take(3).Select(frame => frame.Delay).ToArray());
+            Equal(new[] { ("glit", 5), ("puff", 5), ("smsp", 3), ("vent2", 0) },
+                vent.LogicalFrames[25].Layers.Select(layer => (layer.SpriteName, layer.DrawType)).OrderBy(layer => layer.SpriteName, StringComparer.Ordinal).ToArray());
+        }, CheckTags.Data);
+
         Check("mirrored FIN layers draw flipped at their X - 1, opposite their source direction", () =>
         {
             var install = GameInstallation.Open(dataPath);

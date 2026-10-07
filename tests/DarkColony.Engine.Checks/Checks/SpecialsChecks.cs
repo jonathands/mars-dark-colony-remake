@@ -238,7 +238,7 @@ internal static class SpecialsChecks
             // the harvester at (1,1) from 10 and 9 cells away.
             var catalog = EntityCatalog.Parse("4\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nSARG 0 10 45 10 10 -1 -1 -1 1 1 4 800 0 31 0 1 0 0 0 0 3 96 0 1 4 0 0 5 129 50 3 0\nSARGSTL 0 10 0 10 10 -1 -1 -1 1 1 4 800 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 5 0 0 2 0\n");
             const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\nTEAM 1 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n" +
-                "11 1 2 0 -1 0\n10 1 2 0 -1 0\n1 1 0 1 -1 0\n1 1 40 0 5000\n";
+                "11 1 2 0 -1 0\n10 1 2 0 -1 0\n1 1 0 1 -1 0\n1 1 40 11 5000\n";
             var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
             bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
             var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 16, 4),

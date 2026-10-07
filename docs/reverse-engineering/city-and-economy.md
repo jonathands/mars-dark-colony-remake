@@ -116,6 +116,39 @@ test passes. It multiplies the rate by the owner's `+0x19B8` (8.8) when
 explains the original's +23 per pulse observed with one Exploiter on a
 rate-20 vent (j4play01): 20 from the vent plus the passive 3.
 
+## Erupting and stopped vents
+
+The vent's own update (`0x413490`) runs every update. It drives the vent's
+animation state (actor `+0x14`: animation, frame `+4`, delay `+5`, mode
+`+6`) through `0x42630C`, which restarts the animation at frame 0 when the
+animation or the mode changes. Mode 0 loops, mode 1 plays once and then
+becomes 2, and mode 2 is stopped.
+
+- A vent with no rate (`+0x32 == 0`) sets mode 2 and returns (`0x4134DD`).
+  It runs no countdown, so a harvester standing on it never deploys.
+- A stopped vent with a rate plays again from frame 0 when its cell is
+  empty or holds an `EXPL` or `SLUG` (`0x41361E`). It then stores 50 in
+  the countdown and returns, so a waiting harvester starts over.
+- Anything else on the cell resets the countdown to 50. An `EXPL` or `SLUG`
+  counts it down; at 0 it deploys (see unit-special-commands.md), and the
+  vent stops (`0x4136F9`).
+
+The sprite pass draws nothing for an actor whose animation is stopped:
+`0x426334` returns 0 in mode 2, and `0x4397A7` skips the actor. An
+erupting vent plays `VENTSTAND0` from `vent.fin`. That is the `vent2` hole,
+the `puff` steam and the `glit` glow (draw type 5), and the `smsp` light
+(type 3). A stopped vent shows only the map's dark crater.
+
+The port keeps the mode as `PetraVent.Erupting`, set by
+`ScenarioSimulation.UpdateVents`, and draws erupting vents in the actors'
+painter's order (`MainForm.DrawGameplayVent`). Before 2026-10-07 it drew no
+vents at all, only the P7 debugging markers, and let harvesters deploy on
+vents with no rate.
+
+The sound the original plays when a vent erupts has not been found. It is
+not a FIN hotspot, and the vent's update plays only the harvester's deploy
+sound (`0x431DA8`).
+
 ## Income gates
 
 - **Passive income.** The world update `0x419B2E` runs every 16 ticks
@@ -210,6 +243,7 @@ cannot direct-attack critters, and their projectiles pass through critters.
 | Building purchase builds the slot at once (command 9) | confirmed; see [production-flow.md](production-flow.md) |
 | Building prerequisite = live slot building of at least that variant (`0x438220`) | confirmed; completed building items follow each slot |
 | Building sprite anchor | fixed: the actor renderer (`0x4398AB`) subtracts a city slot actor's slot offset (`0x444C58`, table `0x47AB70`) before queueing its layers, so building art hangs from the city origin's corner, not from the slot position. Separately, the world blit (`0x454751` culls a queued sprite to `[y - height, y]`) puts each layer's bottom row on its FIN Y; a sprite frame's own Y is only its place on the artist's canvas. Queued positions are `x >> 3` and `(height * 256 - z - 1) >> 3` (`0x436051`). The port drew from the slot position and added the frame Y, which put the HQ about two tiles low and left and every unit about three rows low. Verified on 2026-10-04 against the native capture `Dark Colony/screenshots/pedestal-exploiter-stationary.png`, with a jungle War HQ in the port on the same kind of pedestal. In both, the HQ stands on the upper-left plate of its hexagon cluster. The door-to-plate-corner offset is about (13, 87) px native and (17, 87) px in the port, measured by eye |
+| Vent animation (`0x413490`): stopped without a rate or under a deployed harvester, not drawn when stopped, no countdown on a dry vent | implemented (`PetraVent.Erupting`, `UpdateVents`, `DrawGameplayVent`); the eruption sound is not found |
 
 ## Rescue and pickup placements
 

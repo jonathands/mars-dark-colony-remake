@@ -73,7 +73,7 @@ internal static class EconomyChecks
         Check("Exploiter vent deployment accelerates P7 and sight blends day and night", () =>
         {
             var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 9 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 8 5 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-            const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n1 1 40 0 100\n";
+            const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n1 1 40 4 100\n";
             var bytes = new byte[PathRegionMap.RouteTableSize + 16];
             bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
             var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4),
@@ -100,7 +100,7 @@ internal static class EconomyChecks
         Check("P7 source stops before consuming its final exact-rate remainder", () =>
         {
             var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-            const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n1 1 40 0 4\n";
+            const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n1 1 40 4 4\n";
             var bytes = new byte[PathRegionMap.RouteTableSize + 16];
             bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
             var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 4, 4),
@@ -117,7 +117,7 @@ internal static class EconomyChecks
         Check("harvester deployment walks to a vent then attaches deterministically", () =>
         {
             var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 9 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 8 5 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-            const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 -1 0\n3 3 40 0 100\n";
+            const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 -1 0\n3 3 40 20 100\n";
             var bytes = new byte[PathRegionMap.RouteTableSize + 36];
             bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
             var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 6));
@@ -144,7 +144,7 @@ internal static class EconomyChecks
         Check("ordinary movement onto a free vent automatically begins harvester deployment", () =>
         {
             var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 9 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 8 5 -1 -1 -1 1 1 5 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-            const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 -1 0\n3 3 40 0 100\n";
+            const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0 0 0 0 -1 0\n3 3 40 20 100\n";
             var bytes = new byte[PathRegionMap.RouteTableSize + 36];
             bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
             var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 6, 6));
@@ -208,6 +208,46 @@ internal static class EconomyChecks
             Equal(0, paid % 20);
             Equal(true, paid >= 20);
             Equal(0, Earned(0));
+        });
+
+        Check("a vent without a rate stops and lets no harvester deploy until a rate restarts it", () =>
+        {
+            // 0x413490: a vent whose +0x32 rate is 0 stops its animation (mode 2,
+            // which the sprite pass does not draw) and runs no countdown. Given a
+            // rate, it plays again from its first frame, and the waiting
+            // harvester's countdown starts over at 50 (0x41361E). Deploying stops
+            // it (0x4136F9); it erupts again once the harvester retracts.
+            var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+            const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n1 1 0 0 -1 0\n1 1 40 0 5000\n";
+            var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+            bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+            var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 16, 4));
+            var vent = simulation.PetraVents[0];
+            var exploiter = simulation.Actors.Single();
+            Equal(false, vent.Erupting);
+
+            simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new HarvestVentIntent(exploiter.Seed.InstanceId, 0))]);
+            Equal(HarvesterDeploymentOutcome.Preparing, simulation.LastHarvesterDeployments.Single().Outcome);
+            for (var tick = 0; tick < 3 * ScenarioSimulation.NativeHarvesterAttachTicks; tick++) simulation.Step([]);
+            Equal(false, vent.Erupting);
+            Equal(false, vent.HarvesterInstanceId.HasValue);
+            Equal("EXPL", simulation.EffectiveDefinition(exploiter).Code);
+
+            vent.Rate = 20;
+            simulation.Step([]);
+            Equal(true, vent.Erupting);
+            Equal(simulation.TickCount, vent.EruptingSinceTick);
+            Equal(ScenarioSimulation.NativeHarvesterAttachTicks, vent.AttachTicksRemaining);
+            for (var tick = 1; tick < ScenarioSimulation.NativeHarvesterAttachTicks; tick++) simulation.Step([]);
+            Equal(false, vent.HarvesterInstanceId.HasValue);
+            simulation.Step([]);
+            Equal(exploiter.Seed.InstanceId, vent.HarvesterInstanceId!.Value);
+            Equal(false, vent.Erupting);
+
+            simulation.Step([new ScheduledWorldCommand(simulation.TickCount, 0, new RetractHarvesterIntent(exploiter.Seed.InstanceId))]);
+            Equal(HarvesterDeploymentOutcome.Retracted, simulation.LastHarvesterDeployments.Single().Outcome);
+            simulation.Step([]);
+            Equal(true, vent.Erupting);
         });
 
         Check("authored scenario buildings seed their dependency prerequisites", () =>

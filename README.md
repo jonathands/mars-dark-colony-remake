@@ -82,10 +82,11 @@ None of these change how a game plays:
 
 ### Not yet like the original
 
-- **Fog of war.** The original keeps a marker for two kinds of objects on
-  ground out of sight; the port does not draw it. A city building seen
-  earlier shows as it stands now, not as the player last saw it
+- **Fog of war.** The original's minimap keeps marking vents once seen; the
+  port's minimap marks no vents. A city building seen earlier shows as it
+  stands now, not as the player last saw it
   ([vision.md](docs/reverse-engineering/vision.md)).
+- **Vents** erupt without the original's sound.
 - **The end of a War** uses the campaign's debrief screen, not the
   original's results screen with each player's kills and losses.
 - **Menus.**
