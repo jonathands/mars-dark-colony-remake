@@ -140,7 +140,7 @@ The original pictures are captures of `dc16.exe`, the original's
 | `run-debug.cmd [flags]` | Build and run in Debug |
 | `run-display\*.cmd` | The same, with a display preset (fullscreen 1080p, 2x window, ...) |
 | `run-war-lobby-debug.cmd` | Debug, straight to the Single Player War lobby |
-| `run-release.cmd` | Run the Release build (make it first, below) |
+| `run-release.cmd` | Run the Release build, fullscreen with a 1920x1080 view (make it first, below) |
 
 To make the Release build, a self-contained folder that runs without the SDK:
 

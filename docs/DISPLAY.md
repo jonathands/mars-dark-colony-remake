@@ -191,6 +191,9 @@ every time they change.
 
 The `run-display` presets (README) pass these flags with a settings file of
 their own, so a change made in a preset never reaches `display.json`.
+`run-release.cmd` keeps one too (`presets\run-release.json`). Until the
+Video panel or Alt+Enter first saves it, it opens borderless with a
+1920x1080 view; after that it opens as saved.
 
 ## Automation
 
