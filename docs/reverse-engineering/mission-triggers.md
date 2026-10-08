@@ -102,7 +102,7 @@ their line as an expression. Command → action type:
 | `reinforce t x z (type n)×5` | 2 | a transport (entity 92 human / 93 alien, team 8) flies in with the cargo (`0x418F4C`, command 13) |
 | `bail a b` | 3 | stat (0,0) = a, stat (7,0) = b; the game ends 10,000 ms later. The corpus uses a = 0 for victory (`bail 0 1`, text .001) and a = 1 for defeat with text .00b |
 | `aimsg p n v...` | 4 | message to player p's AI controller (`0x41AD68`) |
-| `newrate r x z` | 5 | the vent at (x, z) pays r × multiplier >> 8 per pulse |
+| `newrate r x z` | 5 | the vent at (x, z) pays r × multiplier >> 8 per pulse; a vent without a rate that gets one erupts with entity 1's XTR sound (`0x431BF4`) |
 | `setarray i e` | 6 | type statistic (0, i, 2) = e |
 | `setlifes i e` | 7 | trigger i lives = e |
 | `ally a b v` | 8 | relation [a][b] = v, plus alliance bits (`0x41E7D8`) |

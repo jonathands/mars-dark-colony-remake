@@ -94,6 +94,12 @@ public sealed record P7TheftEvent(
     int Amount,
     int VentId);
 public sealed record DayNightChangedEvent(DayNightPhase Phase);
+/// <summary>
+/// A mission's <c>newrate</c> or <c>newrate2</c> gave a rate to a vent that had
+/// none (<c>0x43DB0F</c>, <c>0x43DC73</c>). The original then plays entity 1's
+/// XTR sound (<c>0x431BF4</c>), wherever the vent is.
+/// </summary>
+public sealed record VentEruptionEvent(int VentId, CellCoordinate Position);
 public enum BuildingDropOutcome { Placed, CatalogUnavailable, UnknownItem, NotBuilding, NotReserved, WrongFaction, EntityUnresolved, InvalidFootprint, OutOfBounds, Occupied, NoCity }
 public sealed record BuildingPlacedEvent(int TeamId, int DependencyItemId, int EntityInstanceId, int EntityId, CellCoordinate Origin, BuildingDropOutcome Outcome);
 public enum UnitProductionOutcome { Produced, CatalogUnavailable, UnknownItem, NotTroop, NotReserved, SourceInvalid, PrerequisiteMissing, SpawnBlocked, Queued, NoProductionQueue, CapReached, NoCity }

@@ -277,6 +277,18 @@ public sealed partial class MainForm
         }
     }
 
+    /// <summary>
+    /// A vent that a mission gives a rate again erupts with entity 1's XTR
+    /// sound (<c>0x431BF4</c>), ERUPT.WAV in <c>slist.dat</c>. It is played
+    /// without a position, so it is heard at full volume wherever the vent is.
+    /// The War maps do this only with the Erupting Vents option on. One sound
+    /// plays at a time here, so several eruptions in one update sound as one.
+    /// </summary>
+    private void CaptureVentEruptionSounds()
+    {
+        if (_scenarioSimulation?.LastVentEruptions.Count > 0) PlayGameplaySound(1, "XTR");
+    }
+
     private void CaptureHarvesterFeedback()
     {
         if (_scenarioSimulation is null) return;

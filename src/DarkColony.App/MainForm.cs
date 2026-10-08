@@ -647,6 +647,7 @@ public sealed partial class MainForm : Form
         CaptureHealingFeedback();
         CaptureInspireFeedback();
         CaptureHarvesterFeedback();
+        CaptureVentEruptionSounds();
         CaptureConstructionFeedback();
         CheckWarEnd();
     }

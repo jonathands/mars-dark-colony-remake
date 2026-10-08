@@ -115,6 +115,7 @@ public sealed partial class ScenarioSimulation
     private readonly List<MissionUnmodeledActionEvent> pendingUnmodeledMissionActions = [];
     // Transports that mission actions started this update (norm and trip triggers).
     private readonly List<BattlefieldTransportEvent> pendingMissionTransports = [];
+    private readonly List<VentEruptionEvent> pendingVentEruptions = [];
 
     private ScenarioSimulation(
         PathRegionMap path,
@@ -189,6 +190,7 @@ public sealed partial class ScenarioSimulation
     public IReadOnlyList<P7IncomeEvent> LastP7Income { get; private set; } = [];
     public IReadOnlyList<P7TheftEvent> LastP7Thefts { get; private set; } = [];
     public IReadOnlyList<DayNightChangedEvent> LastDayNightChanges { get; private set; } = [];
+    public IReadOnlyList<VentEruptionEvent> LastVentEruptions { get; private set; } = [];
     public IReadOnlyList<BuildingPlacedEvent> LastBuildingPlacements { get; private set; } = [];
     public IReadOnlyList<UnitProducedEvent> LastUnitProductions { get; private set; } = [];
     public IReadOnlyList<ResearchCompletedEvent> LastResearchCompletions { get; private set; } = [];
@@ -543,6 +545,7 @@ public sealed partial class ScenarioSimulation
         pendingMissionMessages.Clear();
         pendingUnmodeledMissionActions.Clear();
         pendingMissionTransports.Clear();
+        pendingVentEruptions.Clear();
         // 0x41988C stamps visibility while the clock is still zero.
         EnsureVision();
         LastDayNightChanges = DayNight.Step() ? [new DayNightChangedEvent(DayNight.Phase)] : [];
@@ -596,6 +599,7 @@ public sealed partial class ScenarioSimulation
         LastArtifactRecoveries = events.ArtifactRecoveries;
         LastContactResolutions = events.ContactResolutions;
         LastMissionMessages = pendingMissionMessages.ToArray();
+        LastVentEruptions = pendingVentEruptions.ToArray();
         LastUnmodeledMissionActions = pendingUnmodeledMissionActions.ToArray();
         LastP7Income = [.. passiveIncome, .. ventIncome];
         simulationTicks++;

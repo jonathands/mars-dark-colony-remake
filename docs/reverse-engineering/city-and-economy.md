@@ -145,9 +145,28 @@ painter's order (`MainForm.DrawGameplayVent`). Before 2026-10-07 it drew no
 vents at all, only the P7 debugging markers, and let harvesters deploy on
 vents with no rate.
 
-The sound the original plays when a vent erupts has not been found. It is
-not a FIN hotspot, and the vent's update plays only the harvester's deploy
-sound (`0x431DA8`).
+**The eruption sound.** A vent erupts with a sound only when a mission
+script gives a rate to a vent that has none. `newrate` (`0x43DB0F`) and
+`newrate2` (`0x43DC73`) test the vent's old rate (`+0x32 == 0`) and the
+script's value before the multiply (not 0). They then call `0x431BF4` with
+entity 1, category 7 and no position:
+- the slist loader (`0x431330`) names category 7 `XTR`, and `slist.dat` gives
+  entity 1's `XTR` list as sound 183, `ERUPT.WAV`;
+- without a position the sound plays at full volume and centred, wherever
+  the vent is;
+- the pick from the list uses the C library's `rand` (`0x44E22D`), not the
+  game's shared stream.
+
+The War maps re-rate their dry vents at random times only with the Erupting
+Vents option on (stat (3,0); single-player-war-lobby.md). Campaign missions
+do it too: human02 brings two dry vents to life at `c>450` and `c>550`.
+A vent that erupts again after a harvester leaves it, or a vent erupting
+from the start, makes no sound. Neither is a FIN hotspot: the vent's update
+plays only the harvester's deploy sound (`0x431DA8`).
+
+The port reports the eruption as `VentEruptionEvent`
+(`ScenarioSimulation.LastVentEruptions`), and the app plays entity 1's `XTR`
+sound for it (`MainForm.CaptureVentEruptionSounds`).
 
 ## Income gates
 
@@ -251,7 +270,8 @@ cannot direct-attack critters, and their projectiles pass through critters.
 | Building purchase builds the slot at once (command 9) | confirmed; see [production-flow.md](production-flow.md) |
 | Building prerequisite = live slot building of at least that variant (`0x438220`) | confirmed; completed building items follow each slot |
 | Building sprite anchor | fixed: the actor renderer (`0x4398AB`) subtracts a city slot actor's slot offset (`0x444C58`, table `0x47AB70`) before queueing its layers, so building art hangs from the city origin's corner, not from the slot position. Separately, the world blit (`0x454751` culls a queued sprite to `[y - height, y]`) puts each layer's bottom row on its FIN Y; a sprite frame's own Y is only its place on the artist's canvas. Queued positions are `x >> 3` and `(height * 256 - z - 1) >> 3` (`0x436051`). The port drew from the slot position and added the frame Y, which put the HQ about two tiles low and left and every unit about three rows low. Verified on 2026-10-04 against the native capture `Dark Colony/screenshots/pedestal-exploiter-stationary.png`, with a jungle War HQ in the port on the same kind of pedestal. In both, the HQ stands on the upper-left plate of its hexagon cluster. The door-to-plate-corner offset is about (13, 87) px native and (17, 87) px in the port, measured by eye |
-| Vent animation (`0x413490`): stopped without a rate or under a deployed harvester, not drawn when stopped, no countdown on a dry vent | implemented (`PetraVent.Erupting`, `UpdateVents`, `DrawGameplayVent`); the eruption sound is not found |
+| Vent animation (`0x413490`): stopped without a rate or under a deployed harvester, not drawn when stopped, no countdown on a dry vent | implemented (`PetraVent.Erupting`, `UpdateVents`, `DrawGameplayVent`) |
+| Eruption sound: `newrate`/`newrate2` on a vent without a rate play entity 1's XTR sound, `ERUPT.WAV`, unplaced (`0x43DB0F`, `0x43DC73`, `0x431BF4`) | implemented (`VentEruptionEvent`, `CaptureVentEruptionSounds`) |
 
 ## Rescue and pickup placements
 

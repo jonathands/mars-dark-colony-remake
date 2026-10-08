@@ -408,12 +408,15 @@ public sealed partial class ScenarioSimulation
 
     /// <summary>
     /// <c>newrate</c>/<c>newrate2</c>: the vent at (x, z) pays rate times the
-    /// session rate option (player 1 stat 0) &gt;&gt; 8 per pulse.
+    /// session rate option (player 1 stat 0) &gt;&gt; 8 per pulse. A vent
+    /// without a rate that gets one erupts (<see cref="VentEruptionEvent"/>).
     /// </summary>
     private void SetVentRate(CellCoordinate cell, int rate)
     {
-        if (PetraVents.FirstOrDefault(vent => vent.Position == cell) is { } vent)
-            vent.Rate = PetraFlowRules.NativeSigned8_8Multiply(rate, playerStats[1, 0]);
+        if (PetraVents.FirstOrDefault(vent => vent.Position == cell) is not { } vent) return;
+        // 0x43DB0F / 0x43DC73 test the old rate and the script's value, before the multiply.
+        if (vent.Rate == 0 && rate != 0) pendingVentEruptions.Add(new VentEruptionEvent(vent.Id, cell));
+        vent.Rate = PetraFlowRules.NativeSigned8_8Multiply(rate, playerStats[1, 0]);
     }
 
     /// <summary>

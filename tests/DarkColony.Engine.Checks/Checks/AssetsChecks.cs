@@ -106,6 +106,15 @@ internal static class AssetsChecks
                 vent.LogicalFrames[25].Layers.Select(layer => (layer.SpriteName, layer.DrawType)).OrderBy(layer => layer.SpriteName, StringComparer.Ordinal).ToArray());
         }, CheckTags.Data);
 
+        Check("a vent's eruption sound is entity 1's XTR list: ERUPT.WAV", () =>
+        {
+            // 0x431BF4 with entity 1 and category 7, which the slist loader
+            // (0x431330) gives the name XTR.
+            var sounds = SoundCatalog.Load(GameInstallation.Open(dataPath).DataFile("sound"));
+            Equal(new[] { 183 }, sounds.For(1, "XTR").ToArray());
+            Equal("erupt.wav", Path.GetFileName(sounds.Sounds[183].RelativePath).ToLowerInvariant());
+        }, CheckTags.Data);
+
         Check("mirrored FIN layers draw flipped at their X - 1, opposite their source direction", () =>
         {
             var install = GameInstallation.Open(dataPath);

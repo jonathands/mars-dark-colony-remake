@@ -250,6 +250,29 @@ internal static class EconomyChecks
             Equal(true, vent.Erupting);
         });
 
+        Check("a script rate given to a vent without one is an eruption", () =>
+        {
+            // 0x43DB0F (newrate) and 0x43DC73 (newrate2) play the eruption sound
+            // when the vent's old rate is 0 and the script's value is not.
+            var catalog = EntityCatalog.Parse("2\nEXPL 0 255 25 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nEDPLY 0 0 0 2 2 -1 -1 -1 1 1 5 100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+            const string source = "tiles.bts\ninternal\ndisplay\n0\n0\n0\n0\n0\nTEAM 0 1\n0\n%Race\n0\n%Money\n%City\n0\n0\n0\n0\n0\n0\n0\n0\n0\n9 1 0 0 -1 0\n" +
+                "1 1 40 0 5000\n3 1 40 20 5000\n5 1 40 0 5000\n7 1 40 0 5000\n";
+            var bytes = new byte[PathRegionMap.RouteTableSize + 16 * 4];
+            bytes.AsSpan(PathRegionMap.RouteTableSize).Fill(1);
+            var script = MissionScript.Compile(ScenarioTriggers.Parse(
+                "1 norm 1 (1)\nnewrate 20 1 1\nnewrate 30 3 1\nnewrate 0 5 1\nnewrate2 7 1 15\nend\n"));
+            var simulation = ScenarioSimulation.Create(ScenarioDefinition.Parse(source), catalog, PathRegionMap.Parse(bytes, 16, 4),
+                missionScript: script);
+            for (var tick = 0; tick < 16 && simulation.LastVentEruptions.Count == 0; tick++) simulation.Step([]);
+
+            Equal("0,3", string.Join(",", simulation.LastVentEruptions.Select(eruption => eruption.VentId).Order()));
+            Equal(new CellCoordinate(7, 1), simulation.LastVentEruptions.Single(eruption => eruption.VentId == 3).Position);
+            Equal("20,30,0,15", string.Join(",", simulation.PetraVents.Select(vent => vent.Rate)));
+            Equal(true, simulation.PetraVents[0].Erupting);
+            simulation.Step([]);
+            Equal(0, simulation.LastVentEruptions.Count);
+        });
+
         Check("authored scenario buildings seed their dependency prerequisites", () =>
         {
             var install = GameInstallation.Open(dataPath);

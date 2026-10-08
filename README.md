@@ -90,7 +90,6 @@ None of these change how a game plays:
   port's minimap marks no vents. A city building seen earlier shows as it
   stands now, not as the player last saw it
   ([vision.md](docs/reverse-engineering/vision.md)).
-- **Vents** erupt without the original's sound.
 - **The end of a War** uses the campaign's debrief screen, not the
   original's results screen with each player's kills and losses.
 - **Menus.**
